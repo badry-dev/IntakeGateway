@@ -19,10 +19,89 @@ export interface Task {
 export interface TaskCreate extends Omit<Task, 'id'> {}
 export interface TaskUpdate extends Partial<Omit<Task, 'id'>> {}
 
+// Column Mapping types
+export interface ColumnMapping {
+  id: number
+  task_id: number
+  source_field: string // Flattened field from API response (e.g., "user.address.city")
+  dest_column: string  // Target Oracle column name
+  transform_rules?: string // JSON string of transforms to apply
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ColumnMappingCreate {
+  source_field: string
+  dest_column: string
+  transform_rules?: string | Record<string, any>
+  is_active?: boolean
+}
+
+export interface ColumnMappingUpdate extends Partial<ColumnMappingCreate> {}
+
+// Field preview types for mapping configuration
+export interface FieldPreview {
+  field_name: string       // Full flattened path (e.g., "user.address.city")
+  field_type: 'string' | 'number' | 'boolean' | 'null' | 'array' | 'object'
+  sample_value: any        // Example value from API response
+  nullable: boolean        // Whether field can be null
+  parent_path?: string     // Parent path for tree hierarchy (e.g., "user.address")
+}
+
+export interface MappingPreview {
+  fields: FieldPreview[]
+  total_fields: number
+  flattened_successfully: boolean
+  errors?: string[]
+}
+
+// Oracle column metadata
+export interface OracleColumn {
+  column_name: string
+  data_type: string       // Oracle type (VARCHAR2, NUMBER, DATE, TIMESTAMP, etc.)
+  nullable: string        // 'Y' or 'N'
+  max_length?: number     // For VARCHAR2, CHAR types
+}
+
+export interface OracleColumnsResponse {
+  table_name: string
+  columns: OracleColumn[]
+  total_columns: number
+}
+
+// Transform suggestion types
+export interface TransformSuggestion {
+  transform_name: string
+  description: string
+  confidence: 'high' | 'medium' | 'low'
+  reason: string          // Why this transform is suggested
+}
+
+export interface TransformSuggestionsResponse {
+  source_type: string
+  dest_type: string
+  suggestions: TransformSuggestion[]
+  requires_transform: boolean    // Whether a transform is required
+  warning_message?: string       // Warning if types are incompatible
+}
+
+// Mapping template for save/load in localStorage
+export interface MappingTemplate {
+  name: string
+  description?: string
+  mappings: ColumnMappingCreate[]
+  created_at: string
+  updated_at: string
+}
+
 // Task Run types
 export interface TaskRun {
   id: number
   task_id: number
+  task_name?: string
+  is_retry?: boolean
+  retry_of_run_id?: number
   status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED'
   rows_fetched: number
   rows_inserted: number

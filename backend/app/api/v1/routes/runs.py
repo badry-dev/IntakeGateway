@@ -4,11 +4,24 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.db.models.task_run import TaskRun, TaskStatus
+from app.db.models.task import Task
 from app.db.models.task_log import TaskLog
 from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import TaskRunOut, TaskLogOut, TaskRunLogOut
 
 router = APIRouter()
+
+def get_retry_info(db: Session, task_id: int, run_id: int) -> tuple[bool, int | None]:
+    """Return (is_retry, retry_of_run_id) based on immediate previous run status."""
+    previous_run = (
+        db.query(TaskRun)
+        .filter(TaskRun.task_id == task_id, TaskRun.id < run_id)
+        .order_by(TaskRun.id.desc())
+        .first()
+    )
+    if previous_run and previous_run.status == TaskStatus.FAILED.value:
+        return True, previous_run.id
+    return False, None
 
 def get_db():
     db = SessionLocal()
@@ -23,6 +36,9 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
     task_run = db.query(TaskRun).filter(TaskRun.id == run_id).first()
     if not task_run:
         raise HTTPException(status_code=404, detail="Run not found")
+
+    task = db.query(Task).filter(Task.id == task_run.task_id).first()
+    is_retry, retry_of_run_id = get_retry_info(db, task_run.task_id, task_run.id)
     
     # Get execution logs
     execution_logs = db.query(TaskLog).filter(
@@ -37,6 +53,9 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
     return {
         "id": task_run.id,
         "task_id": task_run.task_id,
+        "task_name": task.name if task else None,
+        "is_retry": is_retry,
+        "retry_of_run_id": retry_of_run_id,
         "status": task_run.status,
         "rows_fetched": task_run.rows_fetched,
         "rows_inserted": task_run.rows_inserted,
@@ -92,19 +111,28 @@ def list_runs(
     logger = logging.getLogger(__name__)
     logger.info(f"list_runs: Found {len(runs)} runs from database")
     
-    result = [
-        {
-            "id": run.id,
-            "task_id": run.task_id,
-            "status": run.status,
-            "rows_fetched": run.rows_fetched,
-            "rows_inserted": run.rows_inserted,
-            "error_count": run.error_count,
-            "started_at": run.started_at,
-            "ended_at": run.ended_at,
-            "duration_seconds": (run.ended_at - run.started_at).total_seconds() if run.ended_at else None
-        }
-        for run in runs
-    ]
+    task_ids = {run.task_id for run in runs}
+    tasks = db.query(Task).filter(Task.id.in_(task_ids)).all() if task_ids else []
+    task_name_map = {task.id: task.name for task in tasks}
+
+    result = []
+    for run in runs:
+        is_retry, retry_of_run_id = get_retry_info(db, run.task_id, run.id)
+        result.append(
+            {
+                "id": run.id,
+                "task_id": run.task_id,
+                "task_name": task_name_map.get(run.task_id),
+                "is_retry": is_retry,
+                "retry_of_run_id": retry_of_run_id,
+                "status": run.status,
+                "rows_fetched": run.rows_fetched,
+                "rows_inserted": run.rows_inserted,
+                "error_count": run.error_count,
+                "started_at": run.started_at,
+                "ended_at": run.ended_at,
+                "duration_seconds": (run.ended_at - run.started_at).total_seconds() if run.ended_at else None
+            }
+        )
     logger.info(f"list_runs: Returning {len(result)} runs")
     return result

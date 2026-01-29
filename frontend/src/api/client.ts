@@ -1,5 +1,17 @@
 import axios, { AxiosInstance } from 'axios'
-import { Task, TaskRun, TaskStats, TaskCreate, TaskUpdate } from '@/types'
+import { 
+  Task, 
+  TaskRun, 
+  TaskStats, 
+  TaskCreate, 
+  TaskUpdate,
+  ColumnMapping,
+  ColumnMappingCreate,
+  ColumnMappingUpdate,
+  MappingPreview,
+  OracleColumnsResponse,
+  TransformSuggestionsResponse,
+} from '@/types'
 
 const API_BASE_URL = '/api/v1'
 
@@ -87,6 +99,88 @@ class ApiClient {
       limit: limit.toString(),
     })
     const response = await this.client.get(`/runs?${params}`)
+    return response.data
+  }
+
+  // Column Mapping endpoints
+  async getColumnMappings(
+    taskId: number,
+    skip: number = 0,
+    limit: number = 50,
+    activeOnly?: boolean
+  ): Promise<ColumnMapping[]> {
+    const params = new URLSearchParams({
+      skip: skip.toString(),
+      limit: limit.toString(),
+    })
+    if (activeOnly !== undefined) {
+      params.append('is_active', activeOnly.toString())
+    }
+    const response = await this.client.get(`/tasks/${taskId}/mappings?${params}`)
+    return response.data
+  }
+
+  async createColumnMappings(taskId: number, mappings: ColumnMappingCreate[]): Promise<ColumnMapping[]> {
+    const response = await this.client.post(`/tasks/${taskId}/mappings`, { mappings })
+    return response.data
+  }
+
+  async updateColumnMapping(id: number, data: ColumnMappingUpdate): Promise<ColumnMapping> {
+    const response = await this.client.put(`/mappings/${id}`, data)
+    return response.data
+  }
+
+  async deleteColumnMapping(id: number): Promise<void> {
+    await this.client.delete(`/mappings/${id}`)
+  }
+
+  // Preview fields from API response
+  async previewMappingFields(taskId: number, sampleJson?: string): Promise<MappingPreview> {
+    const response = await this.client.post(`/tasks/${taskId}/preview-fields`, {
+      sample_json: sampleJson,
+    })
+    return response.data
+  }
+
+  // Preview fields standalone (for wizard without task ID)
+  async previewMappingFieldsStandalone(params: {
+    sample_json?: any
+    use_auto_fetch?: boolean
+    method?: string
+    url?: string
+    headers?: Record<string, string>
+    params?: Record<string, any>
+    json_body?: Record<string, any>
+    record_path?: string
+  }): Promise<MappingPreview> {
+    const requestBody = {
+      use_auto_fetch: params.use_auto_fetch ?? false,
+      sample_json: params.sample_json,
+      method: params.method ?? 'GET',
+      url: params.url,
+      headers: params.headers,
+      params: params.params,
+      json_body: params.json_body,
+      record_path: params.record_path,
+    }
+
+    const response = await this.client.post('/tasks/preview-fields-standalone', requestBody)
+    return response.data
+  }
+
+  // Get Oracle table columns metadata
+  async getOracleColumns(tableName: string): Promise<OracleColumnsResponse> {
+    const response = await this.client.get(`/oracle/tables/${tableName}/columns`)
+    return response.data
+  }
+
+  // Get transform suggestions based on type mismatch
+  async suggestTransforms(sourceType: string, destType: string): Promise<TransformSuggestionsResponse> {
+    const params = new URLSearchParams({
+      source_type: sourceType,
+      dest_type: destType,
+    })
+    const response = await this.client.post(`/tasks/suggest-transforms?${params}`)
     return response.data
   }
 

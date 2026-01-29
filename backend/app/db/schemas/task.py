@@ -54,6 +54,9 @@ class TaskRunOut(BaseModel):
     """Complete task run with all logs and results"""
     id: int
     task_id: int
+    task_name: Optional[str] = None
+    is_retry: Optional[bool] = None
+    retry_of_run_id: Optional[int] = None
     status: str
     rows_fetched: int
     rows_inserted: int

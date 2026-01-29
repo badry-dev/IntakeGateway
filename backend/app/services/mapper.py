@@ -3,6 +3,8 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 from app.db.models.column_mapping import ColumnMapping
 import json
+from datetime import datetime
+from loguru import logger
 
 # Transform registry for field transformations
 def trim(x): 
@@ -31,6 +33,104 @@ def to_bool(x):
         return x.lower() in ("true", "1", "yes", "y")
     return bool(x)
 
+def to_timestamp(x):
+    """Convert ISO 8601 string to Oracle TIMESTAMP format"""
+    if x is None or x == "":
+        return None
+    
+    try:
+        if isinstance(x, str):
+            # Try to parse ISO 8601 format
+            # Handles: 2024-01-15T10:30:45Z, 2024-01-15T10:30:45.123Z, 2024-01-15 10:30:45
+            # Remove 'Z' if present and parse
+            x_clean = x.replace('Z', '+00:00') if x.endswith('Z') else x
+            dt = datetime.fromisoformat(x_clean)
+            # Return Oracle TIMESTAMP format: YYYY-MM-DD HH:MM:SS.ffffff
+            return dt.strftime('%Y-%m-%d %H:%M:%S.%f')
+        elif isinstance(x, datetime):
+            return x.strftime('%Y-%m-%d %H:%M:%S.%f')
+        else:
+            raise ValueError(f"Cannot convert {type(x).__name__} to timestamp")
+    except Exception as e:
+        logger.error(f"Error converting to timestamp: {str(e)}")
+        return None
+
+def to_date(x):
+    """Convert string to Oracle DATE format (YYYY-MM-DD)"""
+    if x is None or x == "":
+        return None
+    
+    try:
+        if isinstance(x, str):
+            # Try common date formats: YYYY-MM-DD, MM/DD/YYYY, DD-MM-YYYY
+            date_formats = [
+                "%Y-%m-%d",           # 2024-01-15
+                "%m/%d/%Y",           # 01/15/2024
+                "%d-%m-%Y",           # 15-01-2024
+                "%Y/%m/%d",           # 2024/01/15
+                "%d/%m/%Y",           # 15/01/2024
+                "%Y%m%d",             # 20240115
+            ]
+            
+            dt = None
+            for fmt in date_formats:
+                try:
+                    dt = datetime.strptime(x, fmt)
+                    break
+                except ValueError:
+                    continue
+            
+            if dt is None:
+                # Try ISO format parsing as last resort
+                dt = datetime.fromisoformat(x.replace('Z', '+00:00'))
+            
+            return dt.strftime('%Y-%m-%d')
+        elif isinstance(x, datetime):
+            return x.strftime('%Y-%m-%d')
+        else:
+            raise ValueError(f"Cannot convert {type(x).__name__} to date")
+    except Exception as e:
+        logger.error(f"Error converting to date: {str(e)}")
+        return None
+
+def format_date(x):
+    """Format date/datetime with custom pattern (default ISO format)"""
+    if x is None or x == "":
+        return None
+    
+    try:
+        if isinstance(x, str):
+            # Try to parse the string first
+            date_formats = [
+                "%Y-%m-%d",
+                "%m/%d/%Y",
+                "%d-%m-%Y",
+                "%Y/%m/%d",
+                "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%d %H:%M:%S",
+            ]
+            
+            dt = None
+            for fmt in date_formats:
+                try:
+                    dt = datetime.strptime(x, fmt)
+                    break
+                except ValueError:
+                    continue
+            
+            if dt is None:
+                dt = datetime.fromisoformat(x.replace('Z', '+00:00'))
+            
+            # Return ISO format
+            return dt.isoformat()
+        elif isinstance(x, datetime):
+            return x.isoformat()
+        else:
+            raise ValueError(f"Cannot format {type(x).__name__}")
+    except Exception as e:
+        logger.error(f"Error formatting date: {str(e)}")
+        return None
+
 TRANSFORMS: dict[str, Callable[[Any], Any]] = {
     "trim": trim,
     "upper": upper,
@@ -38,6 +138,9 @@ TRANSFORMS: dict[str, Callable[[Any], Any]] = {
     "to_int": to_int,
     "to_float": to_float,
     "to_bool": to_bool,
+    "to_timestamp": to_timestamp,
+    "to_date": to_date,
+    "format_date": format_date,
 }
 
 def apply_transform(value: Any, transform: str | None):

@@ -75,7 +75,14 @@ export function RunDetail() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>Run #{run.id}</CardTitle>
-              <CardDescription>Task: {run.task_id}</CardDescription>
+              <CardDescription>
+                Task: {run.task_name ? run.task_name : `#${run.task_id}`}
+                {run.is_retry && (
+                  <span className="ml-2 text-xs text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full">
+                    Retry{run.retry_of_run_id ? ` of #${run.retry_of_run_id}` : ''}
+                  </span>
+                )}
+              </CardDescription>
             </div>
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(run.status)}`}>
               {run.status}

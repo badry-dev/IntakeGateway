@@ -27,8 +27,8 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_url(self) -> str:
-        # Force thin mode to avoid "bequeath is only supported in thick mode" error
-        # Thin mode is pure Python and doesn't require Oracle Instant Client
+        # Using oracledb with thin mode
+        # For older Oracle versions, Oracle Instant Client (thick mode) may be required
         
         # Check if Oracle credentials are configured
         if not self.ORACLE_USER or not self.ORACLE_PASSWORD:

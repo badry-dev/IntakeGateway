@@ -1,13 +1,15 @@
 import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useTask, useUpdateTask, useDeleteTask } from '@/hooks/api'
+import { useTask, useUpdateTask, useDeleteTask, useColumnMappings } from '@/hooks/api'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Edit2, Trash2, Copy } from 'lucide-react'
-import { Task, TaskFormData } from '@/types'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { ArrowLeft, Edit2, Trash2, Copy, Database, Settings } from 'lucide-react'
+import { Task, TaskFormData, ColumnMappingCreate } from '@/types'
 import { formatLocalDateTime } from '@/lib/utils'
+import { ColumnMappingEditor } from '@/components/ColumnMappingEditor'
 
 export function TaskDetail() {
   const { id } = useParams<{ id: string }>()
@@ -15,9 +17,11 @@ export function TaskDetail() {
   const { data: task, isLoading, error } = useTask(id || '')
   const updateTaskMutation = useUpdateTask()
   const deleteTaskMutation = useDeleteTask()
+  const { data: mappings } = useColumnMappings(Number(id) || 0)
 
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<string>('details')
   const [formData, setFormData] = useState<TaskFormData>({
     name: '',
     description: '',
@@ -129,13 +133,32 @@ export function TaskDetail() {
         </div>
       </div>
 
-      {/* Task Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{task.name}</CardTitle>
-          {task.description && <CardDescription>{task.description}</CardDescription>}
-        </CardHeader>
-        <CardContent className="space-y-6">
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="details" className="gap-2">
+            <Settings className="h-4 w-4" />
+            Task Details
+          </TabsTrigger>
+          <TabsTrigger value="mappings" className="gap-2">
+            <Database className="h-4 w-4" />
+            Column Mappings
+            {mappings && mappings.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary text-primary-foreground rounded-full">
+                {mappings.length}
+              </span>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Task Details Tab */}
+        <TabsContent value="details" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{task.name}</CardTitle>
+              {task.description && <CardDescription>{task.description}</CardDescription>}
+            </CardHeader>
+            <CardContent className="space-y-6">
           {/* API Configuration */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -212,8 +235,25 @@ export function TaskDetail() {
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Column Mappings Tab */}
+        <TabsContent value="mappings" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Column Mapping Configuration</CardTitle>
+              <CardDescription>
+                Map API response fields to database columns with optional transformations
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ColumnMappingEditor taskId={Number(id)} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Edit Dialog */}
       {isEditOpen && (

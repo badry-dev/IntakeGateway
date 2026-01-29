@@ -77,11 +77,20 @@ export function RunsList() {
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <CardTitle>Run #{run.id}</CardTitle>
-                      <CardDescription>Task ID: {run.task_id}</CardDescription>
+                      <CardDescription>
+                        Task: {run.task_name ? run.task_name : `#${run.task_id}`}
+                      </CardDescription>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(run.status)}`}>
-                      {run.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {run.is_retry && (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                          Retry
+                        </span>
+                      )}
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(run.status)}`}>
+                        {run.status}
+                      </span>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>

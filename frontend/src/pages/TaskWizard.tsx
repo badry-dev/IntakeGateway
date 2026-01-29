@@ -1,12 +1,13 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useCreateTask } from '@/hooks/api'
+import { useCreateTask, useCreateMappings, usePreviewFields, useOracleColumns } from '@/hooks/api'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, ChevronRight, ChevronLeft } from 'lucide-react'
-import { TaskFormData } from '@/types'
+import { ArrowLeft, ChevronRight, ChevronLeft, AlertCircle } from 'lucide-react'
+import { TaskFormData, ColumnMappingCreate } from '@/types'
+import { ColumnMappingEditor } from '@/components/ColumnMappingEditor'
 
 type Step = 'basic' | 'endpoint' | 'headers' | 'mapping' | 'review'
 
@@ -21,7 +22,9 @@ const STEPS: { id: Step; label: string; description: string }[] = [
 export function TaskWizard() {
   const navigate = useNavigate()
   const createTaskMutation = useCreateTask()
+  const createMappingsMutation = useCreateMappings()
   const [currentStep, setCurrentStep] = useState<Step>('basic')
+  const [createdTaskId, setCreatedTaskId] = useState<number | null>(null)
   const [formData, setFormData] = useState<TaskFormData>({
     name: '',
     description: '',
@@ -39,7 +42,12 @@ export function TaskWizard() {
   ])
 
   const [bodyJson, setBodyJson] = useState('{}')
+  const [mappings, setMappings] = useState<ColumnMappingCreate[]>([])
+  const [skipMappings, setSkipMappings] = useState(false)
 
+  // Fetch Oracle columns when table name is set
+  const { data: oracleColumnsData } = useOracleColumns(formData.dest_table || '')
+  
   const currentStepIndex = STEPS.findIndex(s => s.id === currentStep)
 
   const goToStep = (step: Step) => {
@@ -119,11 +127,39 @@ export function TaskWizard() {
         return
       }
 
-      await createTaskMutation.mutateAsync(finalData)
+      // Create the task first
+      const createdTask = await createTaskMutation.mutateAsync(finalData)
+      setCreatedTaskId(createdTask.id)
+
+      // If mappings were configured, create them
+      if (mappings.length > 0 && !skipMappings) {
+        try {
+          await createMappingsMutation.mutateAsync({
+            taskId: createdTask.id,
+            mappings: mappings,
+          })
+        } catch (mappingErr) {
+          console.error('Failed to create mappings:', mappingErr)
+          // Continue anyway - task was created successfully
+        }
+      }
+
       navigate('/tasks')
     } catch (err) {
       console.error('Failed to create task:', err)
     }
+  }
+
+  const handleSaveMappings = async (newMappings: ColumnMappingCreate[]) => {
+    setMappings(newMappings)
+    setSkipMappings(false)
+    return Promise.resolve()
+  }
+
+  const handleSkipMappings = () => {
+    setSkipMappings(true)
+    setMappings([])
+    goNext()
   }
 
   const canProceed = () => {
@@ -135,7 +171,8 @@ export function TaskWizard() {
       case 'headers':
         return true
       case 'mapping':
-        return true
+        // Allow proceed if they have at least 1 mapping OR clicked skip
+        return mappings.length > 0 || skipMappings
       case 'review':
         return true
       default:
@@ -360,23 +397,39 @@ export function TaskWizard() {
           {/* Mapping Step */}
           {currentStep === 'mapping' && (
             <div className="space-y-4">
-              <div className="p-4 bg-secondary rounded">
-                <p className="text-sm text-muted-foreground">
-                  <strong>Column Mapping:</strong> The system will automatically map API response fields to your database table columns. 
-                  You can configure advanced mappings after task creation.
-                </p>
-              </div>
-              <div className="p-4 border-2 border-dashed rounded text-center">
-                <p className="text-muted-foreground">
-                  <strong>Endpoint:</strong> {formData.endpoint_path || 'Not set'}
-                </p>
-                <p className="text-muted-foreground">
-                  <strong>Table:</strong> {formData.dest_table || 'Not set'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Column mapping will be configured based on the first API response received
-                </p>
-              </div>
+              {!formData.endpoint_path || !formData.dest_table ? (
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                  <div className="text-sm text-yellow-800">
+                    <p className="font-medium">Configuration Required</p>
+                    <p>Please complete the Endpoint and Basic Info steps first before configuring column mappings.</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded">
+                    <p className="text-sm text-blue-800">
+                      <strong>Column Mapping:</strong> Configure how API response fields map to your database columns. 
+                      You can fetch a sample from your API or paste JSON manually to preview available fields.
+                    </p>
+                  </div>
+
+                  {/* Render ColumnMappingEditor in wizard mode */}
+                  <ColumnMappingEditor 
+                    wizardMode={true}
+                    taskFormData={formData}
+                    existingMappings={mappings}
+                    onSave={async (mappingData) => {
+                      setMappings(mappingData)
+                      console.log('Mappings saved:', mappingData)
+                    }}
+                    onFieldsLoad={() => {
+                      // Fields loaded - ready to configure mappings
+                      console.log('Fields loaded successfully')
+                    }}
+                  />
+                </>
+              )}
             </div>
           )}
 
@@ -404,6 +457,25 @@ export function TaskWizard() {
                         <p key={k}><span className="font-mono">{k}:</span> {String(v)}</p>
                       ))}
                     </div>
+                  </div>
+                )}
+                {mappings.length > 0 && (
+                  <div className="p-3 bg-secondary rounded">
+                    <p className="text-sm font-medium mb-2"><strong>Column Mappings:</strong> {mappings.length} configured</p>
+                    <div className="text-xs space-y-1 max-h-32 overflow-y-auto">
+                      {mappings.map((m, idx) => (
+                        <p key={idx} className="font-mono">
+                          {m.source_field} → {m.dest_column}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {skipMappings && mappings.length === 0 && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded">
+                    <p className="text-sm text-amber-800">
+                      ⚠️ <strong>No column mappings configured.</strong> You'll need to configure mappings in the Task Detail page before running this task.
+                    </p>
                   </div>
                 )}
               </div>

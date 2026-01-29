@@ -28,12 +28,14 @@ User Request → FastAPI Route → Service Layer → SQLAlchemy ORM → Oracle D
 ```
 
 **Key Services** (in `backend/app/services/`):
-- `api_connector.py` - Calls external APIs with configured headers/auth
-- `mapper.py` - Maps API response fields to DB columns with **transforms** (trim, upper, lower, to_int, to_float, to_bool)
-- `normalizer.py` - Data structure transformation
+- `api_connector.py` - Calls external APIs with configured headers/auth; fetches sample responses
+- `mapper.py` - Maps API response fields to DB columns with **transforms** (trim, upper, lower, to_int, to_float, to_bool, to_timestamp, to_date, format_date)
+- `normalizer.py` - Data structure transformation; flattens nested JSON to dot notation (e.g., `user.address.city`)
 - `validator.py` - Input/schema validation
 - `runner.py` - Orchestrates the full pipeline
 - `scheduler.py` - Task scheduling logic
+- `oracle_metadata.py` - Queries Oracle `USER_TAB_COLUMNS` for table schema discovery (Phase 6)
+- `transform_suggester.py` - Recommends transforms based on source/destination type mismatch (Phase 6)
 
 ### Database Schema Pattern
 **Key Tables**:
@@ -48,7 +50,8 @@ User Request → FastAPI Route → Service Layer → SQLAlchemy ORM → Oracle D
 - **Pages** (6): Dashboard, TaskList, TaskDetail, TaskWizard, RunsList, RunDetail
 - **State Management**: React Query (server state) + Zustand (optional UI state)
 - **API Integration**: `src/api/client.ts` wraps Axios with base config
-- **TaskWizard**: 5-step form (Basic → Endpoint → Headers → Mapping → Review)
+- **TaskWizard**: 6-step form (Phase 6 update: Basic → Endpoint → Headers → Mapping (NEW) → Review → Confirmation)
+- **ColumnMappingEditor**: Reusable component for mapping configuration with hierarchical tree view + transform selection (Phase 6)
 
 ---
 
@@ -159,8 +162,9 @@ export function useGetTasks() {
 - Use strict mode TypeScript (no `any`, no `unknown` without narrowing)
 
 **3. TaskWizard Navigation** (`src/pages/TaskWizard.tsx`)
-- 5-step linear flow: Basic → Endpoint → Headers → Mapping → Review
+- 6-step linear flow: Basic → Endpoint → Headers → Mapping (NEW) → Review → Confirmation
 - Step validation prevents forward progression without required fields
+- Mappings saved on "Next" click, not real-time (Phase 6)
 - Convert header array to object before API submission
 
 **4. Component Reusability** (`src/components/`)
@@ -206,6 +210,9 @@ export function useGetTasks() {
 | Frontend stuck on stale data | Check React Query cache invalidation on mutations (configured in `useCreateTask`, `useUpdateTask`) |
 | TaskWizard validation passes but submission fails | Validate step-by-step (check frontend console + backend logs at `/docs`) |
 | Oracle connection pooling issues | Verify `oracle_pool.py` connection string; pool size settings; max retries |
+| Column mapping preview fails to show fields | Verify Oracle `USER_TAB_COLUMNS` access permissions; fallback to manual entry |
+| Nested JSON not flattening correctly | Check normalizer.flatten() logic; ensure dot notation used in source_field (e.g., `user.address.city`) |
+| Pydantic validation issues | Fallback alternatives available: Dataclasses (~30min), Attrs (~1-2hrs), Marshmallow (~2-3hrs) - see Phase 6 notes |
 
 ---
 
@@ -215,16 +222,23 @@ export function useGetTasks() {
 - `app/main.py` - FastAPI app, CORS, route registration
 - `app/api/v1/routes/tasks.py` - Task CRUD endpoints (294 lines)
 - `app/api/v1/routes/runs.py` - Run execution endpoints
+- `app/api/v1/routes/column_mappings.py` - Column mapping CRUD + preview endpoints (Phase 6 NEW)
 - `app/workers/tasks.py` - Celery task definitions
-- `app/services/mapper.py` - Field mapping + transforms (116 lines)
+- `app/services/mapper.py` - Field mapping + transforms (116 lines, extended Phase 6)
+- `app/services/oracle_metadata.py` - Oracle table schema discovery (Phase 6 NEW)
+- `app/services/transform_suggester.py` - Transform recommendations (Phase 6 NEW)
+- `app/services/api_connector.py` - API calls + sample response fetching (Phase 6 enhanced)
 - `app/db/models/task.py` - Task ORM model with JSONEncodedDict
+- `app/db/schemas/column_mapping.py` - Pydantic schemas for mappings (Phase 6 NEW)
 - `app/core/config.py` - Environment configuration
 
 **Frontend Critical Files**:
-- `src/pages/TaskWizard.tsx` - 5-step task creation (448 lines)
+- `src/pages/TaskWizard.tsx` - 6-step task creation with mapping step (Phase 6 enhanced)
+- `src/pages/TaskDetail.tsx` - Task detail + advanced mapping configuration (Phase 6 enhanced)
+- `src/components/ColumnMappingEditor.tsx` - Mapping UI with tree view + transforms (Phase 6 NEW)
 - `src/pages/RunDetail.tsx` - Run monitoring UI
-- `src/hooks/api.ts` - React Query hooks
-- `src/types/index.ts` - TypeScript type definitions
+- `src/hooks/api.ts` - React Query hooks + 8 new mapping hooks (Phase 6)
+- `src/types/index.ts` - TypeScript type definitions + ColumnMapping types (Phase 6)
 - `vite.config.ts` - Build configuration
 
 **Configuration**:
@@ -267,6 +281,21 @@ For detailed context, see:
 - [ ] Add transform test if applicable
 - [ ] Run full test suite: `pytest backend/tests/ -v`
 
+### Adding Column Mappings to a Task (Phase 6)
+- [ ] Create sample API response (manual paste or auto-fetch)
+- [ ] Call `POST /api/v1/tasks/{task_id}/preview-fields` to get flattened fields
+- [ ] Query `GET /api/v1/oracle/tables/{table_name}/columns` for DB column types
+- [ ] Create mappings via `POST /api/v1/tasks/{task_id}/mappings` (bulk create)
+- [ ] Verify mapping UX in TaskWizard step 4.5 or TaskDetail mapping tab
+- [ ] Test nested JSON flattening: deeply nested objects should appear as dot-notation fields
+- [ ] Test transform suggestions: type mismatches should trigger auto-suggestions
+
+### Handling Pydantic Issues (Phase 6 Contingency)
+- [ ] If Pydantic import/compatibility errors: Try fallback to Dataclasses (lowest migration effort)
+- [ ] Dataclasses equivalent: Convert Pydantic `BaseModel` → `@dataclass` decorator
+- [ ] Migration effort: ~30-45 minutes for 6 schemas
+- [ ] See fallback recommendations in claude.md Phase 6 section
+
 ---
 
-**Questions?** Consult the detailed [claude.md](../claude.md) guide or run tests to understand current behavior.
+**Questions?** Consult the detailed [claude.md](../claude.md) guide, Phase 6 section, or run tests to understand current behavior.

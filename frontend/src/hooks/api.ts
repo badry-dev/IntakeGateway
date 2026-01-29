@@ -1,6 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
-import { Task, TaskRun, TaskStats, TaskCreate, TaskUpdate } from '@/types'
+import { 
+  Task, 
+  TaskRun, 
+  TaskStats, 
+  TaskCreate, 
+  TaskUpdate,
+  ColumnMapping,
+  ColumnMappingCreate,
+  ColumnMappingUpdate,
+  MappingPreview,
+  OracleColumnsResponse,
+  TransformSuggestionsResponse,
+  MappingTemplate,
+} from '@/types'
 
 // Query keys
 export const taskKeys = {
@@ -22,6 +35,19 @@ export const runKeys = {
   details: () => [...runKeys.all, 'detail'] as const,
   detail: (taskId: number, runId: number) => [...runKeys.details(), { taskId, runId }] as const,
   detailById: (runId: number) => [...runKeys.details(), runId] as const,
+}
+
+export const mappingKeys = {
+  all: ['mappings'] as const,
+  lists: () => [...mappingKeys.all, 'list'] as const,
+  list: (taskId: number, skip: number, limit: number, activeOnly?: boolean) =>
+    [...mappingKeys.lists(), { taskId, skip, limit, activeOnly }] as const,
+  details: () => [...mappingKeys.all, 'detail'] as const,
+  detail: (id: number) => [...mappingKeys.details(), id] as const,
+  preview: (taskId: number) => [...mappingKeys.all, 'preview', taskId] as const,
+  columns: (tableName: string) => [...mappingKeys.all, 'columns', tableName] as const,
+  suggestions: (sourceType: string, destType: string) => 
+    [...mappingKeys.all, 'suggestions', sourceType, destType] as const,
 }
 
 // Task hooks
@@ -127,5 +153,162 @@ export function useRecentRuns(skip: number = 0, limit: number = 20) {
     queryKey: runKeys.recent(skip, limit),
     queryFn: () => apiClient.getRecentRuns(skip, limit),
     staleTime: 15000,
+  })
+}
+
+// Column Mapping hooks
+
+/**
+ * Fetch all mappings for a task with optional filtering
+ */
+export function useColumnMappings(taskId: number, skip: number = 0, limit: number = 50, activeOnly?: boolean) {
+  return useQuery({
+    queryKey: mappingKeys.list(taskId, skip, limit, activeOnly),
+    queryFn: () => apiClient.getColumnMappings(taskId, skip, limit, activeOnly),
+    enabled: taskId > 0,
+    staleTime: 30000,
+  })
+}
+
+/**
+ * Create multiple column mappings for a task
+ */
+export function useCreateMappings() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, mappings }: { taskId: number; mappings: ColumnMappingCreate[] }) =>
+      apiClient.createColumnMappings(taskId, mappings),
+    onSuccess: (_, { taskId }) => {
+      queryClient.invalidateQueries({ queryKey: mappingKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: mappingKeys.list(taskId, 0, 50) })
+    },
+  })
+}
+
+/**
+ * Update a single column mapping
+ */
+export function useUpdateMapping() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: ColumnMappingUpdate }) =>
+      apiClient.updateColumnMapping(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mappingKeys.lists() })
+    },
+  })
+}
+
+/**
+ * Delete a column mapping
+ */
+export function useDeleteMapping() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => apiClient.deleteColumnMapping(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mappingKeys.lists() })
+    },
+  })
+}
+
+/**
+ * Fetch preview of available fields from API response for mapping configuration
+ * Supports both manual JSON paste and auto-fetch modes
+ */
+export function usePreviewFields(taskId: number, sampleJson?: string) {
+  return useQuery({
+    queryKey: mappingKeys.preview(taskId),
+    queryFn: () => apiClient.previewMappingFields(taskId, sampleJson),
+    enabled: taskId > 0,
+    staleTime: 0, // Never cache - always fresh when component mounts
+  })
+}
+
+/**
+ * Fetch preview of available fields (standalone - for wizard without task ID)
+ * Supports both manual JSON paste and auto-fetch modes
+ */
+export function usePreviewFieldsStandalone(params: {
+  sample_json?: string
+  use_auto_fetch?: boolean
+  method?: string
+  url?: string
+  headers?: Record<string, string>
+  params?: Record<string, any>
+  json_body?: Record<string, any>
+  record_path?: string
+}) {
+  return useMutation({
+    mutationFn: () => apiClient.previewMappingFieldsStandalone(params),
+  })
+}
+
+/**
+ * Fetch Oracle column metadata for a table
+ * Used to show available destination columns and their types
+ */
+export function useOracleColumns(tableName: string) {
+  return useQuery({
+    queryKey: mappingKeys.columns(tableName),
+    queryFn: () => apiClient.getOracleColumns(tableName),
+    enabled: tableName.length > 0,
+    staleTime: 60000, // 1 minute
+  })
+}
+
+/**
+ * Get transform recommendations based on source and destination field types
+ * Shows auto-suggest badges in the mapping UI
+ */
+export function useSuggestTransforms(sourceType: string, destType: string) {
+  return useQuery({
+    queryKey: mappingKeys.suggestions(sourceType, destType),
+    queryFn: () => apiClient.suggestTransforms(sourceType, destType),
+    enabled: sourceType.length > 0 && destType.length > 0,
+    staleTime: 86400000, // 24 hours - type combinations don't change
+  })
+}
+
+/**
+ * Template management hooks for localStorage
+ */
+export function useSaveMappingTemplate(onSuccess?: () => void) {
+  return useMutation({
+    mutationFn: (template: MappingTemplate) => {
+      // Save to localStorage
+      const templates = JSON.parse(localStorage.getItem('mapping_templates') || '[]')
+      templates.push(template)
+      localStorage.setItem('mapping_templates', JSON.stringify(templates))
+      return Promise.resolve(template)
+    },
+    onSuccess,
+  })
+}
+
+export function useLoadMappingTemplates() {
+  return useQuery({
+    queryKey: ['mapping_templates'],
+    queryFn: () => {
+      const templates = JSON.parse(localStorage.getItem('mapping_templates') || '[]')
+      return templates as MappingTemplate[]
+    },
+    staleTime: Infinity, // localStorage data doesn't stale
+  })
+}
+
+export function useDeleteMappingTemplate(onSuccess?: () => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (templateName: string) => {
+      const templates = JSON.parse(localStorage.getItem('mapping_templates') || '[]')
+      const filtered = templates.filter((t: MappingTemplate) => t.name !== templateName)
+      localStorage.setItem('mapping_templates', JSON.stringify(filtered))
+      return Promise.resolve()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mapping_templates'] })
+      onSuccess?.()
+    },
   })
 }
