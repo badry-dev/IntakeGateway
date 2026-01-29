@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     HTTP_MAX_RESPONSE_MB: int = 10
 
     SECRET_KEY: str = "dev-secret"
+    FRONTEND_URL: str = "http://localhost:3000"
 
     @property
     def sqlalchemy_url(self) -> str:
