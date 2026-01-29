@@ -271,6 +271,8 @@ GET    /api/v1/runs/{run_id}            # Get run details
 POST   /api/v1/runs                     # Trigger new run
 ```
 
+**Run labels**: Run responses include `task_name`, `is_retry`, and `retry_of_run_id` for UI labeling and retry badges.
+
 ### Statistics
 
 ```

@@ -187,6 +187,7 @@ export function useGetTasks() {
 - `GET /runs/{id}` - Get run details with logs
 
 **Response Format**: All responses return the resource directly (not wrapped), with metadata in headers if needed.
+**Run Labels**: Run responses include `task_name`, `is_retry`, and `retry_of_run_id` for UI labeling.
 
 ### External API Integration Pattern
 ```python

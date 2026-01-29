@@ -1,5 +1,9 @@
 # Phase 6 Column Mapping Bug Fixes Summary
 
+## 🧾 Session Addendum (Jan 30, 2026)
+- Added run labels (`task_name`) plus retry metadata (`is_retry`, `retry_of_run_id`) for UI badges.
+- Fixed ColumnMappingEditor save crash when mappings lack IDs.
+
 **Date**: January 2026  
 **Status**: ✅ All Fixes Applied - Backend Restart Required
 

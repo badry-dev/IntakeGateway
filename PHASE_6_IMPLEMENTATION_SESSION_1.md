@@ -1,5 +1,9 @@
 # Phase 6 Implementation Session 1: Column Mapping Enhancement
 
+## 🧾 Session Addendum (Jan 30, 2026)
+- Added run labels (`task_name`) plus retry metadata (`is_retry`, `retry_of_run_id`) for UI badges.
+- Fixed ColumnMappingEditor save crash when mappings lack IDs.
+
 **Date**: January 2026  
 **Status**: ✅ BACKEND COMPLETE | ✅ FRONTEND INFRASTRUCTURE COMPLETE | ⏳ FRONTEND COMPONENTS IN PROGRESS  
 **Session Duration**: Comprehensive Implementation  

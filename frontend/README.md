@@ -63,6 +63,7 @@ src/
 - Task list with pagination
 - Task CRUD operations
 - Run monitoring with real-time updates
+- Run list labels with task name + retry badge
 - Responsive design with Tailwind CSS
 - Type-safe API client with React Query
 - Error handling and loading states

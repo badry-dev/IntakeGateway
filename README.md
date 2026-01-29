@@ -26,6 +26,7 @@ A modern web application for importing data from external APIs into Oracle datab
 - ✅ Trigger task executions with real-time monitoring
 - ✅ View detailed logs, statistics, and error reports
 - ✅ Dashboard with live task and run statistics
+- ✅ Run list labels with task name + retry badge
 
 ---
 
