@@ -83,14 +83,14 @@ async def run_import(task_id: int, db: Session = None) -> dict:
         log_step(db, task_run_id, "EXTRACT_RECORDS", f"Extracting records with path: {task.record_path}")
         
         records = list(normalizer.select_records(response_data, task.record_path))
-        task_run.records_fetched = len(records)
+        task_run.rows_fetched = len(records)
         db.commit()
         
         logger.info(f"Extracted {len(records)} records from API response")
         
         if not records:
             task_run.status = TaskStatus.SUCCESS.value
-            task_run.completed_at = datetime.now(timezone.utc)
+            task_run.ended_at = datetime.now(timezone.utc)
             db.commit()
             log_step(db, task_run_id, "COMPLETE", "No records to process")
             return {"task_id": task_id, "run_id": task_run_id, "inserted": 0, "errors": 0}
@@ -115,7 +115,7 @@ async def run_import(task_id: int, db: Session = None) -> dict:
         log_step(db, task_run_id, "VALIDATE", f"Validating {len(mapped_records)} records")
         
         # Build column specs from task configuration (simplified - could be enhanced)
-        column_specs = []  # TODO: Could be populated from task metadata or column_mapping
+        column_specs = {}  # Empty dict = no validation rules (accept all data as-is)
         
         valid_rows, invalid_rows = validator.validate_rows(mapped_records, column_specs)
         
@@ -136,7 +136,7 @@ async def run_import(task_id: int, db: Session = None) -> dict:
                     source_value=str(error.value) if error.value is not None else None
                 )
         
-        task_run.records_failed = len(invalid_rows)
+        task_run.error_count = len(invalid_rows)
         db.commit()
         
         # Step 9: Insert valid rows to Oracle
@@ -150,21 +150,21 @@ async def run_import(task_id: int, db: Session = None) -> dict:
                 batch_size=task.batch_size
             )
             
-            task_run.records_inserted = rows_inserted
+            task_run.rows_inserted = rows_inserted
             logger.info(f"Successfully inserted {rows_inserted} rows to {task.dest_table}")
         else:
-            task_run.records_inserted = 0
+            task_run.rows_inserted = 0
             logger.warning("No valid rows to insert")
         
         # Step 10: Update TaskRun status
-        if task_run.records_failed > 0 and task_run.records_inserted > 0:
+        if task_run.error_count > 0 and task_run.rows_inserted > 0:
             task_run.status = TaskStatus.PARTIAL_SUCCESS.value
-        elif task_run.records_failed > 0:
+        elif task_run.error_count > 0:
             task_run.status = TaskStatus.FAILED.value
         else:
             task_run.status = TaskStatus.SUCCESS.value
         
-        task_run.completed_at = datetime.now(timezone.utc)
+        task_run.ended_at = datetime.now(timezone.utc)
         db.commit()
         
         log_step(db, task_run_id, "COMPLETE", f"Import completed with status {task_run.status}")
@@ -173,9 +173,9 @@ async def run_import(task_id: int, db: Session = None) -> dict:
             "task_id": task_id,
             "run_id": task_run_id,
             "status": task_run.status,
-            "records_fetched": task_run.records_fetched,
-            "records_inserted": task_run.records_inserted,
-            "records_failed": task_run.records_failed,
+            "rows_fetched": task_run.rows_fetched,
+            "rows_inserted": task_run.rows_inserted,
+            "error_count": task_run.error_count,
         }
         
     except Exception as e:
@@ -186,8 +186,7 @@ async def run_import(task_id: int, db: Session = None) -> dict:
             task_run = db.get(TaskRun, task_run_id)
             if task_run:
                 task_run.status = TaskStatus.FAILED.value
-                task_run.error_message = str(e)
-                task_run.completed_at = datetime.now(timezone.utc)
+                task_run.ended_at = datetime.now(timezone.utc)
                 db.commit()
                 
                 log_step(db, task_run_id, "ERROR", f"Fatal error: {str(e)}")

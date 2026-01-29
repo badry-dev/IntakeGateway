@@ -7,4 +7,5 @@ celery_app = Celery("importer",
                     backend=settings.celery_backend,
                     include=["app.workers.tasks"])
 
-celery_app.conf.task_routes = {"app.workers.tasks.run_import_task": {"queue": "imports"}}
+# Use default queue for simplicity (can add custom queues later if needed)
+# celery_app.conf.task_routes = {"app.workers.tasks.run_import_task": {"queue": "imports"}}

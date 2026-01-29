@@ -18,18 +18,18 @@ class TaskCreate(BaseModel):
 
 class TaskOut(TaskCreate):
     id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     class Config:
         from_attributes = True
 
 class TaskLogOut(BaseModel):
     """Task execution log entry"""
     id: int
-    task_id: int
-    run_id: int
+    task_run_id: int
     step_name: str
-    status: str
     message: str
-    details: Optional[dict[str, Any]] = None
+    details: Optional[str] = None
     created_at: datetime
     
     class Config:
@@ -38,11 +38,13 @@ class TaskLogOut(BaseModel):
 class TaskRunLogOut(BaseModel):
     """Row-level error log entry"""
     id: int
-    task_id: int
-    run_id: int
-    row_index: int
-    row_data: dict[str, Any]
-    errors: list[dict[str, Any]]
+    task_run_id: int
+    row_number: int
+    column_name: str
+    error_type: str
+    error_message: str
+    source_value: Optional[str] = None
+    created_at: datetime
     created_at: datetime
     
     class Config:
@@ -53,12 +55,12 @@ class TaskRunOut(BaseModel):
     id: int
     task_id: int
     status: str
-    records_fetched: int
-    records_inserted: int
-    records_failed: int
+    rows_fetched: int
+    rows_inserted: int
+    error_count: int
+    warning_count: int = 0
     started_at: datetime
-    completed_at: Optional[datetime] = None
-    error_message: Optional[str] = None
+    ended_at: Optional[datetime] = None
     execution_logs: list[TaskLogOut] = []
     row_errors: list[TaskRunLogOut] = []
     
@@ -72,9 +74,9 @@ class TaskStatsOut(BaseModel):
     successful_runs: int
     failed_runs: int
     success_rate: float  # Percentage 0-100
-    total_records_fetched: int
-    total_records_inserted: int
-    total_records_failed: int
+    total_rows_fetched: int
+    total_rows_inserted: int
+    total_errors: int
     avg_duration_seconds: float
     last_run_at: Optional[datetime] = None
     last_run_status: Optional[str] = None

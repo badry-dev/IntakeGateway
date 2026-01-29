@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Link } from 'react-router-dom'
 import { Activity, CheckCircle, AlertCircle, Clock } from 'lucide-react'
+import { formatLocalDateTime } from '@/lib/utils'
 
 export function Dashboard() {
   const { data: recentRuns, isLoading: runsLoading } = useRecentRuns(0, 5)
@@ -90,7 +91,7 @@ export function Dashboard() {
                   <div className="flex-1">
                     <p className="font-medium">Task #{run.task_id}</p>
                     <p className="text-sm text-muted-foreground">
-                      {new Date(run.started_at).toLocaleString()}
+                      {formatLocalDateTime(run.started_at)}
                     </p>
                   </div>
                   <div className="text-right">
@@ -103,7 +104,7 @@ export function Dashboard() {
                       {run.status}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {run.records_inserted}/{run.records_fetched}
+                      {run.rows_inserted}/{run.rows_fetched}
                     </p>
                   </div>
                 </div>

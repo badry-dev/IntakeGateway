@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import { formatLocalDateTime, parseUTCDateTime } from '@/lib/utils'
 
 export function RunDetail() {
   const { id } = useParams<{ id: string }>()
@@ -86,7 +87,7 @@ export function RunDetail() {
           <div className="grid grid-cols-4 gap-4">
             <div className="space-y-1 p-3 bg-secondary rounded">
               <p className="text-sm text-muted-foreground">Records Inserted</p>
-              <p className="text-2xl font-bold">{run.records_inserted || 0}</p>
+              <p className="text-2xl font-bold">{run.rows_inserted || 0}</p>
             </div>
             <div className="space-y-1 p-3 bg-secondary rounded">
               <p className="text-sm text-muted-foreground">Records Updated</p>
@@ -94,7 +95,7 @@ export function RunDetail() {
             </div>
             <div className="space-y-1 p-3 bg-secondary rounded">
               <p className="text-sm text-muted-foreground">Records Failed</p>
-              <p className="text-2xl font-bold text-red-600">{run.records_failed || 0}</p>
+              <p className="text-2xl font-bold text-red-600">{run.error_count || 0}</p>
             </div>
             <div className="space-y-1 p-3 bg-secondary rounded">
               <p className="text-sm text-muted-foreground">Duration</p>
@@ -109,21 +110,27 @@ export function RunDetail() {
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">Started</p>
               <p className="text-sm">
-                {new Date(run.started_at).toLocaleString()}
+                {formatLocalDateTime(run.started_at)}
                 <br />
                 <span className="text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(run.started_at), { addSuffix: true })}
+                  {(() => {
+                    const date = parseUTCDateTime(run.started_at)
+                    return date ? formatDistanceToNow(date, { addSuffix: true }) : 'N/A'
+                  })()}
                 </span>
               </p>
             </div>
-            {run.completed_at && (
+            {run.ended_at && (
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Completed</p>
+                <p className="text-sm text-muted-foreground">Ended</p>
                 <p className="text-sm">
-                  {new Date(run.completed_at).toLocaleString()}
+                  {formatLocalDateTime(run.ended_at)}
                   <br />
                   <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(run.completed_at), { addSuffix: true })}
+                    {(() => {
+                      const date = parseUTCDateTime(run.ended_at)
+                      return date ? formatDistanceToNow(date, { addSuffix: true }) : 'N/A'
+                    })()}
                   </span>
                 </p>
               </div>
@@ -139,18 +146,19 @@ export function RunDetail() {
       </Card>
 
       {/* Execution Logs */}
-      {run.logs && run.logs.length > 0 && (
+      {run.execution_logs && run.execution_logs.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Execution Logs</CardTitle>
-            <CardDescription>{run.logs.length} log entries</CardDescription>
+            <CardDescription>{run.execution_logs.length} log entries</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 bg-secondary p-4 rounded font-mono text-xs max-h-96 overflow-y-auto">
-              {run.logs.map((log, idx) => (
-                <div key={idx} className="flex gap-2">
+              {run.execution_logs.map((log, idx) => (
+                <div key={idx} className={`flex gap-2 ${log.step_name === 'ERROR' ? 'text-red-600 font-semibold' : ''}`}>
                   <span className="text-muted-foreground w-8 flex-shrink-0 text-right">{idx + 1}</span>
-                  <span>{log.message}</span>
+                  <span className="w-24 flex-shrink-0 font-medium">[{log.step_name}]</span>
+                  <span className="flex-1">{log.message}</span>
                 </div>
               ))}
             </div>
@@ -197,8 +205,8 @@ export function RunDetail() {
         </Card>
       )}
 
-      {/* No Errors */}
-      {(!run.row_errors || run.row_errors.length === 0) && (
+      {/* No Errors - Only show for successful runs with no row errors */}
+      {run.status === 'SUCCESS' && (!run.row_errors || run.row_errors.length === 0) && (
         <Card>
           <CardContent className="pt-6">
             <p className="text-center text-green-600 font-medium">✓ No errors - Run completed successfully</p>

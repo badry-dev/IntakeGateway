@@ -17,7 +17,7 @@ def get_db():
     finally:
         db.close()
 
-@router.get("/{run_id}", response_model=TaskRunOut)
+@router.get("/{run_id}", response_model=dict)
 def get_run(run_id: int, db: Session = Depends(get_db)):
     """Get detailed information about a specific run"""
     task_run = db.query(TaskRun).filter(TaskRun.id == run_id).first()
@@ -26,50 +26,49 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
     
     # Get execution logs
     execution_logs = db.query(TaskLog).filter(
-        TaskLog.run_id == run_id
+        TaskLog.task_run_id == run_id
     ).order_by(TaskLog.created_at.asc()).all()
     
     # Get row errors
     row_errors = db.query(TaskRunLog).filter(
-        TaskRunLog.run_id == run_id
-    ).order_by(TaskRunLog.row_index.asc()).all()
+        TaskRunLog.task_run_id == run_id
+    ).order_by(TaskRunLog.row_number.asc()).all()
     
-    return TaskRunOut(
-        id=task_run.id,
-        task_id=task_run.task_id,
-        status=task_run.status,
-        records_fetched=task_run.records_fetched,
-        records_inserted=task_run.records_inserted,
-        records_failed=task_run.records_failed,
-        started_at=task_run.started_at,
-        completed_at=task_run.completed_at,
-        error_message=task_run.error_message,
-        execution_logs=[
-            TaskLogOut(
-                id=log.id,
-                task_id=log.task_id,
-                run_id=log.run_id,
-                step_name=log.step_name,
-                status=log.status,
-                message=log.message,
-                details=log.details,
-                created_at=log.created_at
-            )
+    return {
+        "id": task_run.id,
+        "task_id": task_run.task_id,
+        "status": task_run.status,
+        "rows_fetched": task_run.rows_fetched,
+        "rows_inserted": task_run.rows_inserted,
+        "error_count": task_run.error_count,
+        "warning_count": task_run.warning_count,
+        "started_at": task_run.started_at,
+        "ended_at": task_run.ended_at,
+        "execution_logs": [
+            {
+                "id": log.id,
+                "task_run_id": log.task_run_id,
+                "step_name": log.step_name,
+                "message": log.message,
+                "details": log.details,
+                "created_at": log.created_at
+            }
             for log in execution_logs
         ],
-        row_errors=[
-            TaskRunLogOut(
-                id=error.id,
-                task_id=error.task_id,
-                run_id=error.run_id,
-                row_index=error.row_index,
-                row_data=error.row_data,
-                errors=error.errors,
-                created_at=error.created_at
-            )
+        "row_errors": [
+            {
+                "id": error.id,
+                "task_run_id": error.task_run_id,
+                "row_number": error.row_number,
+                "column_name": error.column_name,
+                "error_type": error.error_type,
+                "error_message": error.error_message,
+                "source_value": error.source_value,
+                "created_at": error.created_at
+            }
             for error in row_errors
         ]
-    )
+    }
 
 @router.get("", response_model=list[dict])
 def list_runs(
@@ -85,20 +84,27 @@ def list_runs(
     if status:
         query = query.filter(TaskRun.status == status)
     
-    # Apply pagination
-    runs = query.order_by(TaskRun.started_at.desc()).offset(skip).limit(limit).all()
+    # Apply pagination - order by id if started_at is null
+    runs = query.order_by(TaskRun.id.desc()).offset(skip).limit(limit).all()
     
-    return [
+    # Debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"list_runs: Found {len(runs)} runs from database")
+    
+    result = [
         {
             "id": run.id,
             "task_id": run.task_id,
             "status": run.status,
-            "records_fetched": run.records_fetched,
-            "records_inserted": run.records_inserted,
-            "records_failed": run.records_failed,
+            "rows_fetched": run.rows_fetched,
+            "rows_inserted": run.rows_inserted,
+            "error_count": run.error_count,
             "started_at": run.started_at,
-            "completed_at": run.completed_at,
-            "duration_seconds": (run.completed_at - run.started_at).total_seconds() if run.completed_at else None
+            "ended_at": run.ended_at,
+            "duration_seconds": (run.ended_at - run.started_at).total_seconds() if run.ended_at else None
         }
         for run in runs
     ]
+    logger.info(f"list_runs: Returning {len(result)} runs")
+    return result

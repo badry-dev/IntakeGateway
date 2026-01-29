@@ -10,3 +10,4 @@ build/
 *.pyo
 *.pyd
 .DS_Store
+project progress/

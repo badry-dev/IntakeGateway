@@ -12,6 +12,8 @@ export interface Task {
   dest_table: string
   batch_size: number
   is_active: boolean
+  created_at?: string
+  updated_at?: string
 }
 
 export interface TaskCreate extends Omit<Task, 'id'> {}
@@ -22,12 +24,12 @@ export interface TaskRun {
   id: number
   task_id: number
   status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED'
-  records_fetched: number
-  records_inserted: number
-  records_failed: number
+  rows_fetched: number
+  rows_inserted: number
+  error_count: number
+  warning_count?: number
   started_at: string
-  completed_at?: string
-  error_message?: string
+  ended_at?: string
   execution_logs?: TaskLog[]
   row_errors?: TaskRunLog[]
 }
@@ -60,9 +62,9 @@ export interface TaskStats {
   successful_runs: number
   failed_runs: number
   success_rate: number
-  total_records_fetched: number
-  total_records_inserted: number
-  total_records_failed: number
+  total_rows_fetched: number
+  total_rows_inserted: number
+  total_errors: number
   avg_duration_seconds: number
   last_run_at?: string
   last_run_status?: string

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ArrowLeft, Edit2, Trash2, Copy } from 'lucide-react'
 import { Task, TaskFormData } from '@/types'
+import { formatLocalDateTime } from '@/lib/utils'
 
 export function TaskDetail() {
   const { id } = useParams<{ id: string }>()
@@ -82,7 +83,7 @@ export function TaskDetail() {
     try {
       await updateTaskMutation.mutateAsync({
         id: task.id,
-        updates: formData,
+        data: formData,
       })
       setIsEditOpen(false)
     } catch (err) {
@@ -197,7 +198,17 @@ export function TaskDetail() {
               </div>
               <div className="space-y-1">
                 <Label className="text-sm text-muted-foreground">Created</Label>
-                <p className="text-sm">{new Date(task.created_at).toLocaleDateString()}</p>
+                <p className="text-sm">
+                  {task.created_at ? new Date(task.created_at).toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                  }) : 'N/A'}
+                </p>
               </div>
             </div>
           </div>

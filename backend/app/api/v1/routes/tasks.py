@@ -133,8 +133,7 @@ def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         # If enqueueing fails, update run status to FAILED
         task_run.status = TaskStatus.FAILED.value
-        task_run.error_message = f"Failed to enqueue task: {str(e)}"
-        task_run.completed_at = datetime.now(timezone.utc)
+        task_run.ended_at = datetime.now(timezone.utc)
         db.commit()
         raise HTTPException(status_code=500, detail=f"Failed to enqueue task: {str(e)}")
 

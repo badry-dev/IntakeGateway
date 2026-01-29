@@ -4,6 +4,7 @@ import { useRecentRuns } from '@/hooks/api'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatDistanceToNow } from 'date-fns'
+import { parseUTCDateTime } from '@/lib/utils'
 
 export function RunsList() {
   const [skip, setSkip] = useState(0)
@@ -11,8 +12,9 @@ export function RunsList() {
 
   const { data, isLoading, error } = useRecentRuns(skip, limit)
 
-  const runs = data?.results || []
-  const total = data?.total || 0
+  // Data from API is a direct array, not paginated object
+  const runs = Array.isArray(data) ? data : []
+  const total = runs.length  // Since we get all results from the query
   const hasMore = skip + limit < total
 
   const getStatusColor = (status: string) => {
@@ -85,27 +87,30 @@ export function RunsList() {
                 <CardContent>
                   <div className="grid grid-cols-5 gap-4 text-sm">
                     <div>
-                      <p className="text-muted-foreground">Inserted</p>
-                      <p className="text-lg font-bold">{run.records_inserted || 0}</p>
+                      <p className="text-muted-foreground">Fetched</p>
+                      <p className="text-lg font-bold">{run.rows_fetched || 0}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Updated</p>
-                      <p className="text-lg font-bold">{run.records_updated || 0}</p>
+                      <p className="text-muted-foreground">Inserted</p>
+                      <p className="text-lg font-bold">{run.rows_inserted || 0}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Failed</p>
-                      <p className="text-lg font-bold text-red-600">{run.records_failed || 0}</p>
+                      <p className="text-lg font-bold text-red-600">{run.error_count || 0}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Duration</p>
                       <p className="text-lg font-bold">
-                        {run.execution_time_ms ? `${(run.execution_time_ms / 1000).toFixed(2)}s` : 'N/A'}
+                        {run.duration_seconds ? `${run.duration_seconds.toFixed(2)}s` : 'N/A'}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-muted-foreground">Started</p>
                       <p className="text-sm">
-                        {formatDistanceToNow(new Date(run.started_at), { addSuffix: true })}
+                        {(() => {
+                          const date = parseUTCDateTime(run.started_at)
+                          return date ? formatDistanceToNow(date, { addSuffix: true }) : 'Pending'
+                        })()}
                       </p>
                     </div>
                   </div>
