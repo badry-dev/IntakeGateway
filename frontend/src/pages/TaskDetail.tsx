@@ -5,7 +5,6 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Dialog } from '@/components/ui/dialog'
 import { ArrowLeft, Edit2, Trash2, Copy } from 'lucide-react'
 import { Task, TaskFormData } from '@/types'
 
@@ -21,11 +20,13 @@ export function TaskDetail() {
   const [formData, setFormData] = useState<TaskFormData>({
     name: '',
     description: '',
-    endpoint_url: '',
-    method: 'GET',
-    table_name: '',
-    header_payload: {},
-    body_payload: {},
+    endpoint_path: '',
+    http_method: 'GET',
+    dest_table: '',
+    headers_json: {},
+    body_json: {},
+    batch_size: 500,
+    is_active: true,
   })
 
   // Initialize form when task loads
@@ -34,11 +35,13 @@ export function TaskDetail() {
       setFormData({
         name: task.name,
         description: task.description || '',
-        endpoint_url: task.endpoint_url,
-        method: task.method,
-        table_name: task.table_name,
-        header_payload: task.header_payload || {},
-        body_payload: task.body_payload || {},
+        endpoint_path: task.endpoint_path,
+        http_method: task.http_method,
+        dest_table: task.dest_table,
+        headers_json: task.headers_json || {},
+        body_json: task.body_json || {},
+        batch_size: task.batch_size,
+        is_active: task.is_active,
       })
     }
   }, [task])
@@ -136,20 +139,20 @@ export function TaskDetail() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-sm font-medium text-muted-foreground">Method</Label>
-              <p className="text-lg font-mono bg-secondary p-2 rounded">{task.method}</p>
+              <p className="text-lg font-mono bg-secondary p-2 rounded">{task.http_method}</p>
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium text-muted-foreground">Table</Label>
-              <p className="text-lg font-mono bg-secondary p-2 rounded">{task.table_name}</p>
+              <p className="text-lg font-mono bg-secondary p-2 rounded">{task.dest_table}</p>
             </div>
           </div>
 
           <div className="space-y-2">
             <Label className="text-sm font-medium text-muted-foreground">Endpoint URL</Label>
             <div className="flex items-center gap-2">
-              <p className="text-sm break-all flex-1 bg-secondary p-3 rounded font-mono">{task.endpoint_url}</p>
+              <p className="text-sm break-all flex-1 bg-secondary p-3 rounded font-mono">{task.endpoint_path}</p>
               <button
-                onClick={() => navigator.clipboard.writeText(task.endpoint_url)}
+                onClick={() => navigator.clipboard.writeText(task.endpoint_path)}
                 className="p-2 hover:bg-secondary rounded"
               >
                 <Copy className="h-4 w-4" />
@@ -158,11 +161,11 @@ export function TaskDetail() {
           </div>
 
           {/* Headers */}
-          {Object.keys(task.header_payload || {}).length > 0 && (
+          {Object.keys(task.headers_json || {}).length > 0 && (
             <div className="space-y-2">
               <Label className="text-sm font-medium text-muted-foreground">Headers</Label>
               <div className="bg-secondary p-3 rounded font-mono text-sm space-y-1">
-                {Object.entries(task.header_payload || {}).map(([key, value]) => (
+                {Object.entries(task.headers_json || {}).map(([key, value]) => (
                   <div key={key}>
                     <span className="text-blue-600">{key}</span>
                     <span className="text-muted-foreground">: </span>
@@ -174,11 +177,11 @@ export function TaskDetail() {
           )}
 
           {/* Body */}
-          {Object.keys(task.body_payload || {}).length > 0 && (
+          {Object.keys(task.body_json || {}).length > 0 && (
             <div className="space-y-2">
               <Label className="text-sm font-medium text-muted-foreground">Request Body</Label>
               <div className="bg-secondary p-3 rounded font-mono text-sm">
-                <pre>{JSON.stringify(task.body_payload, null, 2)}</pre>
+                <pre>{JSON.stringify(task.body_json, null, 2)}</pre>
               </div>
             </div>
           )}
@@ -202,9 +205,15 @@ export function TaskDetail() {
       </Card>
 
       {/* Edit Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+      {isEditOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setIsEditOpen(false)}
+        >
+          <Card 
+            className="w-full max-w-2xl max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <CardHeader className="border-b">
               <CardTitle>Edit Task</CardTitle>
             </CardHeader>
@@ -230,37 +239,36 @@ export function TaskDetail() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="endpoint_url">Endpoint URL *</Label>
+                <Label htmlFor="endpoint_path">Endpoint URL *</Label>
                 <Input
-                  id="endpoint_url"
-                  value={formData.endpoint_url}
-                  onChange={(e) => setFormData({ ...formData, endpoint_url: e.target.value })}
+                  id="endpoint_path"
+                  value={formData.endpoint_path}
+                  onChange={(e) => setFormData({ ...formData, endpoint_path: e.target.value })}
                   placeholder="https://api.example.com/users"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="method">HTTP Method *</Label>
+                  <Label htmlFor="http_method">HTTP Method *</Label>
                   <select
-                    id="method"
-                    value={formData.method}
-                    onChange={(e) => setFormData({ ...formData, method: e.target.value })}
+                    id="http_method"
+                    value={formData.http_method}
+                    onChange={(e) => setFormData({ ...formData, http_method: e.target.value as 'GET' | 'POST' | 'PUT' | 'PATCH' })}
                     className="w-full px-3 py-2 border rounded-md bg-background"
                   >
                     <option>GET</option>
                     <option>POST</option>
                     <option>PUT</option>
-                    <option>DELETE</option>
                     <option>PATCH</option>
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="table_name">Table Name *</Label>
+                  <Label htmlFor="dest_table">Table Name *</Label>
                   <Input
-                    id="table_name"
-                    value={formData.table_name}
-                    onChange={(e) => setFormData({ ...formData, table_name: e.target.value })}
+                    id="dest_table"
+                    value={formData.dest_table}
+                    onChange={(e) => setFormData({ ...formData, dest_table: e.target.value })}
                     placeholder="users"
                   />
                 </div>
@@ -285,12 +293,18 @@ export function TaskDetail() {
             </CardContent>
           </Card>
         </div>
-      </Dialog>
+      )}
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
+      {isDeleteOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setIsDeleteOpen(false)}
+        >
+          <Card 
+            className="w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
             <CardHeader>
               <CardTitle>Delete Task</CardTitle>
               <CardDescription>This action cannot be undone</CardDescription>
@@ -319,7 +333,7 @@ export function TaskDetail() {
             </CardContent>
           </Card>
         </div>
-      </Dialog>
+      )}
     </div>
   )
 }

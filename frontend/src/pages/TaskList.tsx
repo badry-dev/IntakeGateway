@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { useTasks, useTriggerRun, useDeleteTask } from '@/hooks/api'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Dialog } from '@/components/ui/dialog'
 import { Play, Edit2, Trash2, Plus } from 'lucide-react'
 
 export function TaskList() {
@@ -14,13 +13,13 @@ export function TaskList() {
   const triggerRunMutation = useTriggerRun()
   const deleteTaskMutation = useDeleteTask()
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
 
-  const tasks = data?.results || []
-  const total = data?.total || 0
-  const hasMore = skip + limit < total
+  const tasks = data || []
+  const total = tasks.length
+  const hasMore = tasks.length === limit
 
-  const handleDelete = async (taskId: string) => {
+  const handleDelete = async (taskId: number) => {
     try {
       await deleteTaskMutation.mutateAsync(taskId)
       setDeleteOpen(false)
@@ -30,7 +29,7 @@ export function TaskList() {
     }
   }
 
-  const handleRun = async (taskId: string) => {
+  const handleRun = async (taskId: number) => {
     try {
       await triggerRunMutation.mutateAsync(taskId)
       alert('Task run triggered successfully!')
@@ -138,15 +137,15 @@ export function TaskList() {
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
                     <p className="text-muted-foreground">Method</p>
-                    <p className="font-mono font-bold">{task.method}</p>
+                    <p className="font-mono font-bold">{task.http_method}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Table</p>
-                    <p className="font-mono font-bold">{task.table_name}</p>
+                    <p className="font-mono font-bold">{task.dest_table}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Endpoint</p>
-                    <p className="font-mono text-xs truncate">{task.endpoint_url}</p>
+                    <p className="font-mono text-xs truncate">{task.endpoint_path}</p>
                   </div>
                 </div>
 
@@ -218,9 +217,15 @@ export function TaskList() {
       )}
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
+      {deleteOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setDeleteOpen(false)}
+        >
+          <Card 
+            className="w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
             <CardHeader>
               <CardTitle>Delete Task</CardTitle>
               <CardDescription>This action cannot be undone</CardDescription>
@@ -252,7 +257,7 @@ export function TaskList() {
             </CardContent>
           </Card>
         </div>
-      </Dialog>
+      )}
     </div>
   )
 }

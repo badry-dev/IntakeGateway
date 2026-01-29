@@ -1,7 +1,24 @@
 
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, String, Text, JSON
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.sql import func
+from sqlalchemy.types import TypeDecorator
+import json
 from app.db.session import Base
+
+class JSONEncodedDict(TypeDecorator):
+    """Represents an immutable structure as a JSON-encoded string for Oracle compatibility."""
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            return json.dumps(value)
+        return None
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return json.loads(value)
+        return None
 
 class Task(Base):
     __tablename__ = "task"
@@ -11,9 +28,9 @@ class Task(Base):
     connection_id = Column(BigInteger, nullable=True)
     http_method = Column(String(10), nullable=False, default="GET")
     endpoint_path = Column(String(1000), nullable=False)
-    query_params_json = Column(JSON, nullable=True)
-    headers_json = Column(JSON, nullable=True)
-    body_json = Column(JSON, nullable=True)
+    query_params_json = Column(JSONEncodedDict, nullable=True)
+    headers_json = Column(JSONEncodedDict, nullable=True)
+    body_json = Column(JSONEncodedDict, nullable=True)
     record_path = Column(String(400), nullable=True)
     dest_table = Column(String(200), nullable=False)
     batch_size = Column(Integer, nullable=False, default=500)

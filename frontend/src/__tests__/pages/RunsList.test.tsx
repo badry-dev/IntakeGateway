@@ -8,7 +8,7 @@ vi.mock('@/hooks/api', () => ({
   useRuns: vi.fn(),
 }))
 
-import { useRuns } from '@/hooks/api'
+import { useRun } from '@/hooks/api'
 
 const createWrapper = () => {
   const queryClient = new QueryClient()
@@ -27,7 +27,7 @@ describe('RunsList', () => {
   })
 
   it('should render runs page heading', () => {
-    vi.mocked(useRuns).mockReturnValue({
+    vi.mocked(useRun).mockReturnValue({
       data: { results: [], total: 0 },
       isLoading: false,
       error: null,
@@ -39,7 +39,7 @@ describe('RunsList', () => {
   })
 
   it('should display loading state', () => {
-    vi.mocked(useRuns).mockReturnValue({
+    vi.mocked(useRun).mockReturnValue({
       data: undefined,
       isLoading: true,
       error: null,
@@ -51,7 +51,7 @@ describe('RunsList', () => {
   })
 
   it('should display empty state when no runs', async () => {
-    vi.mocked(useRuns).mockReturnValue({
+    vi.mocked(useRun).mockReturnValue({
       data: { results: [], total: 0 },
       isLoading: false,
       error: null,
@@ -65,7 +65,7 @@ describe('RunsList', () => {
   })
 
   it('should display run cards when data loads', async () => {
-    vi.mocked(useRuns).mockReturnValue({
+    vi.mocked(useRun).mockReturnValue({
       data: {
         results: [
           {
@@ -94,7 +94,7 @@ describe('RunsList', () => {
   })
 
   it('should show run status badges', async () => {
-    vi.mocked(useRuns).mockReturnValue({
+    vi.mocked(useRun).mockReturnValue({
       data: {
         results: [
           {
@@ -122,7 +122,7 @@ describe('RunsList', () => {
   })
 
   it('should display record counts', async () => {
-    vi.mocked(useRuns).mockReturnValue({
+    vi.mocked(useRun).mockReturnValue({
       data: {
         results: [
           {
@@ -151,7 +151,7 @@ describe('RunsList', () => {
   })
 
   it('should link to run details', async () => {
-    vi.mocked(useRuns).mockReturnValue({
+    vi.mocked(useRun).mockReturnValue({
       data: {
         results: [
           {
@@ -180,7 +180,7 @@ describe('RunsList', () => {
   })
 
   it('should handle API errors', () => {
-    vi.mocked(useRuns).mockReturnValue({
+    vi.mocked(useRun).mockReturnValue({
       data: undefined,
       isLoading: false,
       error: new Error('Failed to load runs'),

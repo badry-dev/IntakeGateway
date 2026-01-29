@@ -87,11 +87,11 @@ export interface TaskFormData {
   description?: string
   http_method: 'GET' | 'POST' | 'PUT' | 'PATCH'
   endpoint_path: string
-  query_params_json?: string
-  headers_json?: string
-  body_json?: string
+  query_params_json?: Record<string, any>
+  headers_json?: Record<string, any>
+  body_json?: Record<string, any>
   record_path?: string
   dest_table: string
-  batch_size: number
-  is_active: boolean
+  batch_size?: number
+  is_active?: boolean
 }

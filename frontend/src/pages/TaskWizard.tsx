@@ -25,11 +25,13 @@ export function TaskWizard() {
   const [formData, setFormData] = useState<TaskFormData>({
     name: '',
     description: '',
-    endpoint_url: '',
-    method: 'GET',
-    table_name: '',
-    header_payload: {},
-    body_payload: {},
+    endpoint_path: '',
+    http_method: 'GET',
+    dest_table: '',
+    headers_json: {},
+    body_json: {},
+    batch_size: 500,
+    is_active: true,
   })
 
   const [headers, setHeaders] = useState<{ key: string; value: string }[]>([
@@ -57,12 +59,12 @@ export function TaskWizard() {
             headerObj[h.key] = h.value
           }
         })
-        setFormData(prev => ({ ...prev, header_payload: headerObj }))
+        setFormData(prev => ({ ...prev, headers_json: headerObj }))
 
         // Try to parse body JSON
         try {
           const bodyObj = bodyJson.trim() ? JSON.parse(bodyJson) : {}
-          setFormData(prev => ({ ...prev, body_payload: bodyObj }))
+          setFormData(prev => ({ ...prev, body_json: bodyObj }))
         } catch (e) {
           alert('Invalid JSON in request body')
           return
@@ -99,8 +101,8 @@ export function TaskWizard() {
 
       const finalData: TaskFormData = {
         ...formData,
-        header_payload: headerObj,
-        body_payload: bodyObj,
+        headers_json: headerObj,
+        body_json: bodyObj,
       }
 
       // Basic validation
@@ -108,11 +110,11 @@ export function TaskWizard() {
         alert('Task name is required')
         return
       }
-      if (!finalData.endpoint_url.trim()) {
+      if (!finalData.endpoint_path.trim()) {
         alert('Endpoint URL is required')
         return
       }
-      if (!finalData.table_name.trim()) {
+      if (!finalData.dest_table.trim()) {
         alert('Table name is required')
         return
       }
@@ -127,9 +129,9 @@ export function TaskWizard() {
   const canProceed = () => {
     switch (currentStep) {
       case 'basic':
-        return formData.name.trim() && formData.table_name.trim()
+        return formData.name.trim() && formData.dest_table.trim()
       case 'endpoint':
-        return formData.endpoint_url.trim()
+        return formData.endpoint_path.trim()
       case 'headers':
         return true
       case 'mapping':
@@ -239,9 +241,9 @@ export function TaskWizard() {
                 <Input
                   id="table"
                   placeholder="e.g., users, products"
-                  value={formData.table_name}
+                  value={formData.dest_table}
                   onChange={(e) =>
-                    setFormData({ ...formData, table_name: e.target.value })
+                    setFormData({ ...formData, dest_table: e.target.value })
                   }
                 />
               </div>
@@ -256,9 +258,9 @@ export function TaskWizard() {
                 <Input
                   id="endpoint"
                   placeholder="https://api.example.com/users"
-                  value={formData.endpoint_url}
+                  value={formData.endpoint_path}
                   onChange={(e) =>
-                    setFormData({ ...formData, endpoint_url: e.target.value })
+                    setFormData({ ...formData, endpoint_path: e.target.value })
                   }
                 />
               </div>
@@ -267,16 +269,15 @@ export function TaskWizard() {
                 <Label htmlFor="method">HTTP Method *</Label>
                 <select
                   id="method"
-                  value={formData.method}
+                  value={formData.http_method}
                   onChange={(e) =>
-                    setFormData({ ...formData, method: e.target.value })
+                    setFormData({ ...formData, http_method: e.target.value as 'GET' | 'POST' | 'PUT' | 'PATCH' })
                   }
                   className="w-full px-3 py-2 border rounded-md bg-background"
                 >
                   <option>GET</option>
                   <option>POST</option>
                   <option>PUT</option>
-                  <option>DELETE</option>
                   <option>PATCH</option>
                 </select>
               </div>
@@ -367,10 +368,10 @@ export function TaskWizard() {
               </div>
               <div className="p-4 border-2 border-dashed rounded text-center">
                 <p className="text-muted-foreground">
-                  <strong>Endpoint:</strong> {formData.endpoint_url || 'Not set'}
+                  <strong>Endpoint:</strong> {formData.endpoint_path || 'Not set'}
                 </p>
                 <p className="text-muted-foreground">
-                  <strong>Table:</strong> {formData.table_name || 'Not set'}
+                  <strong>Table:</strong> {formData.dest_table || 'Not set'}
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">
                   Column mapping will be configured based on the first API response received
@@ -390,16 +391,16 @@ export function TaskWizard() {
                   <p className="text-sm"><strong>Description:</strong> {formData.description || '(None)'}</p>
                 </div>
                 <div className="p-3 bg-secondary rounded">
-                  <p className="text-sm"><strong>Endpoint:</strong> {formData.method} {formData.endpoint_url}</p>
+                  <p className="text-sm"><strong>Endpoint:</strong> {formData.http_method} {formData.endpoint_path}</p>
                 </div>
                 <div className="p-3 bg-secondary rounded">
-                  <p className="text-sm"><strong>Table:</strong> {formData.table_name}</p>
+                  <p className="text-sm"><strong>Table:</strong> {formData.dest_table}</p>
                 </div>
-                {Object.keys(formData.header_payload || {}).length > 0 && (
+                {Object.keys(formData.headers_json || {}).length > 0 && (
                   <div className="p-3 bg-secondary rounded">
                     <p className="text-sm font-medium mb-2"><strong>Headers:</strong></p>
                     <div className="text-xs space-y-1">
-                      {Object.entries(formData.header_payload).map(([k, v]) => (
+                      {Object.entries(formData.headers_json).map(([k, v]) => (
                         <p key={k}><span className="font-mono">{k}:</span> {String(v)}</p>
                       ))}
                     </div>
