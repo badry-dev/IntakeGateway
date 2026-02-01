@@ -1,7 +1,7 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.routes import tasks, runs, column_mappings
+from app.api.v1.routes import tasks, runs, column_mappings, schedules
 from app.core.config import settings
 
 app = FastAPI(title="API→DB Importer", version="0.1.0")
@@ -25,6 +25,7 @@ app.add_middleware(
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 app.include_router(runs.router, prefix="/api/v1/runs", tags=["runs"])
 app.include_router(column_mappings.router, prefix="/api/v1/tasks", tags=["column_mappings"])
+app.include_router(schedules.router, tags=["schedules"])
 # Also include oracle metadata routes without /tasks prefix
 from app.api.v1.routes.column_mappings import router as oracle_router
 app.include_router(oracle_router, prefix="/api/v1", tags=["oracle"])

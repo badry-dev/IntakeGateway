@@ -35,5 +35,13 @@ class Task(Base):
     dest_table = Column(String(200), nullable=False)
     batch_size = Column(Integer, nullable=False, default=500)
     is_active = Column(Boolean, nullable=False, default=True)
+    
+    # Authentication fields (Phase 7)
+    auth_type = Column(String(20), nullable=True, default='none')  # 'none', 'bearer', 'api_key', 'basic', 'oauth'
+    api_key = Column(String(500), nullable=True)  # Encrypted
+    username = Column(String(200), nullable=True)  # For Basic auth
+    password = Column(String(500), nullable=True)  # Encrypted
+    oauth_config = Column(JSONEncodedDict, nullable=True)  # OAuth settings (client_id, token_url, etc.)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

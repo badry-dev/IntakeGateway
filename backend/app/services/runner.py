@@ -76,7 +76,12 @@ async def run_import(task_id: int, db: Session = None) -> dict:
             url=task.endpoint_path,
             headers=task.headers_json,
             params=task.query_params_json,
-            json_body=task.body_json
+            json_body=task.body_json,
+            auth_type=task.auth_type,
+            api_key=task.api_key,
+            username=task.username,
+            password=task.password,
+            oauth_config=task.oauth_config
         )
         
         # Step 4: Extract records using JSONPath

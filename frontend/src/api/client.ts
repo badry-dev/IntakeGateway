@@ -11,6 +11,11 @@ import {
   MappingPreview,
   OracleColumnsResponse,
   TransformSuggestionsResponse,
+  TaskSchedule,
+  TaskScheduleWithTaskName,
+  ScheduleCreate,
+  ScheduleUpdate,
+  ScheduleListResponse,
 } from '@/types'
 
 const API_BASE_URL = '/api/v1'
@@ -187,6 +192,43 @@ class ApiClient {
   // Health check
   async getHealth(): Promise<{ status: string; env: string }> {
     const response = await this.client.get('/health')
+    return response.data
+  }
+
+  // Schedule endpoints
+  async createSchedule(taskId: number, data: ScheduleCreate): Promise<TaskSchedule> {
+    const response = await this.client.post(`/tasks/${taskId}/schedule`, data)
+    return response.data
+  }
+
+  async getSchedule(taskId: number): Promise<TaskSchedule> {
+    const response = await this.client.get(`/tasks/${taskId}/schedule`)
+    return response.data
+  }
+
+  async updateSchedule(scheduleId: number, data: ScheduleUpdate): Promise<TaskSchedule> {
+    const response = await this.client.put(`/schedules/${scheduleId}`, data)
+    return response.data
+  }
+
+  async deleteSchedule(scheduleId: number): Promise<void> {
+    await this.client.delete(`/schedules/${scheduleId}`)
+  }
+
+  async listSchedules(skip: number = 0, limit: number = 10, isActive?: boolean): Promise<ScheduleListResponse> {
+    const params = new URLSearchParams({
+      skip: skip.toString(),
+      limit: limit.toString(),
+    })
+    if (isActive !== undefined) {
+      params.append('is_active', isActive.toString())
+    }
+    const response = await this.client.get(`/schedules/?${params}`)
+    return response.data
+  }
+
+  async resumeSchedule(scheduleId: number): Promise<{ message: string }> {
+    const response = await this.client.post(`/schedules/${scheduleId}/resume`)
     return response.data
   }
 }

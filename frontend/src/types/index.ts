@@ -1,5 +1,14 @@
+// Authentication types
+export type AuthType = 'none' | 'bearer' | 'api_key' | 'basic' | 'oauth'
+
+export interface TaskAuth {
+  auth_type: AuthType
+  username?: string
+  // api_key and password excluded from responses for security
+}
+
 // Task types
-export interface Task {
+export interface Task extends TaskAuth {
   id: number
   name: string
   description?: string
@@ -16,7 +25,15 @@ export interface Task {
   updated_at?: string
 }
 
-export interface TaskCreate extends Omit<Task, 'id'> {}
+export interface TaskCreateAuth {
+  auth_type?: AuthType
+  api_key?: string
+  username?: string
+  password?: string
+  oauth_config?: Record<string, any>
+}
+
+export interface TaskCreate extends Omit<Task, 'id'>, TaskCreateAuth {}
 export interface TaskUpdate extends Partial<Omit<Task, 'id'>> {}
 
 // Column Mapping types
@@ -175,4 +192,39 @@ export interface TaskFormData {
   dest_table: string
   batch_size?: number
   is_active?: boolean
+  // Auth fields
+  auth_type?: AuthType
+  api_key?: string
+  username?: string
+  password?: string
+  oauth_config?: Record<string, any>
+}
+
+// Schedule types
+export interface TaskSchedule {
+  id: number
+  task_id: number
+  cron_expression: string
+  is_active: boolean
+  last_run_date?: string
+  next_run_date?: string
+  created_at: string
+}
+
+export interface TaskScheduleWithTaskName extends TaskSchedule {
+  task_name: string
+}
+
+export interface ScheduleCreate {
+  cron_expression: string
+  is_active?: boolean
+}
+
+export interface ScheduleUpdate extends Partial<ScheduleCreate> {}
+
+export interface ScheduleListResponse {
+  total_count: number
+  skip: number
+  limit: number
+  schedules: TaskScheduleWithTaskName[]
 }

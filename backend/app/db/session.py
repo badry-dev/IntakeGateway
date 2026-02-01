@@ -27,3 +27,11 @@ engine = create_engine(
     future=True
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
+
+def get_db():
+    """Dependency to get database session for FastAPI routes"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

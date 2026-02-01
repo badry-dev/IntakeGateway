@@ -6,15 +6,17 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ArrowLeft, ChevronRight, ChevronLeft, AlertCircle } from 'lucide-react'
-import { TaskFormData, ColumnMappingCreate } from '@/types'
+import { TaskFormData, ColumnMappingCreate, AuthType } from '@/types'
 import { ColumnMappingEditor } from '@/components/ColumnMappingEditor'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-type Step = 'basic' | 'endpoint' | 'headers' | 'mapping' | 'review'
+type Step = 'basic' | 'endpoint' | 'headers' | 'auth' | 'mapping' | 'review'
 
 const STEPS: { id: Step; label: string; description: string }[] = [
   { id: 'basic', label: 'Basic Info', description: 'Task name and description' },
   { id: 'endpoint', label: 'Endpoint', description: 'API endpoint configuration' },
   { id: 'headers', label: 'Headers & Body', description: 'Request headers and payload' },
+  { id: 'auth', label: 'Authentication', description: 'API authentication method' },
   { id: 'mapping', label: 'Mapping', description: 'Column mapping configuration' },
   { id: 'review', label: 'Review', description: 'Review and create' },
 ]
@@ -35,11 +37,22 @@ export function TaskWizard() {
     body_json: {},
     batch_size: 500,
     is_active: true,
+    auth_type: 'none',
   })
 
   const [headers, setHeaders] = useState<{ key: string; value: string }[]>([
     { key: '', value: '' },
   ])
+
+  const [authData, setAuthData] = useState({
+    authType: 'none' as AuthType,
+    bearerToken: '',
+    apiKeyHeaderName: 'X-API-Key',
+    apiKeyValue: '',
+    username: '',
+    password: '',
+    oauthConfig: '{}',
+  })
 
   const [bodyJson, setBodyJson] = useState('{}')
   const [mappings, setMappings] = useState<ColumnMappingCreate[]>([])
@@ -77,6 +90,26 @@ export function TaskWizard() {
           alert('Invalid JSON in request body')
           return
         }
+      }
+
+      if (currentStep === 'auth') {
+        // Save auth data to form
+        setFormData(prev => ({ 
+          ...prev, 
+          auth_type: authData.authType,
+          api_key: authData.authType === 'bearer' ? authData.bearerToken : 
+                   authData.authType === 'api_key' ? authData.apiKeyValue : '',
+          username: authData.authType === 'basic' ? authData.username : '',
+          password: authData.authType === 'basic' ? authData.password : '',
+          oauth_config: authData.authType === 'oauth' ? 
+            (() => {
+              try {
+                return JSON.parse(authData.oauthConfig)
+              } catch {
+                return null
+              }
+            })() : null,
+        }))
       }
       
       goToStep(nextStep)
@@ -170,6 +203,18 @@ export function TaskWizard() {
         return formData.endpoint_path.trim()
       case 'headers':
         return true
+      case 'auth':
+        // Validate auth fields based on type
+        if (authData.authType === 'bearer') {
+          return authData.bearerToken.trim() !== ''
+        }
+        if (authData.authType === 'api_key') {
+          return authData.apiKeyHeaderName.trim() !== '' && authData.apiKeyValue.trim() !== ''
+        }
+        if (authData.authType === 'basic') {
+          return authData.username.trim() !== '' && authData.password.trim() !== ''
+        }
+        return true // 'none' and 'oauth' don't require validation
       case 'mapping':
         // Allow proceed if they have at least 1 mapping OR clicked skip
         return mappings.length > 0 || skipMappings
@@ -394,6 +439,125 @@ export function TaskWizard() {
             </div>
           )}
 
+          {/* Authentication Step */}
+          {currentStep === 'auth' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="authType">Authentication Type</Label>
+                <Select value={authData.authType} onValueChange={(value) => {
+                  setAuthData({
+                    authType: value as AuthType,
+                    bearerToken: '',
+                    apiKeyHeaderName: 'X-API-Key',
+                    apiKeyValue: '',
+                    username: '',
+                    password: '',
+                    oauthConfig: '{}',
+                  })
+                }}>
+                  <SelectTrigger id="authType">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Authentication</SelectItem>
+                    <SelectItem value="bearer">Bearer Token</SelectItem>
+                    <SelectItem value="api_key">API Key</SelectItem>
+                    <SelectItem value="basic">Basic Auth</SelectItem>
+                    <SelectItem value="oauth">OAuth 2.0</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Bearer Token */}
+              {authData.authType === 'bearer' && (
+                <div className="space-y-2">
+                  <Label htmlFor="bearerToken">Bearer Token</Label>
+                  <Input
+                    id="bearerToken"
+                    type="password"
+                    placeholder="Enter your bearer token"
+                    value={authData.bearerToken}
+                    onChange={(e) => setAuthData({ ...authData, bearerToken: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">Will be sent as: Authorization: Bearer {authData.bearerToken || '[token]'}</p>
+                </div>
+              )}
+
+              {/* API Key */}
+              {authData.authType === 'api_key' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="apiKeyHeaderName">Header Name</Label>
+                    <Input
+                      id="apiKeyHeaderName"
+                      placeholder="e.g., X-API-Key, api_key"
+                      value={authData.apiKeyHeaderName}
+                      onChange={(e) => setAuthData({ ...authData, apiKeyHeaderName: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="apiKeyValue">API Key Value</Label>
+                    <Input
+                      id="apiKeyValue"
+                      type="password"
+                      placeholder="Enter your API key"
+                      value={authData.apiKeyValue}
+                      onChange={(e) => setAuthData({ ...authData, apiKeyValue: e.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground">Will be sent as: {authData.apiKeyHeaderName}: {authData.apiKeyValue || '[key]'}</p>
+                  </div>
+                </>
+              )}
+
+              {/* Basic Auth */}
+              {authData.authType === 'basic' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="username">Username</Label>
+                    <Input
+                      id="username"
+                      placeholder="Enter username"
+                      value={authData.username}
+                      onChange={(e) => setAuthData({ ...authData, username: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="Enter password"
+                      value={authData.password}
+                      onChange={(e) => setAuthData({ ...authData, password: e.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground">Will be sent as: Authorization: Basic [base64(username:password)]</p>
+                  </div>
+                </>
+              )}
+
+              {/* OAuth */}
+              {authData.authType === 'oauth' && (
+                <div className="space-y-2">
+                  <Label htmlFor="oauthConfig">OAuth Configuration (JSON)</Label>
+                  <textarea
+                    id="oauthConfig"
+                    value={authData.oauthConfig}
+                    onChange={(e) => setAuthData({ ...authData, oauthConfig: e.target.value })}
+                    placeholder='{"token_url": "https://...", "client_id": "...", "client_secret": "..."}'
+                    className="w-full h-32 px-3 py-2 border rounded-md font-mono text-sm bg-background"
+                  />
+                  <p className="text-xs text-muted-foreground">Enter OAuth configuration as JSON</p>
+                </div>
+              )}
+
+              {authData.authType === 'none' && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded">
+                  <p className="text-sm text-blue-800">No authentication will be used for API requests</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Mapping Step */}
           {currentStep === 'mapping' && (
             <div className="space-y-4">
@@ -457,6 +621,17 @@ export function TaskWizard() {
                         <p key={k}><span className="font-mono">{k}:</span> {String(v)}</p>
                       ))}
                     </div>
+                  </div>
+                )}
+                {formData.auth_type && formData.auth_type !== 'none' && (
+                  <div className="p-3 bg-secondary rounded">
+                    <p className="text-sm font-medium mb-2"><strong>Authentication:</strong></p>
+                    <p className="text-xs">
+                      Type: <span className="font-mono capitalize">{formData.auth_type}</span>
+                    </p>
+                    {formData.auth_type === 'basic' && formData.username && (
+                      <p className="text-xs mt-1">Username: <span className="font-mono">{formData.username}</span></p>
+                    )}
                   </div>
                 )}
                 {mappings.length > 0 && (

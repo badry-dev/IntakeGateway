@@ -1,7 +1,7 @@
 # API2DB-Importer: Project Context & Development Guidelines
 
-**Last Updated**: January 2026  
-**Project Status**: Phase 5 Complete (Frontend) | Phase 4 Complete (Backend) | Phase 6 In Progress (Column Mapping)  
+**Last Updated**: January 30, 2026  
+**Project Status**: Phase 5 Complete | Phase 4 Complete | Phase 6 Complete | Phase 7 In Progress (Auth & Scheduler UI)  
 **AI Assistant Guide**: Use this document to understand the project architecture, conventions, and development practices.
 
 ---
@@ -957,6 +957,206 @@ If Pydantic import/compatibility errors arise, fallback to alternative validatio
 
 ---
 
+## 🎯 Phase 7: API Authentication & Task Scheduler UI (In Progress)
+
+### Overview
+
+Phase 7 adds two critical production features:
+1. **Flexible API Authentication**: Support for Bearer tokens, API keys, Basic Auth, and OAuth for external API data fetching
+2. **Task Scheduler UI**: Complete frontend interface for creating and managing cron-based task schedules with enhanced retry logic
+
+### Phase 7 Architecture
+
+#### Authentication System
+
+**Database Schema Changes**:
+```sql
+ALTER TABLE task ADD auth_type VARCHAR2(20) NULL;  -- 'none', 'bearer', 'api_key', 'basic', 'oauth'
+ALTER TABLE task ADD api_key VARCHAR2(500) NULL;   -- Encrypted
+ALTER TABLE task ADD username VARCHAR2(200) NULL;  -- For Basic auth
+ALTER TABLE task ADD password VARCHAR2(200) NULL;  -- Encrypted
+ALTER TABLE task ADD oauth_config CLOB NULL;       -- JSON for OAuth
+```
+
+**New Backend Components**:
+- `backend/app/core/encryption.py` - Fernet encryption service for credentials
+- `backend/app/services/api_connector.py` - Enhanced with `apply_authentication()` function
+- Authentication types supported:
+  - **None**: No authentication (default)
+  - **Bearer**: Adds `Authorization: Bearer {token}` header
+  - **API Key**: Adds custom header (e.g., `X-API-Key: {key}`)
+  - **Basic Auth**: Adds `Authorization: Basic {base64(username:password)}`
+  - **OAuth**: Token refresh flow (Phase 7.5)
+
+**Frontend Components**:
+- TaskWizard: New "Authentication" step with auth type dropdown
+- Conditional input fields based on auth type selection
+- Password masking for sensitive credentials
+
+#### Scheduler UI System
+
+**New Backend API Routes** (`backend/app/api/v1/routes/schedules.py`):
+- `POST /api/v1/tasks/{task_id}/schedule` - Create schedule
+- `GET /api/v1/tasks/{task_id}/schedule` - Get task schedule
+- `PUT /api/v1/schedules/{schedule_id}` - Update schedule
+- `DELETE /api/v1/schedules/{schedule_id}` - Delete schedule
+- `GET /api/v1/schedules/` - List all schedules
+- `POST /api/v1/schedules/{schedule_id}/resume` - Resume paused schedule
+
+**Frontend Components**:
+- `ScheduleEditor.tsx` - Cron expression editor with presets and validation
+- `Schedules.tsx` - List page showing all schedules across tasks
+- TaskDetail integration - Schedule tab for per-task configuration
+- TaskList indicators - Clock icon badges for scheduled tasks
+
+**Cron Presets**:
+- Hourly: `0 * * * *`
+- Daily at 2 AM: `0 2 * * *`
+- Weekly (Sunday 2 AM): `0 2 * * 0`
+- Monthly (1st at 2 AM): `0 2 1 * *`
+
+#### Enhanced Retry Logic
+
+**Discriminated Retry** (Celery task):
+```python
+@celery_app.task(
+    autoretry_for=(
+        httpx.NetworkError,
+        httpx.TimeoutException,
+        httpx.ConnectError,
+    ),  # Only retry network issues, not validation errors
+)
+```
+
+**Retry on Status Code**:
+- ✅ Retry: 5xx server errors (503, 500, 502)
+- ❌ No Retry: 4xx client errors (400, 401, 404) - these indicate config issues
+- ❌ No Retry: Validation errors - data quality issues, not transient
+
+**Schedule-Level Retry Configuration** (TaskSchedule model):
+```python
+max_retries = Column(Integer, default=3)
+consecutive_failures = Column(Integer, default=0)
+status = Column(String(30), default='active')  # 'active', 'paused_by_failures', 'disabled'
+```
+
+**Auto-Pause Logic**:
+- Track consecutive failures per schedule
+- After N failures (configurable), set status to `paused_by_failures`
+- Requires manual resume via `/schedules/{id}/resume` endpoint
+- Prevents endless retries of broken configurations
+
+### Key Features
+
+#### 1. Credential Security
+- **Encryption at Rest**: All API keys and passwords encrypted using Fernet symmetric encryption
+- **Key Management**: Encryption key stored in environment variable `ENCRYPTION_KEY`
+- **API Response Filtering**: TaskOut schema excludes sensitive fields (`api_key`, `password`)
+- **Key Rotation**: Encryption service supports key rotation for compliance
+
+#### 2. Authentication Flow
+```
+User creates task with auth → Credentials encrypted → Stored in Task table
+                                                           ↓
+                                    Task execution triggered
+                                                           ↓
+                            api_connector.py retrieves Task
+                                                           ↓
+                            apply_authentication() decrypts & formats
+                                                           ↓
+                            httpx.request() includes auth headers
+                                                           ↓
+                            External API authenticates request
+```
+
+#### 3. Schedule Management Flow
+```
+User creates schedule in UI → POST /tasks/{id}/schedule → Validate cron expression
+                                                               ↓
+                                              Store in task_schedule table
+                                                               ↓
+                                        Call get_scheduler().add_schedule()
+                                                               ↓
+                                        APScheduler adds cron job
+                                                               ↓
+                            Job triggers → Enqueue Celery task → Track success/failure
+                                                               ↓
+                                        Update consecutive_failures counter
+                                                               ↓
+                            If threshold exceeded → Pause schedule + alert
+```
+
+### Implementation Status
+
+**Track A: Authentication** (0% complete):
+- [ ] Database migration (auth fields)
+- [ ] Encryption service
+- [ ] API connector auth logic
+- [ ] Pydantic schema updates
+- [ ] Frontend auth UI
+- [ ] Unit tests (8+ cases)
+
+**Track B: Scheduler UI** (0% complete):
+- [ ] Schedule API routes (5 endpoints)
+- [ ] Pydantic schemas with cron validation
+- [ ] Frontend types & API client
+- [ ] React Query hooks
+- [ ] ScheduleEditor component
+- [ ] TaskDetail integration
+- [ ] Schedules list page
+- [ ] TaskList indicators
+- [ ] Tests (10+ cases)
+
+**Track C: Enhanced Retry** (0% complete):
+- [ ] Discriminate retryable errors
+- [ ] Schedule retry configuration
+- [ ] Failure tracking & auto-pause
+- [ ] Resume paused schedules
+
+### Testing Strategy
+
+**Backend Tests** (25+ cases planned):
+- `test_authentication.py`: Bearer token formatting, API key injection, Basic auth encoding, encryption round-trip
+- `test_schedule_routes.py`: CRUD operations, cron validation, scheduler reload
+- `test_enhanced_retry.py`: Network error retry, 5xx retry, 4xx no-retry, consecutive failure tracking
+
+**Frontend Tests** (15+ cases planned):
+- `ScheduleEditor.test.tsx`: Cron validation, preset selection, next run calculation
+- `Schedules.test.tsx`: List rendering, filter, edit/delete actions
+- `AuthenticationStep.test.tsx`: Auth type dropdown, conditional fields, password masking
+
+### Security Considerations
+
+1. **Encryption Key Storage**: Use environment variable, not code (12factor.net principle)
+2. **HTTPS Requirement**: Document that production must use HTTPS to prevent MITM attacks
+3. **OAuth Refresh Tokens**: Store encrypted, implement rotation (Phase 7.5)
+4. **Audit Trail**: Log schedule creates/updates/deletes (add user context when auth implemented)
+5. **Rate Limiting**: Consider adding to prevent credential stuffing attacks (Phase 8)
+
+### Known Limitations & Future Enhancements
+
+**Phase 7** (Current scope):
+- ✅ Bearer, API Key, Basic Auth support
+- ✅ OAuth framework (token refresh in Phase 7.5)
+- ✅ Cron-based scheduling with validation
+- ✅ Auto-pause on consecutive failures
+- ✅ Manual resume paused schedules
+
+**Phase 7.5** (Future):
+- ⏳ OAuth provider integration (Google, GitHub, Azure AD)
+- ⏳ Schedule conflict detection (prevent overlapping runs)
+- ⏳ Visual cron builder (drag-and-drop time picker)
+- ⏳ Email/Slack notifications for schedule failures
+- ⏳ "Test Connection" button in TaskWizard
+
+**Phase 8** (Not planned):
+- Certificate-based authentication (mTLS)
+- Multi-factor authentication for UI
+- Schedule templates (export/import)
+- Advanced retry strategies (jitter, circuit breaker)
+
+---
+
 ## 🎯 Current Project Status
 
 ### Phase 4: Backend ✅ COMPLETE
@@ -1001,3 +1201,8 @@ If Pydantic import/compatibility errors arise, fallback to alternative validatio
 ---
 
 **This document is the single source of truth for project context and development practices. Keep it updated as the project evolves.**
+
+---
+
+**Phase 7 Started**: January 30, 2026  
+**See**: [PHASE_7_PLAN.md](PHASE_7_PLAN.md) for detailed implementation guide

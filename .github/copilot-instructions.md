@@ -1,6 +1,6 @@
 # API2DB-Importer: AI Coding Agent Instructions
 
-**Last Updated**: January 2026 | **Status**: Production Ready
+**Last Updated**: January 30, 2026 | **Status**: Production Ready | Phase 7 In Progress
 
 Quick reference for AI agents developing or extending this full-stack application.
 
@@ -297,6 +297,53 @@ For detailed context, see:
 - [ ] Migration effort: ~30-45 minutes for 6 schemas
 - [ ] See fallback recommendations in claude.md Phase 6 section
 
+### Phase 7: API Authentication & Task Scheduler UI (In Progress)
+
+**Objectives**:
+1. Add flexible API authentication (Bearer, API Key, Basic Auth, OAuth) for external data fetching
+2. Build complete frontend UI for cron-based task scheduling with retry logic
+
+**Key Implementation Areas**:
+
+#### Authentication System
+- [ ] Database: Add auth fields to Task table (`auth_type`, `api_key`, `username`, `password`, `oauth_config`)
+- [ ] Backend: Create `encryption.py` service with Fernet for credential encryption
+- [ ] Backend: Update `api_connector.py` with `apply_authentication()` function
+- [ ] Backend: Update Pydantic schemas to include auth fields (exclude secrets from TaskOut)
+- [ ] Frontend: Add Authentication step to TaskWizard with auth type dropdown
+- [ ] Test: 8+ unit tests for auth logic (Bearer prefix, Basic encoding, encryption)
+
+#### Task Scheduler UI
+- [ ] Backend: Create `schedules.py` routes (5 endpoints: POST, GET, PUT, DELETE schedules)
+- [ ] Backend: Create `schedule.py` Pydantic schemas with cron validation (croniter)
+- [ ] Frontend: Add schedule types to `types/index.ts` (TaskSchedule interface)
+- [ ] Frontend: Create `ScheduleEditor.tsx` component (cron input, presets, next run preview)
+- [ ] Frontend: Integrate scheduler into TaskDetail page (Schedule tab)
+- [ ] Frontend: Create `Schedules.tsx` page (list all schedules with filters)
+- [ ] Frontend: Add schedule indicators to TaskList (clock icon + cron expression)
+- [ ] Test: 10+ integration tests for schedule CRUD
+
+#### Enhanced Retry Logic
+- [ ] Backend: Update Celery task to discriminate retryable errors (retry 5xx, not 4xx)
+- [ ] Database: Add `max_retries`, `consecutive_failures`, `status` to TaskSchedule
+- [ ] Backend: Implement auto-pause in scheduler.py after consecutive failures
+- [ ] Backend: Add `/schedules/{id}/resume` endpoint to manually resume paused schedules
+- [ ] Test: 7+ tests for retry discrimination and failure tracking
+
+**Critical Files**:
+- `backend/app/db/models/task.py` - Auth fields added
+- `backend/app/core/encryption.py` - NEW encryption service
+- `backend/app/services/api_connector.py` - Auth logic integration
+- `backend/app/api/v1/routes/schedules.py` - NEW schedule routes
+- `frontend/src/components/ScheduleEditor.tsx` - NEW schedule component
+- `frontend/src/pages/Schedules.tsx` - NEW schedules list page
+
+**Security Notes**:
+- All API keys and passwords encrypted with Fernet (symmetric encryption)
+- TaskOut schema excludes `api_key` and `password` fields from responses
+- ENCRYPTION_KEY stored in environment variables, not hardcoded
+- Key rotation supported via encryption service
+
 ---
 
-**Questions?** Consult the detailed [claude.md](../claude.md) guide, Phase 6 section, or run tests to understand current behavior.
+**Questions?** Consult the detailed [claude.md](../claude.md) guide, [PHASE_7_PLAN.md](../PHASE_7_PLAN.md), or run tests to understand current behavior.

@@ -13,6 +13,9 @@ import {
   OracleColumnsResponse,
   TransformSuggestionsResponse,
   MappingTemplate,
+  TaskSchedule,
+  ScheduleCreate,
+  ScheduleUpdate,
 } from '@/types'
 
 // Query keys
@@ -48,6 +51,15 @@ export const mappingKeys = {
   columns: (tableName: string) => [...mappingKeys.all, 'columns', tableName] as const,
   suggestions: (sourceType: string, destType: string) => 
     [...mappingKeys.all, 'suggestions', sourceType, destType] as const,
+}
+
+export const scheduleKeys = {
+  all: ['schedules'] as const,
+  lists: () => [...scheduleKeys.all, 'list'] as const,
+  list: (skip: number, limit: number, isActive?: boolean) =>
+    [...scheduleKeys.lists(), { skip, limit, isActive }] as const,
+  details: () => [...scheduleKeys.all, 'detail'] as const,
+  detail: (taskId: number) => [...scheduleKeys.details(), { taskId }] as const,
 }
 
 // Task hooks
@@ -308,6 +320,73 @@ export function useDeleteMappingTemplate(onSuccess?: () => void) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mapping_templates'] })
+      onSuccess?.()
+    },
+  })
+}
+
+// Schedule hooks
+export function useSchedule(taskId: number, enabled: boolean = true) {
+  return useQuery({
+    queryKey: scheduleKeys.detail(taskId),
+    queryFn: () => apiClient.getSchedule(taskId),
+    enabled: enabled && taskId > 0,
+  })
+}
+
+export function useListSchedules(skip: number = 0, limit: number = 10, isActive?: boolean) {
+  return useQuery({
+    queryKey: scheduleKeys.list(skip, limit, isActive),
+    queryFn: () => apiClient.listSchedules(skip, limit, isActive),
+  })
+}
+
+export function useCreateSchedule(onSuccess?: (schedule: TaskSchedule) => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, data }: { taskId: number; data: ScheduleCreate }) =>
+      apiClient.createSchedule(taskId, data),
+    onSuccess: (schedule, { taskId }) => {
+      // Invalidate both the specific schedule and the list
+      queryClient.invalidateQueries({ queryKey: scheduleKeys.detail(taskId) })
+      queryClient.invalidateQueries({ queryKey: scheduleKeys.lists() })
+      onSuccess?.(schedule)
+    },
+  })
+}
+
+export function useUpdateSchedule(onSuccess?: (schedule: TaskSchedule) => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ scheduleId, data }: { scheduleId: number; data: ScheduleUpdate }) =>
+      apiClient.updateSchedule(scheduleId, data),
+    onSuccess: (schedule) => {
+      // Invalidate the lists since schedule details changed
+      queryClient.invalidateQueries({ queryKey: scheduleKeys.lists() })
+      onSuccess?.(schedule)
+    },
+  })
+}
+
+export function useDeleteSchedule(onSuccess?: () => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (scheduleId: number) => apiClient.deleteSchedule(scheduleId),
+    onSuccess: () => {
+      // Invalidate all schedule queries
+      queryClient.invalidateQueries({ queryKey: scheduleKeys.all })
+      onSuccess?.()
+    },
+  })
+}
+
+export function useResumeSchedule(onSuccess?: () => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (scheduleId: number) => apiClient.resumeSchedule(scheduleId),
+    onSuccess: () => {
+      // Invalidate all schedule queries
+      queryClient.invalidateQueries({ queryKey: scheduleKeys.all })
       onSuccess?.()
     },
   })

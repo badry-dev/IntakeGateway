@@ -1,8 +1,10 @@
 
 import asyncio
 import httpx
+import base64
 from loguru import logger
 from app.core.config import settings
+from app.core.encryption import decrypt_value
 
 
 async def fetch_json(
@@ -12,10 +14,15 @@ async def fetch_json(
     params: dict | None = None,
     json_body: dict | None = None,
     max_retries: int = 3,
-    initial_backoff: float = 1.0
+    initial_backoff: float = 1.0,
+    auth_type: str | None = None,
+    api_key: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    oauth_config: dict | None = None
 ) -> dict:
     """
-    Fetch JSON data from API with exponential backoff retry logic
+    Fetch JSON data from API with exponential backoff retry logic and authentication
     
     Args:
         method: HTTP method (GET, POST, etc.)
@@ -25,14 +32,29 @@ async def fetch_json(
         json_body: Optional JSON request body
         max_retries: Maximum number of retry attempts (default: 3)
         initial_backoff: Initial backoff delay in seconds (default: 1.0)
+        auth_type: Authentication type ('none', 'bearer', 'api_key', 'basic', 'oauth')
+        api_key: Encrypted API key for Bearer or API Key auth
+        username: Username for Basic auth
+        password: Encrypted password for Basic auth
+        oauth_config: OAuth configuration dictionary
     
     Returns:
         Parsed JSON response as dictionary
     
     Raises:
         httpx.HTTPError: If all retries fail
-        ValueError: If response size exceeds limit
+        ValueError: If response size exceeds limit or auth is invalid
     """
+    # Apply authentication to headers
+    headers = apply_authentication(
+        headers=headers or {},
+        auth_type=auth_type,
+        api_key=api_key,
+        username=username,
+        password=password,
+        oauth_config=oauth_config
+    )
+    
     timeout = httpx.Timeout(settings.HTTP_TIMEOUT_SECONDS)
     
     for attempt in range(max_retries + 1):

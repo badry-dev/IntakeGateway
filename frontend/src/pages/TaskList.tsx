@@ -1,19 +1,31 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useTasks, useTriggerRun, useDeleteTask } from '@/hooks/api'
+import { useTasks, useTriggerRun, useDeleteTask, useListSchedules } from '@/hooks/api'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Play, Edit2, Trash2, Plus } from 'lucide-react'
+import { Play, Edit2, Trash2, Plus, Clock } from 'lucide-react'
 
 export function TaskList() {
   const [skip, setSkip] = useState(0)
   const limit = 10
 
   const { data, isLoading, error } = useTasks(skip, limit, true)
+  const { data: schedulesResponse } = useListSchedules(0, 1000)
   const triggerRunMutation = useTriggerRun()
   const deleteTaskMutation = useDeleteTask()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
+
+  // Create a map of taskId -> schedule for quick lookup
+  const schedulesByTaskId = React.useMemo(() => {
+    const map: Record<number, any> = {}
+    if (schedulesResponse?.items) {
+      schedulesResponse.items.forEach((schedule) => {
+        map[schedule.task_id] = schedule
+      })
+    }
+    return map
+  }, [schedulesResponse])
 
   const tasks = data || []
   const total = tasks.length
@@ -113,11 +125,24 @@ export function TaskList() {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <Link to={`/tasks/${task.id}`}>
-                      <CardTitle className="hover:text-primary cursor-pointer">
-                        {task.name}
-                      </CardTitle>
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link to={`/tasks/${task.id}`}>
+                        <CardTitle className="hover:text-primary cursor-pointer">
+                          {task.name}
+                        </CardTitle>
+                      </Link>
+                      {schedulesByTaskId[task.id] && (
+                        <Link to={`/schedules?task=${task.id}`} title={`Schedule: ${schedulesByTaskId[task.id].cron_expression}`}>
+                          <Clock 
+                            className={`h-4 w-4 cursor-pointer ${
+                              schedulesByTaskId[task.id].is_active 
+                                ? 'text-green-600' 
+                                : 'text-gray-400'
+                            }`}
+                          />
+                        </Link>
+                      )}
+                    </div>
                     {task.description && (
                       <CardDescription>{task.description}</CardDescription>
                     )}

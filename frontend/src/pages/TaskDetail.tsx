@@ -1,15 +1,25 @@
 import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useTask, useUpdateTask, useDeleteTask, useColumnMappings } from '@/hooks/api'
+import { 
+  useTask, 
+  useUpdateTask, 
+  useDeleteTask, 
+  useColumnMappings, 
+  useSchedule, 
+  useCreateSchedule, 
+  useUpdateSchedule, 
+  useDeleteSchedule 
+} from '@/hooks/api'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { ArrowLeft, Edit2, Trash2, Copy, Database, Settings } from 'lucide-react'
-import { Task, TaskFormData, ColumnMappingCreate } from '@/types'
+import { ArrowLeft, Edit2, Trash2, Copy, Database, Settings, Clock } from 'lucide-react'
+import { Task, TaskFormData, ColumnMappingCreate, ScheduleCreate } from '@/types'
 import { formatLocalDateTime } from '@/lib/utils'
 import { ColumnMappingEditor } from '@/components/ColumnMappingEditor'
+import { ScheduleEditor } from '@/components/ScheduleEditor'
 
 export function TaskDetail() {
   const { id } = useParams<{ id: string }>()
@@ -18,6 +28,10 @@ export function TaskDetail() {
   const updateTaskMutation = useUpdateTask()
   const deleteTaskMutation = useDeleteTask()
   const { data: mappings } = useColumnMappings(Number(id) || 0)
+  const { data: schedule, refetch: refetchSchedule } = useSchedule(Number(id) || 0)
+  const createScheduleMutation = useCreateSchedule()
+  const updateScheduleMutation = useUpdateSchedule()
+  const deleteScheduleMutation = useDeleteSchedule()
 
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
@@ -104,6 +118,44 @@ export function TaskDetail() {
     }
   }
 
+  const handleCreateSchedule = async (data: ScheduleCreate) => {
+    try {
+      await createScheduleMutation.mutateAsync({
+        taskId: Number(id),
+        data,
+      })
+      await refetchSchedule()
+    } catch (err) {
+      console.error('Failed to create schedule:', err)
+      throw err
+    }
+  }
+
+  const handleUpdateSchedule = async (data: ScheduleCreate) => {
+    if (!schedule) return
+    try {
+      await updateScheduleMutation.mutateAsync({
+        scheduleId: schedule.id,
+        data,
+      })
+      await refetchSchedule()
+    } catch (err) {
+      console.error('Failed to update schedule:', err)
+      throw err
+    }
+  }
+
+  const handleDeleteSchedule = async () => {
+    if (!schedule) return
+    try {
+      await deleteScheduleMutation.mutateAsync(schedule.id)
+      await refetchSchedule()
+    } catch (err) {
+      console.error('Failed to delete schedule:', err)
+      throw err
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -135,10 +187,19 @@ export function TaskDetail() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="details" className="gap-2">
             <Settings className="h-4 w-4" />
             Task Details
+          </TabsTrigger>
+          <TabsTrigger value="schedule" className="gap-2">
+            <Clock className="h-4 w-4" />
+            Schedule
+            {schedule && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-green-600 text-white rounded-full">
+                Active
+              </span>
+            )}
           </TabsTrigger>
           <TabsTrigger value="mappings" className="gap-2">
             <Database className="h-4 w-4" />
@@ -235,6 +296,49 @@ export function TaskDetail() {
               </div>
             </div>
           </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Schedule Tab */}
+        <TabsContent value="schedule" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Task Schedule</CardTitle>
+              <CardDescription>
+                Configure automated execution of this task on a schedule
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {schedule ? (
+                <div className="space-y-4">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                    <p className="text-sm font-medium text-green-900">✓ Schedule configured</p>
+                    <p className="text-sm text-green-700 mt-1">
+                      Cron: <span className="font-mono font-semibold">{schedule.cron_expression}</span>
+                    </p>
+                  </div>
+                  <ScheduleEditor 
+                    taskId={Number(id)} 
+                    schedule={schedule} 
+                    onSave={handleUpdateSchedule}
+                    onDelete={handleDeleteSchedule}
+                    isEditing={true}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                    <p className="text-sm font-medium text-yellow-900">No schedule configured</p>
+                    <p className="text-sm text-yellow-700 mt-1">Create a schedule to automate this task execution</p>
+                  </div>
+                  <ScheduleEditor 
+                    taskId={Number(id)} 
+                    onSave={handleCreateSchedule}
+                    isEditing={false}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

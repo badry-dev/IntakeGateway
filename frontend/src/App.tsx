@@ -7,8 +7,9 @@ import { TaskDetail } from '@/pages/TaskDetail'
 import { TaskWizard } from '@/pages/TaskWizard'
 import { RunsList } from '@/pages/RunsList'
 import { RunDetail } from '@/pages/RunDetail'
+import { Schedules } from '@/pages/Schedules'
 import { Button } from '@/components/ui/button'
-import { Database, LayoutDashboard, CheckSquare, Activity } from 'lucide-react'
+import { Database, LayoutDashboard, CheckSquare, Activity, Clock } from 'lucide-react'
 import '@/index.css'
 
 const queryClient = new QueryClient()
@@ -18,7 +19,8 @@ function Layout({ children }: { children: React.ReactNode }) {
 
   const isActive = (path: string) => location.pathname === path || 
     (path === '/tasks' && location.pathname.startsWith('/tasks')) ||
-    (path === '/runs' && location.pathname.startsWith('/runs'))
+    (path === '/runs' && location.pathname.startsWith('/runs')) ||
+    (path === '/schedules' && location.pathname.startsWith('/schedules'))
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -56,6 +58,15 @@ function Layout({ children }: { children: React.ReactNode }) {
               Runs
             </Button>
           </Link>
+          <Link to="/schedules">
+            <Button 
+              variant={isActive('/schedules') ? 'default' : 'ghost'} 
+              className="w-full justify-start"
+            >
+              <Clock className="h-4 w-4 mr-2" />
+              Schedules
+            </Button>
+          </Link>
         </nav>
 
         {/* Footer Info */}
@@ -84,6 +95,7 @@ function App() {
           <Route path="/tasks/:id" element={<Layout><TaskDetail /></Layout>} />
           <Route path="/runs" element={<Layout><RunsList /></Layout>} />
           <Route path="/runs/:id" element={<Layout><RunDetail /></Layout>} />
+          <Route path="/schedules" element={<Layout><Schedules /></Layout>} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
