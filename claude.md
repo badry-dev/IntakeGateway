@@ -1205,6 +1205,600 @@ User creates schedule in UI → POST /tasks/{id}/schedule → Validate cron expr
 
 ---
 
+## 🎯 Phase 8: Configuration UI, Real-time Updates & UX Enhancements (Planned)
+
+### Overview
+
+Phase 8 focuses on production-readiness and user experience improvements:
+1. **Database Connection Configuration UI** - Move DB settings from .env to secure admin page
+2. **WebSocket Real-time Updates** - Live run status and log streaming
+3. **Visual Cron Builder** - User-friendly schedule creation
+4. **Mobile-Responsive UI** - Touch-friendly interface for all screen sizes
+5. **Upsert Logic** - Insert or update records based on unique keys
+
+### Phase 8 Architecture
+
+---
+
+### Feature 1: Database Connection Configuration UI
+
+#### Security Architecture
+
+**Threat Model**:
+- Credentials must never be exposed in API responses
+- Credentials must be encrypted at rest
+- Only authorized admins can modify connections
+- Connection strings must be validated before saving
+- Audit trail for all configuration changes
+
+**Storage Strategy**:
+```
+Option A: Encrypted Database Table (Recommended)
+┌─────────────────────────────────────────────────────────┐
+│  db_connections table                                    │
+├─────────────────────────────────────────────────────────┤
+│  id          │ UUID PRIMARY KEY                         │
+│  name        │ VARCHAR(100) - Display name              │
+│  host        │ VARCHAR(255) - Encrypted                 │
+│  port        │ INTEGER                                  │
+│  service     │ VARCHAR(100) - Encrypted                 │
+│  username    │ VARCHAR(100) - Encrypted                 │
+│  password    │ BLOB - Encrypted with Fernet             │
+│  is_default  │ BOOLEAN - Active connection              │
+│  created_at  │ TIMESTAMP                                │
+│  updated_at  │ TIMESTAMP                                │
+│  created_by  │ VARCHAR(100) - Audit trail               │
+└─────────────────────────────────────────────────────────┘
+
+Option B: Encrypted File (Alternative)
+- Store in /etc/api2db/connections.enc
+- File encrypted with master key from env var
+- Simpler for single-instance deployments
+```
+
+**Backend Components**:
+
+```
+backend/app/
+├── api/v1/routes/
+│   └── connections.py          # Connection CRUD endpoints
+├── services/
+│   └── connection_manager.py   # Connection pool management
+├── db/
+│   ├── models/
+│   │   └── db_connection.py    # Connection ORM model
+│   └── schemas/
+│       └── connection.py       # Pydantic schemas (no password in response)
+└── core/
+    └── encryption.py           # Enhanced Fernet encryption (existing)
+```
+
+**API Endpoints**:
+```
+GET    /api/v1/connections              # List connections (passwords masked)
+POST   /api/v1/connections              # Create connection
+PUT    /api/v1/connections/{id}         # Update connection
+DELETE /api/v1/connections/{id}         # Delete connection
+POST   /api/v1/connections/{id}/test    # Test connection (returns success/error)
+POST   /api/v1/connections/{id}/activate # Set as active connection
+```
+
+**Security Best Practices**:
+1. **Never return passwords** - API responses show `password: "********"`
+2. **Encrypt at rest** - Use Fernet symmetric encryption (same as Phase 7)
+3. **Validate before save** - Test connection before persisting
+4. **Rate limit test endpoint** - Prevent brute force attacks
+5. **Audit logging** - Log all connection changes with timestamp/user
+6. **Require re-authentication** - Prompt for current password before changes
+7. **Environment fallback** - If no DB config exists, fall back to .env (migration path)
+
+**Frontend Components**:
+```
+frontend/src/
+├── pages/
+│   └── Settings.tsx            # Settings page with connections tab
+├── components/
+│   └── ConnectionEditor.tsx    # Connection form with test button
+```
+
+**Migration Strategy**:
+1. App starts → Check if `db_connections` table has entries
+2. If empty → Read from .env → Create default connection → Mark as active
+3. Future runs → Use database configuration
+4. .env becomes backup/override for emergencies
+
+---
+
+### Feature 2: WebSocket Real-time Updates
+
+#### Architecture
+
+**Technology Choice**: FastAPI WebSocket + React useWebSocket hook
+
+**WebSocket Events**:
+```typescript
+// Server → Client events
+interface WSEvent {
+  type: 'run_status' | 'run_progress' | 'run_log' | 'schedule_triggered';
+  payload: RunStatusPayload | RunProgressPayload | RunLogPayload | SchedulePayload;
+}
+
+interface RunStatusPayload {
+  run_id: string;
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED';
+  completed_at?: string;
+}
+
+interface RunProgressPayload {
+  run_id: string;
+  total_records: number;
+  processed_records: number;
+  failed_records: number;
+  percentage: number;
+}
+
+interface RunLogPayload {
+  run_id: string;
+  timestamp: string;
+  level: 'INFO' | 'WARNING' | 'ERROR';
+  message: string;
+}
+
+interface SchedulePayload {
+  schedule_id: string;
+  task_id: string;
+  task_name: string;
+  triggered_at: string;
+}
+```
+
+**Backend Components**:
+```
+backend/app/
+├── api/v1/
+│   └── websocket.py            # WebSocket endpoint handler
+├── services/
+│   └── ws_manager.py           # Connection manager (broadcast, rooms)
+└── workers/
+    └── tasks.py                # Modified to emit WS events
+```
+
+**WebSocket Endpoint**:
+```python
+# /api/v1/ws
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, handle client messages
+            data = await websocket.receive_text()
+            # Handle subscription to specific runs
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+```
+
+**Frontend Integration**:
+```typescript
+// hooks/useWebSocket.ts
+const useRunUpdates = (runId: string) => {
+  const { lastMessage } = useWebSocket(`ws://localhost:8000/api/v1/ws`);
+
+  useEffect(() => {
+    if (lastMessage?.type === 'run_progress' && lastMessage.payload.run_id === runId) {
+      // Update React Query cache
+      queryClient.setQueryData(['run', runId], (old) => ({
+        ...old,
+        ...lastMessage.payload
+      }));
+    }
+  }, [lastMessage]);
+};
+```
+
+**Use Cases**:
+1. **RunDetail page** - Live progress bar, streaming logs
+2. **RunsList page** - Status badges update automatically
+3. **Dashboard** - Recent runs list updates in real-time
+4. **Toast notifications** - "Task X completed successfully"
+
+---
+
+### Feature 3: Visual Cron Builder
+
+#### UI Design
+
+**Component Structure**:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Schedule Configuration                                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Quick Presets                                           │    │
+│  │  [Every Hour] [Daily 2AM] [Weekly Sun] [Monthly 1st]    │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Frequency     [Dropdown: Hourly/Daily/Weekly/Monthly]   │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Time Picker   [ 02 ▼ ] : [ 00 ▼ ]  (24-hour format)    │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Days of Week (for Weekly)                               │    │
+│  │  [Mon] [Tue] [Wed] [Thu] [Fri] [Sat] [Sun]              │    │
+│  │   ○     ○     ○     ○     ○     ○     ●                 │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Day of Month (for Monthly)                              │    │
+│  │  [ 1 ▼ ] or [Last day of month ☐]                       │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Generated Cron: 0 2 * * 0                               │    │
+│  │  Human readable: "Every Sunday at 2:00 AM"               │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Next 5 Runs:                                            │    │
+│  │  • Sun, Feb 9, 2026 at 2:00 AM                          │    │
+│  │  • Sun, Feb 16, 2026 at 2:00 AM                         │    │
+│  │  • Sun, Feb 23, 2026 at 2:00 AM                         │    │
+│  │  • Sun, Mar 2, 2026 at 2:00 AM                          │    │
+│  │  • Sun, Mar 9, 2026 at 2:00 AM                          │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Advanced: Edit cron directly                            │    │
+│  │  [ 0 2 * * 0                                         ]   │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Frontend Components**:
+```
+frontend/src/components/
+├── CronBuilder/
+│   ├── index.tsx               # Main container
+│   ├── FrequencySelector.tsx   # Hourly/Daily/Weekly/Monthly
+│   ├── TimePicker.tsx          # Hour:Minute selector
+│   ├── DayOfWeekPicker.tsx     # Toggle buttons for weekdays
+│   ├── DayOfMonthPicker.tsx    # Dropdown 1-31 + last day
+│   ├── CronPreview.tsx         # Shows cron + human readable
+│   ├── NextRunsList.tsx        # Upcoming execution dates
+│   └── utils.ts                # Cron generation/parsing logic
+```
+
+**Cron Generation Logic**:
+```typescript
+interface CronConfig {
+  frequency: 'hourly' | 'daily' | 'weekly' | 'monthly';
+  hour: number;        // 0-23
+  minute: number;      // 0-59
+  daysOfWeek: number[]; // 0-6 (Sun-Sat)
+  dayOfMonth: number | 'last';
+}
+
+function generateCron(config: CronConfig): string {
+  const { frequency, hour, minute, daysOfWeek, dayOfMonth } = config;
+
+  switch (frequency) {
+    case 'hourly':
+      return `${minute} * * * *`;
+    case 'daily':
+      return `${minute} ${hour} * * *`;
+    case 'weekly':
+      return `${minute} ${hour} * * ${daysOfWeek.join(',')}`;
+    case 'monthly':
+      const dom = dayOfMonth === 'last' ? 'L' : dayOfMonth;
+      return `${minute} ${hour} ${dom} * *`;
+  }
+}
+```
+
+**Backend Support**:
+```python
+# New endpoint to calculate next runs
+GET /api/v1/schedules/preview?cron=0+2+*+*+0&count=5
+
+Response:
+{
+  "cron": "0 2 * * 0",
+  "human_readable": "Every Sunday at 2:00 AM",
+  "next_runs": [
+    "2026-02-09T02:00:00Z",
+    "2026-02-16T02:00:00Z",
+    ...
+  ]
+}
+```
+
+---
+
+### Feature 4: Mobile-Responsive UI
+
+#### Responsive Breakpoints
+
+```css
+/* Tailwind breakpoints */
+sm: 640px   /* Mobile landscape */
+md: 768px   /* Tablet */
+lg: 1024px  /* Desktop */
+xl: 1280px  /* Large desktop */
+```
+
+#### Component Adaptations
+
+**Sidebar Navigation**:
+```
+Desktop (lg+):           Mobile (< lg):
+┌────┬──────────────┐    ┌──────────────────┐
+│ ☰  │              │    │ ☰ API2DB     [≡] │  <- Hamburger menu
+│    │              │    ├──────────────────┤
+│ 📊 │   Content    │    │                  │
+│ 📋 │              │    │     Content      │
+│ ▶️  │              │    │                  │
+│ 📅 │              │    │                  │
+└────┴──────────────┘    └──────────────────┘
+
+Mobile menu (slide-in):
+┌──────────────────┐
+│ ✕ Close          │
+├──────────────────┤
+│ 📊 Dashboard     │
+│ 📋 Tasks         │
+│ ▶️ Runs          │
+│ 📅 Schedules     │
+│ ⚙️ Settings      │
+└──────────────────┘
+```
+
+**Data Tables**:
+```
+Desktop:                          Mobile (card layout):
+┌────┬──────┬────────┬──────┐    ┌──────────────────┐
+│ ID │ Name │ Status │ Act  │    │ Import Users     │
+├────┼──────┼────────┼──────┤    │ Status: ● Active │
+│ 1  │ Task │ Active │ [▶]  │    │ Last run: 2h ago │
+└────┴──────┴────────┴──────┘    │ [▶ Run] [Edit]   │
+                                  └──────────────────┘
+                                  ┌──────────────────┐
+                                  │ Sync Products    │
+                                  │ ...              │
+                                  └──────────────────┘
+```
+
+**Forms**:
+- Stack form fields vertically on mobile
+- Full-width inputs
+- Larger touch targets (min 44px height)
+- Floating action buttons for primary actions
+
+**Implementation Checklist**:
+- [ ] Collapsible sidebar with hamburger menu
+- [ ] Responsive table → card layout switcher
+- [ ] Touch-friendly button sizes (min 44x44px)
+- [ ] Swipe gestures for card actions (optional)
+- [ ] Bottom navigation bar for mobile (optional)
+- [ ] Viewport meta tag already set
+- [ ] Test on iOS Safari, Android Chrome
+
+**Key Files to Modify**:
+```
+frontend/src/
+├── components/
+│   ├── layout/
+│   │   ├── Sidebar.tsx         # Add mobile hamburger
+│   │   └── MobileNav.tsx       # New slide-in menu
+│   └── ui/
+│       └── ResponsiveTable.tsx # Table/Card switcher
+├── pages/
+│   ├── TaskList.tsx            # Use ResponsiveTable
+│   ├── RunsList.tsx            # Use ResponsiveTable
+│   └── Schedules.tsx           # Use ResponsiveTable
+└── index.css                   # Mobile-first utilities
+```
+
+---
+
+### Feature 5: Upsert Logic for Database Records
+
+#### Overview
+
+Enable tasks to update existing records (if unique key matches) or insert new ones.
+
+#### Database Schema Changes
+
+**Task Model Enhancement**:
+```sql
+ALTER TABLE tasks ADD upsert_enabled NUMBER(1) DEFAULT 0;
+ALTER TABLE tasks ADD upsert_keys VARCHAR2(500);  -- JSON array of column names
+-- Example: ["employee_id"] or ["order_id", "product_id"] for composite keys
+```
+
+#### Upsert Strategies
+
+**Strategy 1: MERGE Statement (Oracle)**
+```sql
+MERGE INTO target_table t
+USING (SELECT :col1 as col1, :col2 as col2 FROM dual) s
+ON (t.unique_key = s.col1)
+WHEN MATCHED THEN
+  UPDATE SET t.col2 = s.col2, t.updated_at = SYSDATE
+WHEN NOT MATCHED THEN
+  INSERT (col1, col2, created_at) VALUES (s.col1, s.col2, SYSDATE);
+```
+
+**Strategy 2: Check-then-Insert/Update** (Fallback)
+```python
+# For databases without MERGE support
+existing = session.query(Model).filter_by(unique_key=value).first()
+if existing:
+    for key, val in data.items():
+        setattr(existing, key, val)
+else:
+    session.add(Model(**data))
+```
+
+#### Backend Implementation
+
+**Enhanced Runner Service**:
+```python
+# backend/app/services/runner.py
+
+class TaskRunner:
+    def process_records(self, task: Task, records: list[dict]):
+        if task.upsert_enabled:
+            return self._upsert_records(task, records)
+        else:
+            return self._insert_records(task, records)
+
+    def _upsert_records(self, task: Task, records: list[dict]):
+        upsert_keys = json.loads(task.upsert_keys)  # e.g., ["employee_id"]
+
+        for record in records:
+            # Build MERGE statement dynamically
+            merge_sql = self._build_merge_sql(
+                table=task.table_name,
+                columns=record.keys(),
+                upsert_keys=upsert_keys
+            )
+            self.session.execute(merge_sql, record)
+
+        self.session.commit()
+
+    def _build_merge_sql(self, table: str, columns: list, upsert_keys: list) -> str:
+        # Generate Oracle MERGE statement
+        update_cols = [c for c in columns if c not in upsert_keys]
+
+        return f"""
+        MERGE INTO {table} t
+        USING (SELECT {', '.join(f':{c} as {c}' for c in columns)} FROM dual) s
+        ON ({' AND '.join(f't.{k} = s.{k}' for k in upsert_keys)})
+        WHEN MATCHED THEN
+          UPDATE SET {', '.join(f't.{c} = s.{c}' for c in update_cols)}
+        WHEN NOT MATCHED THEN
+          INSERT ({', '.join(columns)}) VALUES ({', '.join(f's.{c}' for c in columns)})
+        """
+```
+
+#### Frontend Integration
+
+**TaskWizard Step Enhancement**:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 5: Database Options                                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Insert Mode:                                                     │
+│  ○ Insert only (fail on duplicates)                              │
+│  ● Upsert (update if exists, insert if new)                      │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Unique Key Columns (for upsert matching):               │    │
+│  │                                                          │    │
+│  │  Available Columns:        Selected Keys:                │    │
+│  │  ┌──────────────┐         ┌──────────────┐              │    │
+│  │  │ name         │   [>]   │ employee_id  │              │    │
+│  │  │ department   │   [<]   │              │              │    │
+│  │  │ salary       │         │              │              │    │
+│  │  │ hire_date    │         │              │              │    │
+│  │  └──────────────┘         └──────────────┘              │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ⚠️  Upsert keys should match unique/primary key constraints     │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**TaskDetail Enhancement**:
+- Show upsert configuration in task summary
+- Display "Upsert Mode: ON (key: employee_id)" badge
+- Track upsert statistics: X inserted, Y updated
+
+#### Run Statistics Enhancement
+
+```python
+# TaskRun model additions
+class TaskRun:
+    # Existing fields...
+    inserted_records = Column(Integer, default=0)
+    updated_records = Column(Integer, default=0)
+    # successful_records = inserted + updated
+```
+
+**API Response**:
+```json
+{
+  "run_id": "abc-123",
+  "status": "SUCCESS",
+  "total_records": 100,
+  "inserted_records": 85,
+  "updated_records": 15,
+  "failed_records": 0
+}
+```
+
+---
+
+### Implementation Timeline
+
+| Feature | Estimated Effort | Priority |
+|---------|-----------------|----------|
+| 1. DB Connection Config UI | 8-12 hours | High |
+| 2. WebSocket Real-time | 10-15 hours | Medium |
+| 3. Visual Cron Builder | 6-10 hours | Medium |
+| 4. Mobile-Responsive UI | 8-12 hours | Medium |
+| 5. Upsert Logic | 6-8 hours | High |
+| **Total** | **38-57 hours** | |
+
+### Implementation Order (Recommended)
+
+1. **Upsert Logic** - Core functionality, no UI dependencies
+2. **DB Connection Config** - Security-critical, enables multi-environment
+3. **Mobile-Responsive UI** - Improves usability across devices
+4. **Visual Cron Builder** - UX improvement, builds on existing scheduler
+5. **WebSocket Real-time** - Polish feature, can be added last
+
+### Testing Strategy
+
+**Backend Tests** (30+ cases):
+- `test_connections.py`: CRUD, encryption, test connection, activation
+- `test_websocket.py`: Connection lifecycle, event broadcasting, room subscriptions
+- `test_upsert.py`: MERGE generation, key matching, statistics tracking
+
+**Frontend Tests** (25+ cases):
+- `ConnectionEditor.test.tsx`: Form validation, password masking, test button
+- `CronBuilder.test.tsx`: Preset selection, cron generation, next runs display
+- `ResponsiveTable.test.tsx`: Breakpoint switching, card rendering
+- `WebSocket.test.tsx`: Connection, reconnection, event handling
+
+**E2E Tests** (10+ cases):
+- Full connection configuration flow
+- Real-time run monitoring
+- Schedule creation with visual builder
+- Mobile navigation and interactions
+
+---
+
+### Security Checklist (Phase 8)
+
+- [ ] Connection passwords encrypted with Fernet
+- [ ] Passwords never returned in API responses
+- [ ] Rate limiting on connection test endpoint
+- [ ] Audit logging for configuration changes
+- [ ] WebSocket authentication (session-based)
+- [ ] CORS configuration for WebSocket
+- [ ] Input validation on cron expressions
+- [ ] SQL injection prevention in MERGE statements (parameterized queries)
+
+---
+
 ## 🎯 Current Project Status
 
 ### Phase 4: Backend ✅ COMPLETE
@@ -1249,12 +1843,18 @@ User creates schedule in UI → POST /tasks/{id}/schedule → Validate cron expr
 - Oracle 11g compatibility
 - Timezone handling
 
-### Future Enhancements (Phase 8+)
+### Phase 8: Configuration UI, Real-time & UX ⏳ PLANNED
+- DB Connection Configuration UI (move from .env to admin page)
+- WebSocket real-time updates for run progress
+- Visual Cron Builder for schedule creation
+- Mobile-responsive UI (touch-friendly, card layouts)
+- Upsert logic for insert/update records
+
+### Future Enhancements (Phase 9+)
 - E2E testing with Cypress/Playwright
-- OAuth provider integration
-- WebSocket real-time updates
+- OAuth provider integration (Google, GitHub, Azure AD)
 - Advanced search & filtering
-- Visual cron builder
+- Certificate-based authentication (mTLS)
 
 ---
 
@@ -1262,8 +1862,8 @@ User creates schedule in UI → POST /tasks/{id}/schedule → Validate cron expr
 
 - **Date**: February 3, 2026
 - **Version**: 1.0.0 (Production Release)
-- **Status**: Phase 4-7 Complete | Production Ready
-- **Next Phase**: Phase 8 - E2E Testing, OAuth Integration, WebSocket Updates
+- **Status**: Phase 4-7 Complete | Phase 8 Planned
+- **Next Phase**: Phase 8 - DB Config UI, WebSocket, Cron Builder, Mobile UI, Upsert
 
 ---
 
