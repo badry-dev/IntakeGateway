@@ -1231,29 +1231,49 @@ Phase 8 focuses on production-readiness and user experience improvements:
 - Connection strings must be validated before saving
 - Audit trail for all configuration changes
 
-**Storage Strategy**:
+**Storage Strategy (Encrypted File)**:
 ```
-Option A: Encrypted Database Table (Recommended)
-┌─────────────────────────────────────────────────────────┐
-│  db_connections table                                    │
-├─────────────────────────────────────────────────────────┤
-│  id          │ UUID PRIMARY KEY                         │
-│  name        │ VARCHAR(100) - Display name              │
-│  host        │ VARCHAR(255) - Encrypted                 │
-│  port        │ INTEGER                                  │
-│  service     │ VARCHAR(100) - Encrypted                 │
-│  username    │ VARCHAR(100) - Encrypted                 │
-│  password    │ BLOB - Encrypted with Fernet             │
-│  is_default  │ BOOLEAN - Active connection              │
-│  created_at  │ TIMESTAMP                                │
-│  updated_at  │ TIMESTAMP                                │
-│  created_by  │ VARCHAR(100) - Audit trail               │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  Encrypted File Storage (Recommended)                            │
+├─────────────────────────────────────────────────────────────────┤
+│  Location: /etc/api2db/connections.enc (configurable via env)   │
+│  Encryption: Fernet symmetric encryption                         │
+│  Master Key: ENCRYPTION_KEY environment variable                 │
+└─────────────────────────────────────────────────────────────────┘
 
-Option B: Encrypted File (Alternative)
-- Store in /etc/api2db/connections.enc
-- File encrypted with master key from env var
+File Structure (JSON, encrypted at rest):
+{
+  "connections": [
+    {
+      "id": "uuid-1",
+      "name": "Production Oracle",
+      "host": "db.example.com",
+      "port": 1521,
+      "service": "ORCL",
+      "username": "api2db_user",
+      "password": "encrypted_password_here",
+      "is_default": true,
+      "created_at": "2026-02-03T10:00:00Z",
+      "updated_at": "2026-02-03T10:00:00Z"
+    }
+  ],
+  "metadata": {
+    "version": 1,
+    "last_modified_by": "admin"
+  }
+}
+
+Benefits:
 - Simpler for single-instance deployments
+- No database dependency for connection config
+- Easy backup/restore (copy encrypted file)
+- Works during initial setup (before DB is configured)
+
+Security Measures:
+- File permissions: 600 (owner read/write only)
+- Directory permissions: 700
+- Encryption key never stored in file
+- File integrity check via HMAC
 ```
 
 **Backend Components**:
@@ -1263,14 +1283,51 @@ backend/app/
 ├── api/v1/routes/
 │   └── connections.py          # Connection CRUD endpoints
 ├── services/
-│   └── connection_manager.py   # Connection pool management
+│   ├── connection_manager.py   # Connection pool management
+│   └── connection_file.py      # Encrypted file read/write operations
 ├── db/
-│   ├── models/
-│   │   └── db_connection.py    # Connection ORM model
 │   └── schemas/
 │       └── connection.py       # Pydantic schemas (no password in response)
 └── core/
     └── encryption.py           # Enhanced Fernet encryption (existing)
+```
+
+**Connection File Service**:
+```python
+# backend/app/services/connection_file.py
+import os
+import json
+from pathlib import Path
+from app.core.encryption import encrypt_data, decrypt_data
+
+DEFAULT_CONFIG_PATH = os.getenv("DB_CONFIG_PATH", "/etc/api2db/connections.enc")
+
+class ConnectionFileService:
+    def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
+        self.config_path = Path(config_path)
+
+    def read_connections(self) -> dict:
+        """Read and decrypt connections file."""
+        if not self.config_path.exists():
+            return {"connections": [], "metadata": {"version": 1}}
+
+        encrypted_data = self.config_path.read_bytes()
+        decrypted_json = decrypt_data(encrypted_data)
+        return json.loads(decrypted_json)
+
+    def write_connections(self, data: dict, modified_by: str = "system"):
+        """Encrypt and write connections file."""
+        data["metadata"]["last_modified_by"] = modified_by
+        json_data = json.dumps(data, indent=2)
+        encrypted_data = encrypt_data(json_data.encode())
+
+        # Ensure directory exists with secure permissions
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.config_path.parent, 0o700)
+
+        # Write file with secure permissions
+        self.config_path.write_bytes(encrypted_data)
+        os.chmod(self.config_path, 0o600)
 ```
 
 **API Endpoints**:
@@ -1610,35 +1667,71 @@ frontend/src/
 
 #### Overview
 
-Enable tasks to update existing records (if unique key matches) or insert new ones.
+Enable tasks to update existing records (if unique key matches) or insert new ones, with intelligent row skipping for already-processed records and graceful error handling.
 
 #### Database Schema Changes
 
 **Task Model Enhancement**:
 ```sql
 ALTER TABLE tasks ADD upsert_enabled NUMBER(1) DEFAULT 0;
-ALTER TABLE tasks ADD upsert_keys VARCHAR2(500);  -- JSON array of column names
--- Example: ["employee_id"] or ["order_id", "product_id"] for composite keys
+ALTER TABLE tasks ADD upsert_keys VARCHAR2(500);       -- JSON array of column names
+ALTER TABLE tasks ADD skip_column VARCHAR2(100);       -- Column to check for skip condition
+ALTER TABLE tasks ADD skip_value VARCHAR2(100);        -- Value that triggers skip (e.g., 'Y')
+-- Example: skip_column = "processed", skip_value = "Y"
+```
+
+#### Row Skip Logic
+
+**Use Case**: A third-party system processes records and marks them with `processed = 'Y'`. The import should skip these rows to avoid overwriting changes.
+
+**Skip Conditions**:
+1. **Pre-processed rows**: If `skip_column` has `skip_value`, skip the row
+2. **Primary key errors**: Log error, skip row, continue processing
+3. **Constraint violations**: Log error, skip row, continue processing
+
+**Skip Flow Diagram**:
+```
+For each record in API response:
+    │
+    ├─► Check if record exists in DB (by upsert_keys)
+    │       │
+    │       ├─► EXISTS + skip_column = skip_value
+    │       │       └─► SKIP (log: "Row skipped - already processed")
+    │       │
+    │       ├─► EXISTS + skip_column ≠ skip_value
+    │       │       └─► UPDATE record
+    │       │
+    │       └─► NOT EXISTS
+    │               └─► INSERT record
+    │
+    ├─► On PRIMARY KEY error
+    │       └─► LOG error + SKIP + CONTINUE
+    │
+    └─► On CONSTRAINT error
+            └─► LOG error + SKIP + CONTINUE
 ```
 
 #### Upsert Strategies
 
-**Strategy 1: MERGE Statement (Oracle)**
+**Strategy 1: MERGE Statement with Skip Logic (Oracle)**
 ```sql
 MERGE INTO target_table t
 USING (SELECT :col1 as col1, :col2 as col2 FROM dual) s
-ON (t.unique_key = s.col1)
+ON (t.employee_id = s.employee_id)
 WHEN MATCHED THEN
   UPDATE SET t.col2 = s.col2, t.updated_at = SYSDATE
+  WHERE t.processed IS NULL OR t.processed != 'Y'  -- Skip if already processed
 WHEN NOT MATCHED THEN
   INSERT (col1, col2, created_at) VALUES (s.col1, s.col2, SYSDATE);
 ```
 
-**Strategy 2: Check-then-Insert/Update** (Fallback)
+**Strategy 2: Check-Skip-then-Insert/Update** (With Error Handling)
 ```python
-# For databases without MERGE support
+# For databases without MERGE support or complex skip logic
 existing = session.query(Model).filter_by(unique_key=value).first()
 if existing:
+    if existing.processed == 'Y':
+        return RowResult.SKIPPED  # Already processed by third party
     for key, val in data.items():
         setattr(existing, key, val)
 else:
@@ -1650,41 +1743,165 @@ else:
 **Enhanced Runner Service**:
 ```python
 # backend/app/services/runner.py
+from dataclasses import dataclass
+from enum import Enum
+
+class RowStatus(Enum):
+    INSERTED = "inserted"
+    UPDATED = "updated"
+    SKIPPED = "skipped"
+    ERROR = "error"
+
+@dataclass
+class RowResult:
+    status: RowStatus
+    record_key: str
+    message: str = ""
 
 class TaskRunner:
-    def process_records(self, task: Task, records: list[dict]):
-        if task.upsert_enabled:
-            return self._upsert_records(task, records)
-        else:
-            return self._insert_records(task, records)
+    def process_records(self, task: Task, records: list[dict]) -> dict:
+        """Process records with skip logic and error continuation."""
+        results = {
+            "inserted": 0,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "error_details": []
+        }
 
-    def _upsert_records(self, task: Task, records: list[dict]):
-        upsert_keys = json.loads(task.upsert_keys)  # e.g., ["employee_id"]
+        for idx, record in enumerate(records):
+            try:
+                result = self._process_single_record(task, record)
+                results[result.status.value] += 1 if result.status != RowStatus.ERROR else 0
+                results["errors"] += 1 if result.status == RowStatus.ERROR else 0
 
-        for record in records:
-            # Build MERGE statement dynamically
-            merge_sql = self._build_merge_sql(
-                table=task.table_name,
-                columns=record.keys(),
-                upsert_keys=upsert_keys
+                if result.status == RowStatus.ERROR:
+                    results["error_details"].append({
+                        "row_index": idx,
+                        "record_key": result.record_key,
+                        "error": result.message
+                    })
+
+            except Exception as e:
+                # Catch-all: log and continue to next record
+                logger.error(f"Unexpected error processing row {idx}: {e}")
+                results["errors"] += 1
+                results["error_details"].append({
+                    "row_index": idx,
+                    "error": str(e)
+                })
+                continue  # NEVER stop the process
+
+        return results
+
+    def _process_single_record(self, task: Task, record: dict) -> RowResult:
+        """Process a single record with skip and error handling."""
+        upsert_keys = json.loads(task.upsert_keys) if task.upsert_keys else []
+        record_key = self._get_record_key(record, upsert_keys)
+
+        try:
+            # Check if record exists
+            if upsert_keys:
+                existing = self._find_existing_record(task, record, upsert_keys)
+
+                if existing:
+                    # Check skip condition
+                    if self._should_skip(task, existing):
+                        logger.info(f"Skipping row {record_key}: already processed")
+                        return RowResult(
+                            status=RowStatus.SKIPPED,
+                            record_key=record_key,
+                            message=f"Skip condition met: {task.skip_column}={task.skip_value}"
+                        )
+
+                    # Update existing record
+                    self._update_record(task, existing, record)
+                    return RowResult(status=RowStatus.UPDATED, record_key=record_key)
+
+            # Insert new record
+            self._insert_record(task, record)
+            return RowResult(status=RowStatus.INSERTED, record_key=record_key)
+
+        except IntegrityError as e:
+            # Primary key or unique constraint violation
+            logger.warning(f"Constraint error for row {record_key}: {e}")
+            self.session.rollback()
+            return RowResult(
+                status=RowStatus.ERROR,
+                record_key=record_key,
+                message=f"Constraint violation: {str(e)[:200]}"
             )
-            self.session.execute(merge_sql, record)
 
-        self.session.commit()
+        except DatabaseError as e:
+            # Other database errors
+            logger.error(f"Database error for row {record_key}: {e}")
+            self.session.rollback()
+            return RowResult(
+                status=RowStatus.ERROR,
+                record_key=record_key,
+                message=f"Database error: {str(e)[:200]}"
+            )
 
-    def _build_merge_sql(self, table: str, columns: list, upsert_keys: list) -> str:
-        # Generate Oracle MERGE statement
+    def _should_skip(self, task: Task, existing_record) -> bool:
+        """Check if record should be skipped based on skip_column/skip_value."""
+        if not task.skip_column or not task.skip_value:
+            return False
+
+        current_value = getattr(existing_record, task.skip_column, None)
+        return str(current_value).upper() == str(task.skip_value).upper()
+
+    def _get_record_key(self, record: dict, upsert_keys: list) -> str:
+        """Generate a readable key for logging."""
+        if upsert_keys:
+            return ", ".join(f"{k}={record.get(k)}" for k in upsert_keys)
+        return f"row_{id(record)}"
+
+    def _build_merge_sql(self, task: Task, columns: list, upsert_keys: list) -> str:
+        """Generate Oracle MERGE statement with skip condition."""
         update_cols = [c for c in columns if c not in upsert_keys]
 
+        # Build WHERE clause for skip condition
+        skip_where = ""
+        if task.skip_column and task.skip_value:
+            skip_where = f"WHERE (t.{task.skip_column} IS NULL OR t.{task.skip_column} != '{task.skip_value}')"
+
         return f"""
-        MERGE INTO {table} t
+        MERGE INTO {task.table_name} t
         USING (SELECT {', '.join(f':{c} as {c}' for c in columns)} FROM dual) s
         ON ({' AND '.join(f't.{k} = s.{k}' for k in upsert_keys)})
         WHEN MATCHED THEN
           UPDATE SET {', '.join(f't.{c} = s.{c}' for c in update_cols)}
+          {skip_where}
         WHEN NOT MATCHED THEN
           INSERT ({', '.join(columns)}) VALUES ({', '.join(f's.{c}' for c in columns)})
         """
+```
+
+#### Error Handling Philosophy
+
+**Key Principle**: The process should NEVER stop due to individual row errors.
+
+| Error Type | Action | Logged |
+|------------|--------|--------|
+| Skip condition met | Skip row, continue | INFO |
+| Primary key violation | Skip row, continue | WARNING |
+| Unique constraint violation | Skip row, continue | WARNING |
+| Data type mismatch | Skip row, continue | WARNING |
+| Foreign key violation | Skip row, continue | WARNING |
+| Connection lost | Retry 3x, then fail run | ERROR |
+| Table not found | Fail run immediately | ERROR |
+
+**Error Log Entry Example**:
+```json
+{
+  "run_id": "abc-123",
+  "row_index": 42,
+  "record_key": "employee_id=12345",
+  "error_type": "CONSTRAINT_VIOLATION",
+  "error_message": "ORA-00001: unique constraint (EMPLOYEES_EMAIL_UK) violated",
+  "timestamp": "2026-02-03T14:30:00Z",
+  "action_taken": "SKIPPED"
+}
 ```
 
 #### Frontend Integration
@@ -1711,6 +1928,19 @@ class TaskRunner:
 │  │  └──────────────┘         └──────────────┘              │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Skip Already Processed Records (Optional):              │    │
+│  │                                                          │    │
+│  │  Skip Column:  [ processed      ▼ ]                     │    │
+│  │  Skip Value:   [ Y              ]                       │    │
+│  │                                                          │    │
+│  │  ℹ️  Rows where this column equals this value will be   │    │
+│  │     skipped during import (useful when third-party      │    │
+│  │     systems mark records as processed)                  │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ☑️  Continue on row errors (log and skip failed rows)          │
+│                                                                   │
 │  ⚠️  Upsert keys should match unique/primary key constraints     │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
@@ -1719,7 +1949,8 @@ class TaskRunner:
 **TaskDetail Enhancement**:
 - Show upsert configuration in task summary
 - Display "Upsert Mode: ON (key: employee_id)" badge
-- Track upsert statistics: X inserted, Y updated
+- Display "Skip: processed=Y" badge when configured
+- Track statistics: X inserted, Y updated, Z skipped, N errors
 
 #### Run Statistics Enhancement
 
@@ -1729,7 +1960,10 @@ class TaskRun:
     # Existing fields...
     inserted_records = Column(Integer, default=0)
     updated_records = Column(Integer, default=0)
+    skipped_records = Column(Integer, default=0)  # Rows skipped due to skip condition
+    error_records = Column(Integer, default=0)    # Rows skipped due to errors
     # successful_records = inserted + updated
+    # total_processed = inserted + updated + skipped + errors
 ```
 
 **API Response**:
@@ -1738,8 +1972,10 @@ class TaskRun:
   "run_id": "abc-123",
   "status": "SUCCESS",
   "total_records": 100,
-  "inserted_records": 85,
-  "updated_records": 15,
+  "inserted_records": 75,
+  "updated_records": 10,
+  "skipped_records": 12,
+  "error_records": 3,
   "failed_records": 0
 }
 ```
@@ -1767,22 +2003,31 @@ class TaskRun:
 
 ### Testing Strategy
 
-**Backend Tests** (30+ cases):
-- `test_connections.py`: CRUD, encryption, test connection, activation
+**Backend Tests** (40+ cases):
+- `test_connections.py`: CRUD, encryption, test connection, activation, file permissions
 - `test_websocket.py`: Connection lifecycle, event broadcasting, room subscriptions
 - `test_upsert.py`: MERGE generation, key matching, statistics tracking
+- `test_skip_logic.py`: Skip condition evaluation, error continuation, statistics
+  - Test skip when processed='Y'
+  - Test continue on primary key error
+  - Test continue on constraint violation
+  - Test error logging with continuation
+  - Test mixed results (insert + update + skip + error)
 
-**Frontend Tests** (25+ cases):
+**Frontend Tests** (30+ cases):
 - `ConnectionEditor.test.tsx`: Form validation, password masking, test button
 - `CronBuilder.test.tsx`: Preset selection, cron generation, next runs display
 - `ResponsiveTable.test.tsx`: Breakpoint switching, card rendering
 - `WebSocket.test.tsx`: Connection, reconnection, event handling
+- `UpsertConfig.test.tsx`: Skip column selection, skip value input, validation
 
-**E2E Tests** (10+ cases):
+**E2E Tests** (15+ cases):
 - Full connection configuration flow
 - Real-time run monitoring
 - Schedule creation with visual builder
 - Mobile navigation and interactions
+- Upsert with skip condition (verify skipped rows logged)
+- Run with row errors (verify process continues)
 
 ---
 
