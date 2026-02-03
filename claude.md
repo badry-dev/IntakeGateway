@@ -1,7 +1,7 @@
 # API2DB-Importer: Project Context & Development Guidelines
 
-**Last Updated**: January 30, 2026  
-**Project Status**: Phase 5 Complete | Phase 4 Complete | Phase 6 Complete | Phase 7 In Progress (Auth & Scheduler UI)  
+**Last Updated**: February 3, 2026
+**Project Status**: Phase 4 Complete | Phase 5 Complete | Phase 6 Complete | Phase 7 Complete
 **AI Assistant Guide**: Use this document to understand the project architecture, conventions, and development practices.
 
 ---
@@ -19,10 +19,11 @@
 
 **Backend**:
 - Python 3.11 with FastAPI
-- SQLAlchemy ORM with Oracle Database
+- SQLAlchemy ORM with Oracle Database (11g+ compatible)
 - Celery for async task execution
+- APScheduler for cron-based task scheduling
 - Pydantic for data validation
-- pytest for testing (110+ tests passing)
+- pytest for testing (13 test files: 7 unit + 6 integration)
 
 **Frontend**:
 - React 18.2 with TypeScript 5.3
@@ -30,7 +31,7 @@
 - React Router v6
 - React Query 5.28 for state management
 - Tailwind CSS 3.4 + Radix UI for styling
-- Vitest for testing (42+ tests passing)
+- Vitest for testing (12 test files)
 
 ---
 
@@ -135,8 +136,10 @@ backend/
 │   │   └── v1/
 │   │       ├── __init__.py
 │   │       └── routes/
-│   │           ├── runs.py     # Run endpoints (GET, POST, detail)
-│   │           ├── tasks.py    # Task endpoints (CRUD)
+│   │           ├── runs.py           # Run endpoints (GET, POST, detail)
+│   │           ├── tasks.py          # Task endpoints (CRUD)
+│   │           ├── schedules.py      # Schedule endpoints (CRUD)
+│   │           ├── column_mappings.py # Column mapping endpoints
 │   │           └── __init__.py
 │   │
 │   ├── core/
@@ -177,8 +180,15 @@ backend/
 │   │   ├── test_models.py
 │   │   ├── test_mapper.py
 │   │   ├── test_normalizer.py
-│   │   └── test_validator.py
+│   │   ├── test_validator.py
+│   │   ├── test_runner.py
+│   │   ├── test_column_mappings.py
+│   │   └── test_authentication.py
 │   └── integration/
+│       ├── test_api_endpoints.py
+│       ├── test_schedule_routes.py
+│       ├── test_mapping_pipeline.py
+│       └── test_full_pipeline.py
 │
 ├── pyproject.toml              # Poetry dependencies
 ├── requirements.txt            # pip requirements
@@ -191,13 +201,14 @@ backend/
 ```
 frontend/
 ├── src/
-│   ├── pages/                  # Page components (6 pages)
+│   ├── pages/                  # Page components (7 pages)
 │   │   ├── Dashboard.tsx       # Overview with stats
 │   │   ├── TaskList.tsx        # All tasks
 │   │   ├── TaskDetail.tsx      # Single task view + edit
 │   │   ├── TaskWizard.tsx      # 5-step task creation
 │   │   ├── RunsList.tsx        # All runs
-│   │   └── RunDetail.tsx       # Single run view
+│   │   ├── RunDetail.tsx       # Single run view
+│   │   └── Schedules.tsx       # Task scheduling management
 │   │
 │   ├── components/
 │   │   ├── ui/                 # UI component library (9 components)
@@ -227,14 +238,21 @@ frontend/
 │   │   ├── run.ts              # Run interfaces
 │   │   └── common.ts           # Common types
 │   │
-│   ├── __tests__/              # Test suite
+│   ├── __tests__/              # Test suite (12 test files)
+│   │   ├── components/
+│   │   │   ├── ColumnMappingEditor.test.tsx
+│   │   │   ├── ScheduleEditor.test.tsx
+│   │   │   └── ScheduleTab.test.tsx
 │   │   └── pages/
 │   │       ├── Dashboard.test.tsx
 │   │       ├── TaskList.test.tsx
 │   │       ├── TaskDetail.test.tsx
 │   │       ├── RunsList.test.tsx
 │   │       ├── RunDetail.test.tsx
-│   │       └── TaskWizard.test.tsx
+│   │       ├── Schedules.test.tsx
+│   │       ├── TaskWizard.test.tsx
+│   │       ├── TaskWizard-Mapping.test.tsx
+│   │       └── TaskWizardAuth.test.tsx
 │   │
 │   ├── App.tsx                 # Main routing configuration
 │   ├── main.tsx                # Entry point
@@ -272,6 +290,28 @@ POST   /api/v1/runs                     # Trigger new run
 ```
 
 **Run labels**: Run responses include `task_name`, `is_retry`, and `retry_of_run_id` for UI labeling and retry badges.
+
+### Schedule Management
+
+```
+GET    /api/v1/schedules                # List all schedules
+POST   /api/v1/tasks/{task_id}/schedule # Create schedule for task
+GET    /api/v1/tasks/{task_id}/schedule # Get task schedule
+PUT    /api/v1/schedules/{schedule_id}  # Update schedule
+DELETE /api/v1/schedules/{schedule_id}  # Delete schedule
+POST   /api/v1/schedules/{id}/resume    # Resume paused schedule
+```
+
+### Column Mapping Management
+
+```
+GET    /api/v1/tasks/{task_id}/mappings        # List mappings
+POST   /api/v1/tasks/{task_id}/mappings        # Bulk create mappings
+PUT    /api/v1/mappings/{mapping_id}           # Update mapping
+DELETE /api/v1/mappings/{mapping_id}           # Delete mapping
+POST   /api/v1/tasks/{task_id}/preview-fields  # Fetch sample API response
+GET    /api/v1/oracle/tables/{table}/columns   # Query Oracle metadata
+```
 
 ### Statistics
 
@@ -393,7 +433,7 @@ pytest tests/unit/ -v --tb=short
 
 ### Frontend Testing
 
-**Location**: `frontend/src/__tests__/pages/`
+**Location**: `frontend/src/__tests__/`
 
 **Coverage Areas**:
 - Component rendering
@@ -401,14 +441,22 @@ pytest tests/unit/ -v --tb=short
 - User interactions
 - Error handling
 - Navigation
+- Schedule management
+- Column mapping
 
 **Test Files**:
-- Dashboard.test.tsx (6 tests)
-- TaskList.test.tsx (7 tests)
-- TaskDetail.test.tsx (7 tests)
-- RunsList.test.tsx (7 tests)
-- RunDetail.test.tsx (8 tests)
-- TaskWizard.test.tsx (7 tests)
+- Dashboard.test.tsx
+- TaskList.test.tsx
+- TaskDetail.test.tsx
+- RunsList.test.tsx
+- RunDetail.test.tsx
+- TaskWizard.test.tsx
+- TaskWizard-Mapping.test.tsx
+- TaskWizardAuth.test.tsx
+- Schedules.test.tsx
+- ColumnMappingEditor.test.tsx
+- ScheduleEditor.test.tsx
+- ScheduleTab.test.tsx
 
 **Running Tests**:
 ```bash
@@ -416,7 +464,7 @@ cd frontend
 npm run test
 ```
 
-**Test Count**: 42+ tests passing
+**Test Files**: 12 test files
 
 ---
 
@@ -724,7 +772,7 @@ git push origin feature/name
 
 ---
 
-## 🎯 Phase 6: Column Mapping Enhancement (In Progress)
+## 🎯 Phase 6: Column Mapping Enhancement (Complete)
 
 ### Overview
 
@@ -957,7 +1005,7 @@ If Pydantic import/compatibility errors arise, fallback to alternative validatio
 
 ---
 
-## 🎯 Phase 7: API Authentication & Task Scheduler UI (In Progress)
+## 🎯 Phase 7: API Authentication & Task Scheduler UI (Complete)
 
 ### Overview
 
@@ -1088,30 +1136,30 @@ User creates schedule in UI → POST /tasks/{id}/schedule → Validate cron expr
 
 ### Implementation Status
 
-**Track A: Authentication** (0% complete):
-- [ ] Database migration (auth fields)
-- [ ] Encryption service
-- [ ] API connector auth logic
-- [ ] Pydantic schema updates
-- [ ] Frontend auth UI
-- [ ] Unit tests (8+ cases)
+**Track A: Authentication** (100% complete):
+- [x] Database migration (auth fields)
+- [x] Encryption service
+- [x] API connector auth logic
+- [x] Pydantic schema updates
+- [x] Frontend auth UI
+- [x] Unit tests
 
-**Track B: Scheduler UI** (0% complete):
-- [ ] Schedule API routes (5 endpoints)
-- [ ] Pydantic schemas with cron validation
-- [ ] Frontend types & API client
-- [ ] React Query hooks
-- [ ] ScheduleEditor component
-- [ ] TaskDetail integration
-- [ ] Schedules list page
-- [ ] TaskList indicators
-- [ ] Tests (10+ cases)
+**Track B: Scheduler UI** (100% complete):
+- [x] Schedule API routes (5 endpoints)
+- [x] Pydantic schemas with cron validation
+- [x] Frontend types & API client
+- [x] React Query hooks
+- [x] ScheduleEditor component
+- [x] TaskDetail integration
+- [x] Schedules list page
+- [x] TaskList indicators
+- [x] Tests
 
-**Track C: Enhanced Retry** (0% complete):
-- [ ] Discriminate retryable errors
-- [ ] Schedule retry configuration
-- [ ] Failure tracking & auto-pause
-- [ ] Resume paused schedules
+**Track C: Enhanced Retry** (100% complete):
+- [x] Discriminate retryable errors
+- [x] Schedule retry configuration
+- [x] Failure tracking & auto-pause
+- [x] Resume paused schedules
 
 ### Testing Strategy
 
@@ -1161,48 +1209,62 @@ User creates schedule in UI → POST /tasks/{id}/schedule → Validate cron expr
 
 ### Phase 4: Backend ✅ COMPLETE
 - FastAPI REST API fully implemented
-- 6 service modules for business logic
+- 8 service modules for business logic
 - Database models and schemas
 - Celery task queue setup
-- 110+ unit tests passing
+- APScheduler integration for cron scheduling
+- 13 test files (7 unit + 6 integration)
 - Ready for production
 
 ### Phase 5: Frontend ✅ COMPLETE
 - React + TypeScript application
-- 6 pages with full CRUD
+- 7 pages with full CRUD
 - 11 routes configured
-- 9 UI components built
-- 42+ tests passing
+- UI components built with Radix UI
+- 12 test files
 - Production-ready codebase
 
-### Phase 6: Advanced Features ✅ IN PROGRESS
-- **Column Mapping Enhancement** (Current Phase)
-  - Nested JSON flattening display (tree view UI)
-  - API response sample fetching (manual paste + auto-fetch)
-  - Oracle metadata querying for column types
-  - Transform suggestions based on type mismatches
-  - Mapping templates (localStorage)
-  - Batch column operations (apply transform to all)
-  - REST API endpoints for mapping CRUD
-  - Enhanced TaskWizard with dedicated mapping step (Step 4.5)
-  - Advanced mapping management in TaskDetail page
-  - Pydantic fallback alternatives documented (Dataclasses/Attrs/Marshmallow)
-- Future: E2E testing, Authentication, Real-time updates, Advanced search
+### Phase 6: Column Mapping Enhancement ✅ COMPLETE
+- Nested JSON flattening display (tree view UI)
+- API response sample fetching (manual paste + auto-fetch)
+- Oracle metadata querying for column types
+- Transform suggestions based on type mismatches
+- Mapping templates (localStorage)
+- Batch column operations (apply transform to all)
+- REST API endpoints for mapping CRUD
+- Enhanced TaskWizard with dedicated mapping step
+- Advanced mapping management in TaskDetail page
+- Scheduling feature integrated
+
+### Phase 7: Authentication & Scheduler UI ✅ COMPLETE
+- Bearer, API Key, Basic Auth support
+- Credential encryption with Fernet
+- Cron-based scheduling with APScheduler
+- Schedule management UI (Schedules page)
+- ScheduleEditor component
+- Auto-pause on consecutive failures
+- Manual resume for paused schedules
+- Run labeling with task name and retry badges
+- Frontend-backend field alignment
+- Oracle 11g compatibility
+- Timezone handling
+
+### Future Enhancements (Phase 8+)
+- E2E testing with Cypress/Playwright
+- OAuth provider integration
+- WebSocket real-time updates
+- Advanced search & filtering
+- Visual cron builder
 
 ---
 
 ## 📝 Last Updated
 
-- **Date**: January 2026
-- **Version**: 1.0.0 + Phase 6 (Column Mapping)
-- **Status**: Phase 5 Production Ready | Phase 6 In Progress
-- **Next Phase**: Phase 6 Column Mapping Completion → Phase 6B Validation → Phase 6C Advanced Array Handling
+- **Date**: February 3, 2026
+- **Version**: 1.0.0 (Production Release)
+- **Status**: Phase 4-7 Complete | Production Ready
+- **Next Phase**: Phase 8 - E2E Testing, OAuth Integration, WebSocket Updates
 
 ---
 
 **This document is the single source of truth for project context and development practices. Keep it updated as the project evolves.**
-
----
-
-**Phase 7 Started**: January 30, 2026  
-**See**: [PHASE_7_PLAN.md](PHASE_7_PLAN.md) for detailed implementation guide
