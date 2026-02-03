@@ -1,7 +1,7 @@
 # API2DB-Importer: Project Context & Development Guidelines
 
-**Last Updated**: January 30, 2026  
-**Project Status**: Phase 5 Complete | Phase 4 Complete | Phase 6 Complete | Phase 7 In Progress (Auth & Scheduler UI)  
+**Last Updated**: February 3, 2026
+**Project Status**: Phase 4 Complete | Phase 5 Complete | Phase 6 Complete | Phase 7 Complete
 **AI Assistant Guide**: Use this document to understand the project architecture, conventions, and development practices.
 
 ---
@@ -19,10 +19,11 @@
 
 **Backend**:
 - Python 3.11 with FastAPI
-- SQLAlchemy ORM with Oracle Database
+- SQLAlchemy ORM with Oracle Database (11g+ compatible)
 - Celery for async task execution
+- APScheduler for cron-based task scheduling
 - Pydantic for data validation
-- pytest for testing (110+ tests passing)
+- pytest for testing (13 test files: 7 unit + 6 integration)
 
 **Frontend**:
 - React 18.2 with TypeScript 5.3
@@ -30,7 +31,7 @@
 - React Router v6
 - React Query 5.28 for state management
 - Tailwind CSS 3.4 + Radix UI for styling
-- Vitest for testing (42+ tests passing)
+- Vitest for testing (12 test files)
 
 ---
 
@@ -135,8 +136,10 @@ backend/
 │   │   └── v1/
 │   │       ├── __init__.py
 │   │       └── routes/
-│   │           ├── runs.py     # Run endpoints (GET, POST, detail)
-│   │           ├── tasks.py    # Task endpoints (CRUD)
+│   │           ├── runs.py           # Run endpoints (GET, POST, detail)
+│   │           ├── tasks.py          # Task endpoints (CRUD)
+│   │           ├── schedules.py      # Schedule endpoints (CRUD)
+│   │           ├── column_mappings.py # Column mapping endpoints
 │   │           └── __init__.py
 │   │
 │   ├── core/
@@ -177,8 +180,15 @@ backend/
 │   │   ├── test_models.py
 │   │   ├── test_mapper.py
 │   │   ├── test_normalizer.py
-│   │   └── test_validator.py
+│   │   ├── test_validator.py
+│   │   ├── test_runner.py
+│   │   ├── test_column_mappings.py
+│   │   └── test_authentication.py
 │   └── integration/
+│       ├── test_api_endpoints.py
+│       ├── test_schedule_routes.py
+│       ├── test_mapping_pipeline.py
+│       └── test_full_pipeline.py
 │
 ├── pyproject.toml              # Poetry dependencies
 ├── requirements.txt            # pip requirements
@@ -191,13 +201,14 @@ backend/
 ```
 frontend/
 ├── src/
-│   ├── pages/                  # Page components (6 pages)
+│   ├── pages/                  # Page components (7 pages)
 │   │   ├── Dashboard.tsx       # Overview with stats
 │   │   ├── TaskList.tsx        # All tasks
 │   │   ├── TaskDetail.tsx      # Single task view + edit
 │   │   ├── TaskWizard.tsx      # 5-step task creation
 │   │   ├── RunsList.tsx        # All runs
-│   │   └── RunDetail.tsx       # Single run view
+│   │   ├── RunDetail.tsx       # Single run view
+│   │   └── Schedules.tsx       # Task scheduling management
 │   │
 │   ├── components/
 │   │   ├── ui/                 # UI component library (9 components)
@@ -227,14 +238,21 @@ frontend/
 │   │   ├── run.ts              # Run interfaces
 │   │   └── common.ts           # Common types
 │   │
-│   ├── __tests__/              # Test suite
+│   ├── __tests__/              # Test suite (12 test files)
+│   │   ├── components/
+│   │   │   ├── ColumnMappingEditor.test.tsx
+│   │   │   ├── ScheduleEditor.test.tsx
+│   │   │   └── ScheduleTab.test.tsx
 │   │   └── pages/
 │   │       ├── Dashboard.test.tsx
 │   │       ├── TaskList.test.tsx
 │   │       ├── TaskDetail.test.tsx
 │   │       ├── RunsList.test.tsx
 │   │       ├── RunDetail.test.tsx
-│   │       └── TaskWizard.test.tsx
+│   │       ├── Schedules.test.tsx
+│   │       ├── TaskWizard.test.tsx
+│   │       ├── TaskWizard-Mapping.test.tsx
+│   │       └── TaskWizardAuth.test.tsx
 │   │
 │   ├── App.tsx                 # Main routing configuration
 │   ├── main.tsx                # Entry point
@@ -272,6 +290,28 @@ POST   /api/v1/runs                     # Trigger new run
 ```
 
 **Run labels**: Run responses include `task_name`, `is_retry`, and `retry_of_run_id` for UI labeling and retry badges.
+
+### Schedule Management
+
+```
+GET    /api/v1/schedules                # List all schedules
+POST   /api/v1/tasks/{task_id}/schedule # Create schedule for task
+GET    /api/v1/tasks/{task_id}/schedule # Get task schedule
+PUT    /api/v1/schedules/{schedule_id}  # Update schedule
+DELETE /api/v1/schedules/{schedule_id}  # Delete schedule
+POST   /api/v1/schedules/{id}/resume    # Resume paused schedule
+```
+
+### Column Mapping Management
+
+```
+GET    /api/v1/tasks/{task_id}/mappings        # List mappings
+POST   /api/v1/tasks/{task_id}/mappings        # Bulk create mappings
+PUT    /api/v1/mappings/{mapping_id}           # Update mapping
+DELETE /api/v1/mappings/{mapping_id}           # Delete mapping
+POST   /api/v1/tasks/{task_id}/preview-fields  # Fetch sample API response
+GET    /api/v1/oracle/tables/{table}/columns   # Query Oracle metadata
+```
 
 ### Statistics
 
@@ -393,7 +433,7 @@ pytest tests/unit/ -v --tb=short
 
 ### Frontend Testing
 
-**Location**: `frontend/src/__tests__/pages/`
+**Location**: `frontend/src/__tests__/`
 
 **Coverage Areas**:
 - Component rendering
@@ -401,14 +441,22 @@ pytest tests/unit/ -v --tb=short
 - User interactions
 - Error handling
 - Navigation
+- Schedule management
+- Column mapping
 
 **Test Files**:
-- Dashboard.test.tsx (6 tests)
-- TaskList.test.tsx (7 tests)
-- TaskDetail.test.tsx (7 tests)
-- RunsList.test.tsx (7 tests)
-- RunDetail.test.tsx (8 tests)
-- TaskWizard.test.tsx (7 tests)
+- Dashboard.test.tsx
+- TaskList.test.tsx
+- TaskDetail.test.tsx
+- RunsList.test.tsx
+- RunDetail.test.tsx
+- TaskWizard.test.tsx
+- TaskWizard-Mapping.test.tsx
+- TaskWizardAuth.test.tsx
+- Schedules.test.tsx
+- ColumnMappingEditor.test.tsx
+- ScheduleEditor.test.tsx
+- ScheduleTab.test.tsx
 
 **Running Tests**:
 ```bash
@@ -416,7 +464,7 @@ cd frontend
 npm run test
 ```
 
-**Test Count**: 42+ tests passing
+**Test Files**: 12 test files
 
 ---
 
@@ -724,7 +772,7 @@ git push origin feature/name
 
 ---
 
-## 🎯 Phase 6: Column Mapping Enhancement (In Progress)
+## 🎯 Phase 6: Column Mapping Enhancement (Complete)
 
 ### Overview
 
@@ -957,7 +1005,7 @@ If Pydantic import/compatibility errors arise, fallback to alternative validatio
 
 ---
 
-## 🎯 Phase 7: API Authentication & Task Scheduler UI (In Progress)
+## 🎯 Phase 7: API Authentication & Task Scheduler UI (Complete)
 
 ### Overview
 
@@ -1088,30 +1136,30 @@ User creates schedule in UI → POST /tasks/{id}/schedule → Validate cron expr
 
 ### Implementation Status
 
-**Track A: Authentication** (0% complete):
-- [ ] Database migration (auth fields)
-- [ ] Encryption service
-- [ ] API connector auth logic
-- [ ] Pydantic schema updates
-- [ ] Frontend auth UI
-- [ ] Unit tests (8+ cases)
+**Track A: Authentication** (100% complete):
+- [x] Database migration (auth fields)
+- [x] Encryption service
+- [x] API connector auth logic
+- [x] Pydantic schema updates
+- [x] Frontend auth UI
+- [x] Unit tests
 
-**Track B: Scheduler UI** (0% complete):
-- [ ] Schedule API routes (5 endpoints)
-- [ ] Pydantic schemas with cron validation
-- [ ] Frontend types & API client
-- [ ] React Query hooks
-- [ ] ScheduleEditor component
-- [ ] TaskDetail integration
-- [ ] Schedules list page
-- [ ] TaskList indicators
-- [ ] Tests (10+ cases)
+**Track B: Scheduler UI** (100% complete):
+- [x] Schedule API routes (5 endpoints)
+- [x] Pydantic schemas with cron validation
+- [x] Frontend types & API client
+- [x] React Query hooks
+- [x] ScheduleEditor component
+- [x] TaskDetail integration
+- [x] Schedules list page
+- [x] TaskList indicators
+- [x] Tests
 
-**Track C: Enhanced Retry** (0% complete):
-- [ ] Discriminate retryable errors
-- [ ] Schedule retry configuration
-- [ ] Failure tracking & auto-pause
-- [ ] Resume paused schedules
+**Track C: Enhanced Retry** (100% complete):
+- [x] Discriminate retryable errors
+- [x] Schedule retry configuration
+- [x] Failure tracking & auto-pause
+- [x] Resume paused schedules
 
 ### Testing Strategy
 
@@ -1157,52 +1205,911 @@ User creates schedule in UI → POST /tasks/{id}/schedule → Validate cron expr
 
 ---
 
+## 🎯 Phase 8: Configuration UI, Real-time Updates & UX Enhancements (Planned)
+
+### Overview
+
+Phase 8 focuses on production-readiness and user experience improvements:
+1. **Database Connection Configuration UI** - Move DB settings from .env to secure admin page
+2. **WebSocket Real-time Updates** - Live run status and log streaming
+3. **Visual Cron Builder** - User-friendly schedule creation
+4. **Mobile-Responsive UI** - Touch-friendly interface for all screen sizes
+5. **Upsert Logic** - Insert or update records based on unique keys
+
+### Phase 8 Architecture
+
+---
+
+### Feature 1: Database Connection Configuration UI
+
+#### Security Architecture
+
+**Threat Model**:
+- Credentials must never be exposed in API responses
+- Credentials must be encrypted at rest
+- Only authorized admins can modify connections
+- Connection strings must be validated before saving
+- Audit trail for all configuration changes
+
+**Storage Strategy (Encrypted File)**:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Encrypted File Storage (Recommended)                            │
+├─────────────────────────────────────────────────────────────────┤
+│  Location: /etc/api2db/connections.enc (configurable via env)   │
+│  Encryption: Fernet symmetric encryption                         │
+│  Master Key: ENCRYPTION_KEY environment variable                 │
+└─────────────────────────────────────────────────────────────────┘
+
+File Structure (JSON, encrypted at rest):
+{
+  "connections": [
+    {
+      "id": "uuid-1",
+      "name": "Production Oracle",
+      "host": "db.example.com",
+      "port": 1521,
+      "service": "ORCL",
+      "username": "api2db_user",
+      "password": "encrypted_password_here",
+      "is_default": true,
+      "created_at": "2026-02-03T10:00:00Z",
+      "updated_at": "2026-02-03T10:00:00Z"
+    }
+  ],
+  "metadata": {
+    "version": 1,
+    "last_modified_by": "admin"
+  }
+}
+
+Benefits:
+- Simpler for single-instance deployments
+- No database dependency for connection config
+- Easy backup/restore (copy encrypted file)
+- Works during initial setup (before DB is configured)
+
+Security Measures:
+- File permissions: 600 (owner read/write only)
+- Directory permissions: 700
+- Encryption key never stored in file
+- File integrity check via HMAC
+```
+
+**Backend Components**:
+
+```
+backend/app/
+├── api/v1/routes/
+│   └── connections.py          # Connection CRUD endpoints
+├── services/
+│   ├── connection_manager.py   # Connection pool management
+│   └── connection_file.py      # Encrypted file read/write operations
+├── db/
+│   └── schemas/
+│       └── connection.py       # Pydantic schemas (no password in response)
+└── core/
+    └── encryption.py           # Enhanced Fernet encryption (existing)
+```
+
+**Connection File Service**:
+```python
+# backend/app/services/connection_file.py
+import os
+import json
+from pathlib import Path
+from app.core.encryption import encrypt_data, decrypt_data
+
+DEFAULT_CONFIG_PATH = os.getenv("DB_CONFIG_PATH", "/etc/api2db/connections.enc")
+
+class ConnectionFileService:
+    def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
+        self.config_path = Path(config_path)
+
+    def read_connections(self) -> dict:
+        """Read and decrypt connections file."""
+        if not self.config_path.exists():
+            return {"connections": [], "metadata": {"version": 1}}
+
+        encrypted_data = self.config_path.read_bytes()
+        decrypted_json = decrypt_data(encrypted_data)
+        return json.loads(decrypted_json)
+
+    def write_connections(self, data: dict, modified_by: str = "system"):
+        """Encrypt and write connections file."""
+        data["metadata"]["last_modified_by"] = modified_by
+        json_data = json.dumps(data, indent=2)
+        encrypted_data = encrypt_data(json_data.encode())
+
+        # Ensure directory exists with secure permissions
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.config_path.parent, 0o700)
+
+        # Write file with secure permissions
+        self.config_path.write_bytes(encrypted_data)
+        os.chmod(self.config_path, 0o600)
+```
+
+**API Endpoints**:
+```
+GET    /api/v1/connections              # List connections (passwords masked)
+POST   /api/v1/connections              # Create connection
+PUT    /api/v1/connections/{id}         # Update connection
+DELETE /api/v1/connections/{id}         # Delete connection
+POST   /api/v1/connections/{id}/test    # Test connection (returns success/error)
+POST   /api/v1/connections/{id}/activate # Set as active connection
+```
+
+**Security Best Practices**:
+1. **Never return passwords** - API responses show `password: "********"`
+2. **Encrypt at rest** - Use Fernet symmetric encryption (same as Phase 7)
+3. **Validate before save** - Test connection before persisting
+4. **Rate limit test endpoint** - Prevent brute force attacks
+5. **Audit logging** - Log all connection changes with timestamp/user
+6. **Require re-authentication** - Prompt for current password before changes
+7. **Environment fallback** - If no DB config exists, fall back to .env (migration path)
+
+**Frontend Components**:
+```
+frontend/src/
+├── pages/
+│   └── Settings.tsx            # Settings page with connections tab
+├── components/
+│   └── ConnectionEditor.tsx    # Connection form with test button
+```
+
+**Migration Strategy**:
+1. App starts → Check if `db_connections` table has entries
+2. If empty → Read from .env → Create default connection → Mark as active
+3. Future runs → Use database configuration
+4. .env becomes backup/override for emergencies
+
+---
+
+### Feature 2: WebSocket Real-time Updates
+
+#### Architecture
+
+**Technology Choice**: FastAPI WebSocket + React useWebSocket hook
+
+**WebSocket Events**:
+```typescript
+// Server → Client events
+interface WSEvent {
+  type: 'run_status' | 'run_progress' | 'run_log' | 'schedule_triggered';
+  payload: RunStatusPayload | RunProgressPayload | RunLogPayload | SchedulePayload;
+}
+
+interface RunStatusPayload {
+  run_id: string;
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED';
+  completed_at?: string;
+}
+
+interface RunProgressPayload {
+  run_id: string;
+  total_records: number;
+  processed_records: number;
+  failed_records: number;
+  percentage: number;
+}
+
+interface RunLogPayload {
+  run_id: string;
+  timestamp: string;
+  level: 'INFO' | 'WARNING' | 'ERROR';
+  message: string;
+}
+
+interface SchedulePayload {
+  schedule_id: string;
+  task_id: string;
+  task_name: string;
+  triggered_at: string;
+}
+```
+
+**Backend Components**:
+```
+backend/app/
+├── api/v1/
+│   └── websocket.py            # WebSocket endpoint handler
+├── services/
+│   └── ws_manager.py           # Connection manager (broadcast, rooms)
+└── workers/
+    └── tasks.py                # Modified to emit WS events
+```
+
+**WebSocket Endpoint**:
+```python
+# /api/v1/ws
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, handle client messages
+            data = await websocket.receive_text()
+            # Handle subscription to specific runs
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+```
+
+**Frontend Integration**:
+```typescript
+// hooks/useWebSocket.ts
+const useRunUpdates = (runId: string) => {
+  const { lastMessage } = useWebSocket(`ws://localhost:8000/api/v1/ws`);
+
+  useEffect(() => {
+    if (lastMessage?.type === 'run_progress' && lastMessage.payload.run_id === runId) {
+      // Update React Query cache
+      queryClient.setQueryData(['run', runId], (old) => ({
+        ...old,
+        ...lastMessage.payload
+      }));
+    }
+  }, [lastMessage]);
+};
+```
+
+**Use Cases**:
+1. **RunDetail page** - Live progress bar, streaming logs
+2. **RunsList page** - Status badges update automatically
+3. **Dashboard** - Recent runs list updates in real-time
+4. **Toast notifications** - "Task X completed successfully"
+
+---
+
+### Feature 3: Visual Cron Builder
+
+#### UI Design
+
+**Component Structure**:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Schedule Configuration                                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Quick Presets                                           │    │
+│  │  [Every Hour] [Daily 2AM] [Weekly Sun] [Monthly 1st]    │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Frequency     [Dropdown: Hourly/Daily/Weekly/Monthly]   │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Time Picker   [ 02 ▼ ] : [ 00 ▼ ]  (24-hour format)    │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Days of Week (for Weekly)                               │    │
+│  │  [Mon] [Tue] [Wed] [Thu] [Fri] [Sat] [Sun]              │    │
+│  │   ○     ○     ○     ○     ○     ○     ●                 │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Day of Month (for Monthly)                              │    │
+│  │  [ 1 ▼ ] or [Last day of month ☐]                       │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Generated Cron: 0 2 * * 0                               │    │
+│  │  Human readable: "Every Sunday at 2:00 AM"               │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Next 5 Runs:                                            │    │
+│  │  • Sun, Feb 9, 2026 at 2:00 AM                          │    │
+│  │  • Sun, Feb 16, 2026 at 2:00 AM                         │    │
+│  │  • Sun, Feb 23, 2026 at 2:00 AM                         │    │
+│  │  • Sun, Mar 2, 2026 at 2:00 AM                          │    │
+│  │  • Sun, Mar 9, 2026 at 2:00 AM                          │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Advanced: Edit cron directly                            │    │
+│  │  [ 0 2 * * 0                                         ]   │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Frontend Components**:
+```
+frontend/src/components/
+├── CronBuilder/
+│   ├── index.tsx               # Main container
+│   ├── FrequencySelector.tsx   # Hourly/Daily/Weekly/Monthly
+│   ├── TimePicker.tsx          # Hour:Minute selector
+│   ├── DayOfWeekPicker.tsx     # Toggle buttons for weekdays
+│   ├── DayOfMonthPicker.tsx    # Dropdown 1-31 + last day
+│   ├── CronPreview.tsx         # Shows cron + human readable
+│   ├── NextRunsList.tsx        # Upcoming execution dates
+│   └── utils.ts                # Cron generation/parsing logic
+```
+
+**Cron Generation Logic**:
+```typescript
+interface CronConfig {
+  frequency: 'hourly' | 'daily' | 'weekly' | 'monthly';
+  hour: number;        // 0-23
+  minute: number;      // 0-59
+  daysOfWeek: number[]; // 0-6 (Sun-Sat)
+  dayOfMonth: number | 'last';
+}
+
+function generateCron(config: CronConfig): string {
+  const { frequency, hour, minute, daysOfWeek, dayOfMonth } = config;
+
+  switch (frequency) {
+    case 'hourly':
+      return `${minute} * * * *`;
+    case 'daily':
+      return `${minute} ${hour} * * *`;
+    case 'weekly':
+      return `${minute} ${hour} * * ${daysOfWeek.join(',')}`;
+    case 'monthly':
+      const dom = dayOfMonth === 'last' ? 'L' : dayOfMonth;
+      return `${minute} ${hour} ${dom} * *`;
+  }
+}
+```
+
+**Backend Support**:
+```python
+# New endpoint to calculate next runs
+GET /api/v1/schedules/preview?cron=0+2+*+*+0&count=5
+
+Response:
+{
+  "cron": "0 2 * * 0",
+  "human_readable": "Every Sunday at 2:00 AM",
+  "next_runs": [
+    "2026-02-09T02:00:00Z",
+    "2026-02-16T02:00:00Z",
+    ...
+  ]
+}
+```
+
+---
+
+### Feature 4: Mobile-Responsive UI
+
+#### Responsive Breakpoints
+
+```css
+/* Tailwind breakpoints */
+sm: 640px   /* Mobile landscape */
+md: 768px   /* Tablet */
+lg: 1024px  /* Desktop */
+xl: 1280px  /* Large desktop */
+```
+
+#### Component Adaptations
+
+**Sidebar Navigation**:
+```
+Desktop (lg+):           Mobile (< lg):
+┌────┬──────────────┐    ┌──────────────────┐
+│ ☰  │              │    │ ☰ API2DB     [≡] │  <- Hamburger menu
+│    │              │    ├──────────────────┤
+│ 📊 │   Content    │    │                  │
+│ 📋 │              │    │     Content      │
+│ ▶️  │              │    │                  │
+│ 📅 │              │    │                  │
+└────┴──────────────┘    └──────────────────┘
+
+Mobile menu (slide-in):
+┌──────────────────┐
+│ ✕ Close          │
+├──────────────────┤
+│ 📊 Dashboard     │
+│ 📋 Tasks         │
+│ ▶️ Runs          │
+│ 📅 Schedules     │
+│ ⚙️ Settings      │
+└──────────────────┘
+```
+
+**Data Tables**:
+```
+Desktop:                          Mobile (card layout):
+┌────┬──────┬────────┬──────┐    ┌──────────────────┐
+│ ID │ Name │ Status │ Act  │    │ Import Users     │
+├────┼──────┼────────┼──────┤    │ Status: ● Active │
+│ 1  │ Task │ Active │ [▶]  │    │ Last run: 2h ago │
+└────┴──────┴────────┴──────┘    │ [▶ Run] [Edit]   │
+                                  └──────────────────┘
+                                  ┌──────────────────┐
+                                  │ Sync Products    │
+                                  │ ...              │
+                                  └──────────────────┘
+```
+
+**Forms**:
+- Stack form fields vertically on mobile
+- Full-width inputs
+- Larger touch targets (min 44px height)
+- Floating action buttons for primary actions
+
+**Implementation Checklist**:
+- [ ] Collapsible sidebar with hamburger menu
+- [ ] Responsive table → card layout switcher
+- [ ] Touch-friendly button sizes (min 44x44px)
+- [ ] Swipe gestures for card actions (optional)
+- [ ] Bottom navigation bar for mobile (optional)
+- [ ] Viewport meta tag already set
+- [ ] Test on iOS Safari, Android Chrome
+
+**Key Files to Modify**:
+```
+frontend/src/
+├── components/
+│   ├── layout/
+│   │   ├── Sidebar.tsx         # Add mobile hamburger
+│   │   └── MobileNav.tsx       # New slide-in menu
+│   └── ui/
+│       └── ResponsiveTable.tsx # Table/Card switcher
+├── pages/
+│   ├── TaskList.tsx            # Use ResponsiveTable
+│   ├── RunsList.tsx            # Use ResponsiveTable
+│   └── Schedules.tsx           # Use ResponsiveTable
+└── index.css                   # Mobile-first utilities
+```
+
+---
+
+### Feature 5: Upsert Logic for Database Records
+
+#### Overview
+
+Enable tasks to update existing records (if unique key matches) or insert new ones, with intelligent row skipping for already-processed records and graceful error handling.
+
+#### Database Schema Changes
+
+**Task Model Enhancement**:
+```sql
+ALTER TABLE tasks ADD upsert_enabled NUMBER(1) DEFAULT 0;
+ALTER TABLE tasks ADD upsert_keys VARCHAR2(500);       -- JSON array of column names
+ALTER TABLE tasks ADD skip_column VARCHAR2(100);       -- Column to check for skip condition
+ALTER TABLE tasks ADD skip_value VARCHAR2(100);        -- Value that triggers skip (e.g., 'Y')
+-- Example: skip_column = "processed", skip_value = "Y"
+```
+
+#### Row Skip Logic
+
+**Use Case**: A third-party system processes records and marks them with `processed = 'Y'`. The import should skip these rows to avoid overwriting changes.
+
+**Skip Conditions**:
+1. **Pre-processed rows**: If `skip_column` has `skip_value`, skip the row
+2. **Primary key errors**: Log error, skip row, continue processing
+3. **Constraint violations**: Log error, skip row, continue processing
+
+**Skip Flow Diagram**:
+```
+For each record in API response:
+    │
+    ├─► Check if record exists in DB (by upsert_keys)
+    │       │
+    │       ├─► EXISTS + skip_column = skip_value
+    │       │       └─► SKIP (log: "Row skipped - already processed")
+    │       │
+    │       ├─► EXISTS + skip_column ≠ skip_value
+    │       │       └─► UPDATE record
+    │       │
+    │       └─► NOT EXISTS
+    │               └─► INSERT record
+    │
+    ├─► On PRIMARY KEY error
+    │       └─► LOG error + SKIP + CONTINUE
+    │
+    └─► On CONSTRAINT error
+            └─► LOG error + SKIP + CONTINUE
+```
+
+#### Upsert Strategies
+
+**Strategy 1: MERGE Statement with Skip Logic (Oracle)**
+```sql
+MERGE INTO target_table t
+USING (SELECT :col1 as col1, :col2 as col2 FROM dual) s
+ON (t.employee_id = s.employee_id)
+WHEN MATCHED THEN
+  UPDATE SET t.col2 = s.col2, t.updated_at = SYSDATE
+  WHERE t.processed IS NULL OR t.processed != 'Y'  -- Skip if already processed
+WHEN NOT MATCHED THEN
+  INSERT (col1, col2, created_at) VALUES (s.col1, s.col2, SYSDATE);
+```
+
+**Strategy 2: Check-Skip-then-Insert/Update** (With Error Handling)
+```python
+# For databases without MERGE support or complex skip logic
+existing = session.query(Model).filter_by(unique_key=value).first()
+if existing:
+    if existing.processed == 'Y':
+        return RowResult.SKIPPED  # Already processed by third party
+    for key, val in data.items():
+        setattr(existing, key, val)
+else:
+    session.add(Model(**data))
+```
+
+#### Backend Implementation
+
+**Enhanced Runner Service**:
+```python
+# backend/app/services/runner.py
+from dataclasses import dataclass
+from enum import Enum
+
+class RowStatus(Enum):
+    INSERTED = "inserted"
+    UPDATED = "updated"
+    SKIPPED = "skipped"
+    ERROR = "error"
+
+@dataclass
+class RowResult:
+    status: RowStatus
+    record_key: str
+    message: str = ""
+
+class TaskRunner:
+    def process_records(self, task: Task, records: list[dict]) -> dict:
+        """Process records with skip logic and error continuation."""
+        results = {
+            "inserted": 0,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "error_details": []
+        }
+
+        for idx, record in enumerate(records):
+            try:
+                result = self._process_single_record(task, record)
+                results[result.status.value] += 1 if result.status != RowStatus.ERROR else 0
+                results["errors"] += 1 if result.status == RowStatus.ERROR else 0
+
+                if result.status == RowStatus.ERROR:
+                    results["error_details"].append({
+                        "row_index": idx,
+                        "record_key": result.record_key,
+                        "error": result.message
+                    })
+
+            except Exception as e:
+                # Catch-all: log and continue to next record
+                logger.error(f"Unexpected error processing row {idx}: {e}")
+                results["errors"] += 1
+                results["error_details"].append({
+                    "row_index": idx,
+                    "error": str(e)
+                })
+                continue  # NEVER stop the process
+
+        return results
+
+    def _process_single_record(self, task: Task, record: dict) -> RowResult:
+        """Process a single record with skip and error handling."""
+        upsert_keys = json.loads(task.upsert_keys) if task.upsert_keys else []
+        record_key = self._get_record_key(record, upsert_keys)
+
+        try:
+            # Check if record exists
+            if upsert_keys:
+                existing = self._find_existing_record(task, record, upsert_keys)
+
+                if existing:
+                    # Check skip condition
+                    if self._should_skip(task, existing):
+                        logger.info(f"Skipping row {record_key}: already processed")
+                        return RowResult(
+                            status=RowStatus.SKIPPED,
+                            record_key=record_key,
+                            message=f"Skip condition met: {task.skip_column}={task.skip_value}"
+                        )
+
+                    # Update existing record
+                    self._update_record(task, existing, record)
+                    return RowResult(status=RowStatus.UPDATED, record_key=record_key)
+
+            # Insert new record
+            self._insert_record(task, record)
+            return RowResult(status=RowStatus.INSERTED, record_key=record_key)
+
+        except IntegrityError as e:
+            # Primary key or unique constraint violation
+            logger.warning(f"Constraint error for row {record_key}: {e}")
+            self.session.rollback()
+            return RowResult(
+                status=RowStatus.ERROR,
+                record_key=record_key,
+                message=f"Constraint violation: {str(e)[:200]}"
+            )
+
+        except DatabaseError as e:
+            # Other database errors
+            logger.error(f"Database error for row {record_key}: {e}")
+            self.session.rollback()
+            return RowResult(
+                status=RowStatus.ERROR,
+                record_key=record_key,
+                message=f"Database error: {str(e)[:200]}"
+            )
+
+    def _should_skip(self, task: Task, existing_record) -> bool:
+        """Check if record should be skipped based on skip_column/skip_value."""
+        if not task.skip_column or not task.skip_value:
+            return False
+
+        current_value = getattr(existing_record, task.skip_column, None)
+        return str(current_value).upper() == str(task.skip_value).upper()
+
+    def _get_record_key(self, record: dict, upsert_keys: list) -> str:
+        """Generate a readable key for logging."""
+        if upsert_keys:
+            return ", ".join(f"{k}={record.get(k)}" for k in upsert_keys)
+        return f"row_{id(record)}"
+
+    def _build_merge_sql(self, task: Task, columns: list, upsert_keys: list) -> str:
+        """Generate Oracle MERGE statement with skip condition."""
+        update_cols = [c for c in columns if c not in upsert_keys]
+
+        # Build WHERE clause for skip condition
+        skip_where = ""
+        if task.skip_column and task.skip_value:
+            skip_where = f"WHERE (t.{task.skip_column} IS NULL OR t.{task.skip_column} != '{task.skip_value}')"
+
+        return f"""
+        MERGE INTO {task.table_name} t
+        USING (SELECT {', '.join(f':{c} as {c}' for c in columns)} FROM dual) s
+        ON ({' AND '.join(f't.{k} = s.{k}' for k in upsert_keys)})
+        WHEN MATCHED THEN
+          UPDATE SET {', '.join(f't.{c} = s.{c}' for c in update_cols)}
+          {skip_where}
+        WHEN NOT MATCHED THEN
+          INSERT ({', '.join(columns)}) VALUES ({', '.join(f's.{c}' for c in columns)})
+        """
+```
+
+#### Error Handling Philosophy
+
+**Key Principle**: The process should NEVER stop due to individual row errors.
+
+| Error Type | Action | Logged |
+|------------|--------|--------|
+| Skip condition met | Skip row, continue | INFO |
+| Primary key violation | Skip row, continue | WARNING |
+| Unique constraint violation | Skip row, continue | WARNING |
+| Data type mismatch | Skip row, continue | WARNING |
+| Foreign key violation | Skip row, continue | WARNING |
+| Connection lost | Retry 3x, then fail run | ERROR |
+| Table not found | Fail run immediately | ERROR |
+
+**Error Log Entry Example**:
+```json
+{
+  "run_id": "abc-123",
+  "row_index": 42,
+  "record_key": "employee_id=12345",
+  "error_type": "CONSTRAINT_VIOLATION",
+  "error_message": "ORA-00001: unique constraint (EMPLOYEES_EMAIL_UK) violated",
+  "timestamp": "2026-02-03T14:30:00Z",
+  "action_taken": "SKIPPED"
+}
+```
+
+#### Frontend Integration
+
+**TaskWizard Step Enhancement**:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 5: Database Options                                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Insert Mode:                                                     │
+│  ○ Insert only (fail on duplicates)                              │
+│  ● Upsert (update if exists, insert if new)                      │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Unique Key Columns (for upsert matching):               │    │
+│  │                                                          │    │
+│  │  Available Columns:        Selected Keys:                │    │
+│  │  ┌──────────────┐         ┌──────────────┐              │    │
+│  │  │ name         │   [>]   │ employee_id  │              │    │
+│  │  │ department   │   [<]   │              │              │    │
+│  │  │ salary       │         │              │              │    │
+│  │  │ hire_date    │         │              │              │    │
+│  │  └──────────────┘         └──────────────┘              │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Skip Already Processed Records (Optional):              │    │
+│  │                                                          │    │
+│  │  Skip Column:  [ processed      ▼ ]                     │    │
+│  │  Skip Value:   [ Y              ]                       │    │
+│  │                                                          │    │
+│  │  ℹ️  Rows where this column equals this value will be   │    │
+│  │     skipped during import (useful when third-party      │    │
+│  │     systems mark records as processed)                  │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ☑️  Continue on row errors (log and skip failed rows)          │
+│                                                                   │
+│  ⚠️  Upsert keys should match unique/primary key constraints     │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**TaskDetail Enhancement**:
+- Show upsert configuration in task summary
+- Display "Upsert Mode: ON (key: employee_id)" badge
+- Display "Skip: processed=Y" badge when configured
+- Track statistics: X inserted, Y updated, Z skipped, N errors
+
+#### Run Statistics Enhancement
+
+```python
+# TaskRun model additions
+class TaskRun:
+    # Existing fields...
+    inserted_records = Column(Integer, default=0)
+    updated_records = Column(Integer, default=0)
+    skipped_records = Column(Integer, default=0)  # Rows skipped due to skip condition
+    error_records = Column(Integer, default=0)    # Rows skipped due to errors
+    # successful_records = inserted + updated
+    # total_processed = inserted + updated + skipped + errors
+```
+
+**API Response**:
+```json
+{
+  "run_id": "abc-123",
+  "status": "SUCCESS",
+  "total_records": 100,
+  "inserted_records": 75,
+  "updated_records": 10,
+  "skipped_records": 12,
+  "error_records": 3,
+  "failed_records": 0
+}
+```
+
+---
+
+### Implementation Timeline
+
+| Feature | Estimated Effort | Priority |
+|---------|-----------------|----------|
+| 1. DB Connection Config UI | 8-12 hours | High |
+| 2. WebSocket Real-time | 10-15 hours | Medium |
+| 3. Visual Cron Builder | 6-10 hours | Medium |
+| 4. Mobile-Responsive UI | 8-12 hours | Medium |
+| 5. Upsert Logic | 6-8 hours | High |
+| **Total** | **38-57 hours** | |
+
+### Implementation Order (Recommended)
+
+1. **Upsert Logic** - Core functionality, no UI dependencies
+2. **DB Connection Config** - Security-critical, enables multi-environment
+3. **Mobile-Responsive UI** - Improves usability across devices
+4. **Visual Cron Builder** - UX improvement, builds on existing scheduler
+5. **WebSocket Real-time** - Polish feature, can be added last
+
+### Testing Strategy
+
+**Backend Tests** (40+ cases):
+- `test_connections.py`: CRUD, encryption, test connection, activation, file permissions
+- `test_websocket.py`: Connection lifecycle, event broadcasting, room subscriptions
+- `test_upsert.py`: MERGE generation, key matching, statistics tracking
+- `test_skip_logic.py`: Skip condition evaluation, error continuation, statistics
+  - Test skip when processed='Y'
+  - Test continue on primary key error
+  - Test continue on constraint violation
+  - Test error logging with continuation
+  - Test mixed results (insert + update + skip + error)
+
+**Frontend Tests** (30+ cases):
+- `ConnectionEditor.test.tsx`: Form validation, password masking, test button
+- `CronBuilder.test.tsx`: Preset selection, cron generation, next runs display
+- `ResponsiveTable.test.tsx`: Breakpoint switching, card rendering
+- `WebSocket.test.tsx`: Connection, reconnection, event handling
+- `UpsertConfig.test.tsx`: Skip column selection, skip value input, validation
+
+**E2E Tests** (15+ cases):
+- Full connection configuration flow
+- Real-time run monitoring
+- Schedule creation with visual builder
+- Mobile navigation and interactions
+- Upsert with skip condition (verify skipped rows logged)
+- Run with row errors (verify process continues)
+
+---
+
+### Security Checklist (Phase 8)
+
+- [ ] Connection passwords encrypted with Fernet
+- [ ] Passwords never returned in API responses
+- [ ] Rate limiting on connection test endpoint
+- [ ] Audit logging for configuration changes
+- [ ] WebSocket authentication (session-based)
+- [ ] CORS configuration for WebSocket
+- [ ] Input validation on cron expressions
+- [ ] SQL injection prevention in MERGE statements (parameterized queries)
+
+---
+
 ## 🎯 Current Project Status
 
 ### Phase 4: Backend ✅ COMPLETE
 - FastAPI REST API fully implemented
-- 6 service modules for business logic
+- 8 service modules for business logic
 - Database models and schemas
 - Celery task queue setup
-- 110+ unit tests passing
+- APScheduler integration for cron scheduling
+- 13 test files (7 unit + 6 integration)
 - Ready for production
 
 ### Phase 5: Frontend ✅ COMPLETE
 - React + TypeScript application
-- 6 pages with full CRUD
+- 7 pages with full CRUD
 - 11 routes configured
-- 9 UI components built
-- 42+ tests passing
+- UI components built with Radix UI
+- 12 test files
 - Production-ready codebase
 
-### Phase 6: Advanced Features ✅ IN PROGRESS
-- **Column Mapping Enhancement** (Current Phase)
-  - Nested JSON flattening display (tree view UI)
-  - API response sample fetching (manual paste + auto-fetch)
-  - Oracle metadata querying for column types
-  - Transform suggestions based on type mismatches
-  - Mapping templates (localStorage)
-  - Batch column operations (apply transform to all)
-  - REST API endpoints for mapping CRUD
-  - Enhanced TaskWizard with dedicated mapping step (Step 4.5)
-  - Advanced mapping management in TaskDetail page
-  - Pydantic fallback alternatives documented (Dataclasses/Attrs/Marshmallow)
-- Future: E2E testing, Authentication, Real-time updates, Advanced search
+### Phase 6: Column Mapping Enhancement ✅ COMPLETE
+- Nested JSON flattening display (tree view UI)
+- API response sample fetching (manual paste + auto-fetch)
+- Oracle metadata querying for column types
+- Transform suggestions based on type mismatches
+- Mapping templates (localStorage)
+- Batch column operations (apply transform to all)
+- REST API endpoints for mapping CRUD
+- Enhanced TaskWizard with dedicated mapping step
+- Advanced mapping management in TaskDetail page
+- Scheduling feature integrated
+
+### Phase 7: Authentication & Scheduler UI ✅ COMPLETE
+- Bearer, API Key, Basic Auth support
+- Credential encryption with Fernet
+- Cron-based scheduling with APScheduler
+- Schedule management UI (Schedules page)
+- ScheduleEditor component
+- Auto-pause on consecutive failures
+- Manual resume for paused schedules
+- Run labeling with task name and retry badges
+- Frontend-backend field alignment
+- Oracle 11g compatibility
+- Timezone handling
+
+### Phase 8: Configuration UI, Real-time & UX ⏳ PLANNED
+- DB Connection Configuration UI (move from .env to admin page)
+- WebSocket real-time updates for run progress
+- Visual Cron Builder for schedule creation
+- Mobile-responsive UI (touch-friendly, card layouts)
+- Upsert logic for insert/update records
+
+### Future Enhancements (Phase 9+)
+- E2E testing with Cypress/Playwright
+- OAuth provider integration (Google, GitHub, Azure AD)
+- Advanced search & filtering
+- Certificate-based authentication (mTLS)
 
 ---
 
 ## 📝 Last Updated
 
-- **Date**: January 2026
-- **Version**: 1.0.0 + Phase 6 (Column Mapping)
-- **Status**: Phase 5 Production Ready | Phase 6 In Progress
-- **Next Phase**: Phase 6 Column Mapping Completion → Phase 6B Validation → Phase 6C Advanced Array Handling
+- **Date**: February 3, 2026
+- **Version**: 1.0.0 (Production Release)
+- **Status**: Phase 4-7 Complete | Phase 8 Planned
+- **Next Phase**: Phase 8 - DB Config UI, WebSocket, Cron Builder, Mobile UI, Upsert
 
 ---
 
 **This document is the single source of truth for project context and development practices. Keep it updated as the project evolves.**
-
----
-
-**Phase 7 Started**: January 30, 2026  
-**See**: [PHASE_7_PLAN.md](PHASE_7_PLAN.md) for detailed implementation guide
