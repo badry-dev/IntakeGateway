@@ -7,8 +7,17 @@ export interface TaskAuth {
   // api_key and password excluded from responses for security
 }
 
+// Upsert configuration types (Phase 8)
+export interface UpsertConfig {
+  upsert_enabled: boolean
+  upsert_keys?: string[]  // Column names for matching
+  skip_column?: string    // Column to check for skip condition
+  skip_value?: string     // Value that triggers skip (e.g., 'Y')
+  continue_on_error: boolean
+}
+
 // Task types
-export interface Task extends TaskAuth {
+export interface Task extends TaskAuth, UpsertConfig {
   id: number
   name: string
   description?: string
@@ -122,6 +131,8 @@ export interface TaskRun {
   status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED'
   rows_fetched: number
   rows_inserted: number
+  rows_updated?: number   // Phase 8: Upsert updates
+  rows_skipped?: number   // Phase 8: Skipped due to skip condition
   error_count: number
   warning_count?: number
   started_at: string
@@ -160,6 +171,8 @@ export interface TaskStats {
   success_rate: number
   total_rows_fetched: number
   total_rows_inserted: number
+  total_rows_updated?: number  // Phase 8: Upsert updates
+  total_rows_skipped?: number  // Phase 8: Skipped rows
   total_errors: number
   avg_duration_seconds: number
   last_run_at?: string
@@ -198,6 +211,12 @@ export interface TaskFormData {
   username?: string
   password?: string
   oauth_config?: Record<string, any>
+  // Upsert fields (Phase 8)
+  upsert_enabled?: boolean
+  upsert_keys?: string[]
+  skip_column?: string
+  skip_value?: string
+  continue_on_error?: boolean
 }
 
 // Schedule types

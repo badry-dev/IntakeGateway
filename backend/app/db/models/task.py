@@ -42,6 +42,13 @@ class Task(Base):
     username = Column(String(200), nullable=True)  # For Basic auth
     password = Column(String(500), nullable=True)  # Encrypted
     oauth_config = Column(JSONEncodedDict, nullable=True)  # OAuth settings (client_id, token_url, etc.)
-    
+
+    # Upsert configuration (Phase 8)
+    upsert_enabled = Column(Boolean, nullable=False, default=False)
+    upsert_keys = Column(JSONEncodedDict, nullable=True)  # JSON array of column names for matching
+    skip_column = Column(String(100), nullable=True)  # Column to check for skip condition
+    skip_value = Column(String(100), nullable=True)  # Value that triggers skip (e.g., 'Y')
+    continue_on_error = Column(Boolean, nullable=False, default=True)  # Continue processing on row errors
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

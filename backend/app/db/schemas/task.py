@@ -22,7 +22,23 @@ class TaskCreate(BaseModel):
     username: Optional[str] = None  # For Basic auth
     password: Optional[str] = None  # Will be encrypted before storage
     oauth_config: Optional[dict[str, Any]] = None  # OAuth settings
-    
+
+    # Upsert configuration (Phase 8)
+    upsert_enabled: bool = False
+    upsert_keys: Optional[list[str]] = None  # Column names for matching
+    skip_column: Optional[str] = None  # Column to check for skip condition
+    skip_value: Optional[str] = None  # Value that triggers skip (e.g., 'Y')
+    continue_on_error: bool = True  # Continue processing on row errors
+
+    @field_validator('upsert_keys')
+    @classmethod
+    def validate_upsert_keys(cls, v: Optional[list[str]], info):
+        """Validate that upsert_keys is provided when upsert is enabled"""
+        upsert_enabled = info.data.get('upsert_enabled')
+        if upsert_enabled and (not v or len(v) == 0):
+            raise ValueError("upsert_enabled requires at least one column in upsert_keys")
+        return v
+
     @field_validator('api_key')
     @classmethod
     def validate_api_key_with_auth_type(cls, v: Optional[str], info):
@@ -60,7 +76,14 @@ class TaskOut(BaseModel):
     auth_type: str = 'none'
     username: Optional[str] = None  # Safe to expose
     # api_key and password are NOT included in response
-    
+
+    # Upsert configuration (Phase 8)
+    upsert_enabled: bool = False
+    upsert_keys: Optional[list[str]] = None
+    skip_column: Optional[str] = None
+    skip_value: Optional[str] = None
+    continue_on_error: bool = True
+
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
@@ -103,6 +126,8 @@ class TaskRunOut(BaseModel):
     status: str
     rows_fetched: int
     rows_inserted: int
+    rows_updated: int = 0  # Phase 8: Upsert updates
+    rows_skipped: int = 0  # Phase 8: Skipped due to skip condition
     error_count: int
     warning_count: int = 0
     started_at: datetime
@@ -127,6 +152,8 @@ class TaskStatsOut(BaseModel):
     success_rate: float  # Percentage 0-100
     total_rows_fetched: int
     total_rows_inserted: int
+    total_rows_updated: int = 0  # Phase 8: Upsert updates
+    total_rows_skipped: int = 0  # Phase 8: Skipped rows
     total_errors: int
     avg_duration_seconds: float
     last_run_at: Optional[datetime] = None
