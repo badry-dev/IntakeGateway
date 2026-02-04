@@ -43,6 +43,16 @@ class ConnectionStorageService:
 
         try:
             encrypted_content = self.file_path.read_text(encoding='utf-8')
+            
+            # Handle empty file
+            if not encrypted_content or encrypted_content.strip() == '':
+                logger.debug(f"Empty connections file at {self.file_path}, returning empty structure")
+                return {
+                    "version": 1,
+                    "active_connection_id": None,
+                    "connections": []
+                }
+            
             decrypted = self._encryption.decrypt(encrypted_content)
             return json.loads(decrypted)
         except Exception as e:

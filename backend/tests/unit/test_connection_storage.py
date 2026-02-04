@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 
 # Set test environment before importing app modules
 os.environ["APP_ENV"] = "development"
-os.environ["ENCRYPTION_KEY"] = "test_key_for_testing_purposes_only_32bytes!"
+os.environ["ENCRYPTION_KEY"] = "ancg5kTQFZYtqA3LyzV9MrixQ1HyC95gitaGyZ1nDPk="
 
 
 class TestConnectionStorage:

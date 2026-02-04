@@ -1,6 +1,6 @@
 # API2DB-Importer: AI Coding Agent Instructions
 
-**Last Updated**: January 30, 2026 | **Status**: Production Ready | Phase 7 In Progress
+**Last Updated**: February 4, 2026 | **Status**: Production Ready | Phase 8 In Progress
 
 Quick reference for AI agents developing or extending this full-stack application.
 
@@ -36,6 +36,8 @@ User Request → FastAPI Route → Service Layer → SQLAlchemy ORM → Oracle D
 - `scheduler.py` - Task scheduling logic
 - `oracle_metadata.py` - Queries Oracle `USER_TAB_COLUMNS` for table schema discovery (Phase 6)
 - `transform_suggester.py` - Recommends transforms based on source/destination type mismatch (Phase 6)
+- `connection_storage.py` - Encrypted file storage for database connections (Phase 8)
+- `connection_pool.py` - Dynamic connection pool manager for Oracle/PostgreSQL/MySQL (Phase 8)
 
 ### Database Schema Pattern
 **Key Tables**:
@@ -47,11 +49,12 @@ User Request → FastAPI Route → Service Layer → SQLAlchemy ORM → Oracle D
 **Critical Detail**: `Task` uses `JSONEncodedDict` TypeDecorator for Oracle compatibility—stores complex objects as JSON strings.
 
 ### Frontend Architecture
-- **Pages** (6): Dashboard, TaskList, TaskDetail, TaskWizard, RunsList, RunDetail
+- **Pages** (7): Dashboard, TaskList, TaskDetail, TaskWizard, RunsList, RunDetail, Settings (NEW)
 - **State Management**: React Query (server state) + Zustand (optional UI state)
 - **API Integration**: `src/api/client.ts` wraps Axios with base config
 - **TaskWizard**: 6-step form (Phase 6 update: Basic → Endpoint → Headers → Mapping (NEW) → Review → Confirmation)
 - **ColumnMappingEditor**: Reusable component for mapping configuration with hierarchical tree view + transform selection (Phase 6)
+- **ConnectionEditor**: Component for managing database connections with encryption (Phase 8)
 
 ---
 
@@ -224,22 +227,29 @@ export function useGetTasks() {
 - `app/api/v1/routes/tasks.py` - Task CRUD endpoints (294 lines)
 - `app/api/v1/routes/runs.py` - Run execution endpoints
 - `app/api/v1/routes/column_mappings.py` - Column mapping CRUD + preview endpoints (Phase 6 NEW)
+- `app/api/v1/routes/connections.py` - Database connection management endpoints (Phase 8 NEW)
 - `app/workers/tasks.py` - Celery task definitions
 - `app/services/mapper.py` - Field mapping + transforms (116 lines, extended Phase 6)
 - `app/services/oracle_metadata.py` - Oracle table schema discovery (Phase 6 NEW)
 - `app/services/transform_suggester.py` - Transform recommendations (Phase 6 NEW)
 - `app/services/api_connector.py` - API calls + sample response fetching (Phase 6 enhanced)
+- `app/services/connection_storage.py` - Encrypted file storage for DB connections (Phase 8 NEW)
+- `app/services/connection_pool.py` - Dynamic connection pool manager (Phase 8 NEW)
 - `app/db/models/task.py` - Task ORM model with JSONEncodedDict
 - `app/db/schemas/column_mapping.py` - Pydantic schemas for mappings (Phase 6 NEW)
+- `app/db/schemas/connection.py` - Pydantic schemas for connections (Phase 8 NEW)
 - `app/core/config.py` - Environment configuration
+- `app/core/encryption.py` - Fernet encryption for credentials (Phase 7)
 
 **Frontend Critical Files**:
 - `src/pages/TaskWizard.tsx` - 6-step task creation with mapping step (Phase 6 enhanced)
 - `src/pages/TaskDetail.tsx` - Task detail + advanced mapping configuration (Phase 6 enhanced)
+- `src/pages/Settings.tsx` - Database connection configuration UI (Phase 8 NEW)
 - `src/components/ColumnMappingEditor.tsx` - Mapping UI with tree view + transforms (Phase 6 NEW)
+- `src/components/ConnectionEditor.tsx` - Connection management with test button (Phase 8 NEW)
 - `src/pages/RunDetail.tsx` - Run monitoring UI
-- `src/hooks/api.ts` - React Query hooks + 8 new mapping hooks (Phase 6)
-- `src/types/index.ts` - TypeScript type definitions + ColumnMapping types (Phase 6)
+- `src/hooks/api.ts` - React Query hooks + 8 new mapping hooks (Phase 6) + 7 connection hooks (Phase 8)
+- `src/types/index.ts` - TypeScript type definitions + ColumnMapping types (Phase 6) + Connection types (Phase 8)
 - `vite.config.ts` - Build configuration
 
 **Configuration**:
@@ -297,52 +307,129 @@ For detailed context, see:
 - [ ] Migration effort: ~30-45 minutes for 6 schemas
 - [ ] See fallback recommendations in claude.md Phase 6 section
 
-### Phase 7: API Authentication & Task Scheduler UI (In Progress)
+### Phase 7: API Authentication & Task Scheduler UI (Complete)
 
 **Objectives**:
-1. Add flexible API authentication (Bearer, API Key, Basic Auth, OAuth) for external data fetching
-2. Build complete frontend UI for cron-based task scheduling with retry logic
+1. ✅ Add flexible API authentication (Bearer, API Key, Basic Auth, OAuth) for external data fetching
+2. ✅ Build complete frontend UI for cron-based task scheduling with retry logic
 
-**Key Implementation Areas**:
+**Key Implementation**:
 
-#### Authentication System
-- [ ] Database: Add auth fields to Task table (`auth_type`, `api_key`, `username`, `password`, `oauth_config`)
-- [ ] Backend: Create `encryption.py` service with Fernet for credential encryption
-- [ ] Backend: Update `api_connector.py` with `apply_authentication()` function
-- [ ] Backend: Update Pydantic schemas to include auth fields (exclude secrets from TaskOut)
-- [ ] Frontend: Add Authentication step to TaskWizard with auth type dropdown
-- [ ] Test: 8+ unit tests for auth logic (Bearer prefix, Basic encoding, encryption)
+#### Authentication System (Complete)
+- ✅ Database: Added auth fields to Task table (`auth_type`, `api_key`, `username`, `password`, `oauth_config`)
+- ✅ Backend: Created `encryption.py` service with Fernet for credential encryption
+- ✅ Backend: Updated `api_connector.py` with `apply_authentication()` function
+- ✅ Backend: Updated Pydantic schemas to include auth fields (exclude secrets from TaskOut)
+- ✅ Frontend: Added Authentication step to TaskWizard with auth type dropdown
+- ✅ Test: 8+ unit tests for auth logic (Bearer prefix, Basic encoding, encryption)
 
-#### Task Scheduler UI
-- [ ] Backend: Create `schedules.py` routes (5 endpoints: POST, GET, PUT, DELETE schedules)
-- [ ] Backend: Create `schedule.py` Pydantic schemas with cron validation (croniter)
-- [ ] Frontend: Add schedule types to `types/index.ts` (TaskSchedule interface)
-- [ ] Frontend: Create `ScheduleEditor.tsx` component (cron input, presets, next run preview)
-- [ ] Frontend: Integrate scheduler into TaskDetail page (Schedule tab)
-- [ ] Frontend: Create `Schedules.tsx` page (list all schedules with filters)
-- [ ] Frontend: Add schedule indicators to TaskList (clock icon + cron expression)
-- [ ] Test: 10+ integration tests for schedule CRUD
+#### Task Scheduler UI (Complete)
+- ✅ Backend: Created `schedules.py` routes (5 endpoints: POST, GET, PUT, DELETE schedules)
+- ✅ Backend: Created `schedule.py` Pydantic schemas with cron validation (croniter)
+- ✅ Frontend: Added schedule types to `types/index.ts` (TaskSchedule interface)
+- ✅ Frontend: Created `ScheduleEditor.tsx` component (cron input, presets, next run preview)
+- ✅ Frontend: Integrated scheduler into TaskDetail page (Schedule tab)
+- ✅ Frontend: Created `Schedules.tsx` page (list all schedules with filters)
+- ✅ Frontend: Added schedule indicators to TaskList (clock icon + cron expression)
+- ✅ Test: 10+ integration tests for schedule CRUD
 
-#### Enhanced Retry Logic
-- [ ] Backend: Update Celery task to discriminate retryable errors (retry 5xx, not 4xx)
-- [ ] Database: Add `max_retries`, `consecutive_failures`, `status` to TaskSchedule
-- [ ] Backend: Implement auto-pause in scheduler.py after consecutive failures
-- [ ] Backend: Add `/schedules/{id}/resume` endpoint to manually resume paused schedules
-- [ ] Test: 7+ tests for retry discrimination and failure tracking
+#### Enhanced Retry Logic (Complete)
+- ✅ Backend: Updated Celery task to discriminate retryable errors (retry 5xx, not 4xx)
+- ✅ Database: Added `max_retries`, `consecutive_failures`, `status` to TaskSchedule
+- ✅ Backend: Implemented auto-pause in scheduler.py after consecutive failures
+- ✅ Backend: Added `/schedules/{id}/resume` endpoint to manually resume paused schedules
+- ✅ Test: 7+ tests for retry discrimination and failure tracking
 
 **Critical Files**:
 - `backend/app/db/models/task.py` - Auth fields added
-- `backend/app/core/encryption.py` - NEW encryption service
+- `backend/app/core/encryption.py` - Encryption service
 - `backend/app/services/api_connector.py` - Auth logic integration
-- `backend/app/api/v1/routes/schedules.py` - NEW schedule routes
-- `frontend/src/components/ScheduleEditor.tsx` - NEW schedule component
-- `frontend/src/pages/Schedules.tsx` - NEW schedules list page
+- `backend/app/api/v1/routes/schedules.py` - Schedule routes
+- `frontend/src/components/ScheduleEditor.tsx` - Schedule component
+- `frontend/src/pages/Schedules.tsx` - Schedules list page
 
 **Security Notes**:
 - All API keys and passwords encrypted with Fernet (symmetric encryption)
 - TaskOut schema excludes `api_key` and `password` fields from responses
 - ENCRYPTION_KEY stored in environment variables, not hardcoded
 - Key rotation supported via encryption service
+
+---
+
+### Phase 8: Configuration UI, Real-time Updates & UX (In Progress)
+
+**Current Status**: Feature 1 Complete - Database Connection Configuration UI
+
+#### Feature 1: Database Connection Configuration UI ✅ COMPLETE
+
+**Backend Implementation**:
+- ✅ Created `connection.py` Pydantic schemas (ConnectionCreate, ConnectionOut, ConnectionUpdate, ConnectionTest)
+- ✅ Implemented `connection_storage.py` - Encrypted file storage service using Fernet
+- ✅ Implemented `connection_pool.py` - Dynamic connection pool manager (Oracle, PostgreSQL, MySQL)
+- ✅ Created `connections.py` REST API routes (7 endpoints):
+  - `GET /api/v1/connections` - List all connections (passwords masked)
+  - `POST /api/v1/connections` - Create connection with encrypted password
+  - `GET /api/v1/connections/{id}` - Get single connection
+  - `PUT /api/v1/connections/{id}` - Update connection
+  - `DELETE /api/v1/connections/{id}` - Delete connection
+  - `POST /api/v1/connections/{id}/test` - Test connection validity
+  - `POST /api/v1/connections/{id}/activate` - Set as active connection
+- ✅ Registered connections router in `main.py`
+- ✅ Added unit tests for storage service (422 lines, 20+ test cases)
+- ✅ Added integration tests for API routes (344 lines, 18+ test cases)
+
+**Frontend Implementation**:
+- ✅ Added Connection types to `types/index.ts` (Connection, ConnectionCreate, ConnectionUpdate)
+- ✅ Updated `api/client.ts` with 7 connection API methods
+- ✅ Created 7 React Query hooks in `hooks/api.ts` (useConnections, useCreateConnection, etc.)
+- ✅ Built `ConnectionEditor.tsx` component (379 lines) with:
+  - Database type dropdown (Oracle, PostgreSQL, MySQL)
+  - Connection form with host, port, database, credentials
+  - Test connection button with loading/success/error states
+  - Password masking with show/hide toggle
+  - Validation for required fields
+- ✅ Created `Settings.tsx` page (260 lines) with Connections tab:
+  - List all connections with status indicators
+  - Add new connection button
+  - Edit/Delete actions per connection
+  - Activate connection to set as default
+- ✅ Added Settings route to `App.tsx` and navigation link
+- ✅ Added tests for ConnectionEditor component (408 lines, 22+ test cases)
+- ✅ Added tests for Settings page (241 lines, 12+ test cases)
+
+**Key Features**:
+- Encrypted file storage at `/etc/api2db/connections.enc` (configurable)
+- Fernet symmetric encryption for passwords at rest
+- Test connection validates credentials before saving
+- Active connection selection with environment fallback
+- Support for Oracle, PostgreSQL, and MySQL databases
+- File permissions: 600 (owner read/write only)
+- Directory permissions: 700
+
+**Security Measures**:
+- Passwords never returned in API responses (masked as "********")
+- Encryption key stored in environment variable
+- File integrity check via HMAC
+- Rate limiting on test endpoint (future enhancement)
+- Audit logging for configuration changes
+
+#### Remaining Phase 8 Features (Planned):
+- ⏳ Feature 2: WebSocket real-time updates for run progress
+- ⏳ Feature 3: Visual Cron Builder for schedule creation
+- ⏳ Feature 4: Mobile-responsive UI (touch-friendly, card layouts)
+- ⏳ Feature 5: Upsert logic for insert/update records
+
+**Critical Files (Phase 8 Feature 1)**:
+- `backend/app/db/schemas/connection.py` - Connection schemas (NEW)
+- `backend/app/services/connection_storage.py` - Encrypted file storage (NEW)
+- `backend/app/services/connection_pool.py` - Connection pool manager (NEW)
+- `backend/app/api/v1/routes/connections.py` - Connection API routes (NEW)
+- `backend/tests/unit/test_connection_storage.py` - Storage tests (NEW)
+- `backend/tests/integration/test_connection_routes.py` - API tests (NEW)
+- `frontend/src/components/ConnectionEditor.tsx` - Connection form (NEW)
+- `frontend/src/pages/Settings.tsx` - Settings page (NEW)
+- `frontend/src/__tests__/components/ConnectionEditor.test.tsx` - Component tests (NEW)
+- `frontend/src/__tests__/pages/Settings.test.tsx` - Page tests (NEW)
 
 ---
 

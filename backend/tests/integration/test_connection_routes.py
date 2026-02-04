@@ -11,10 +11,10 @@ from unittest.mock import patch, MagicMock
 
 # Set test environment before importing app modules
 os.environ["APP_ENV"] = "development"
-os.environ["ENCRYPTION_KEY"] = "test_key_for_testing_purposes_only_32bytes!"
+os.environ["ENCRYPTION_KEY"] = "ancg5kTQFZYtqA3LyzV9MrixQ1HyC95gitaGyZ1nDPk="
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def temp_connections_file():
     """Create a temporary file for connections storage"""
     fd, path = tempfile.mkstemp(suffix='.enc')
@@ -27,22 +27,43 @@ def temp_connections_file():
         os.unlink(path)
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def client(temp_connections_file):
     """Create test client with mocked connection storage path"""
-    # Patch the default path before importing
-    with patch.dict(os.environ, {"CONNECTIONS_FILE_PATH": temp_connections_file}):
-        # Reset singleton
-        import app.services.connection_storage as cs
-        cs._storage_service = None
-
-        from app.main import app
-        with TestClient(app) as client:
-            yield client
+    # Set environment before app creation
+    os.environ["CONNECTIONS_FILE_PATH"] = temp_connections_file
+    
+    # Reset singleton before test
+    import app.services.connection_storage as cs
+    cs._storage_service = None
+    
+    from app.main import app
+    test_client = TestClient(app)
+    yield test_client
+    test_client.close()
+    
+    # Reset after test
+    cs._storage_service = None
 
 
 class TestConnectionRoutes:
     """Tests for connection API endpoints"""
+
+    @pytest.fixture(autouse=True, scope="function")
+    def cleanup_connections_file(self):
+        """Clean up the connections file before each test"""
+        # Delete the real connections file if it exists
+        from app.services.connection_storage import ConnectionStorageService
+        
+        service = ConnectionStorageService()
+        if service.file_path.exists():
+            service.file_path.unlink()
+        
+        yield
+        
+        # Cleanup after test
+        if service.file_path.exists():
+            service.file_path.unlink()
 
     def test_list_connections_empty(self, client):
         """Test listing connections when none exist"""
@@ -131,179 +152,165 @@ class TestConnectionRoutesWithMockedDB:
 
     def test_create_connection_success(self, client, mock_test_connection, temp_connections_file):
         """Test successfully creating a connection"""
-        # Reset the singleton to use the temp file
-        with patch.dict(os.environ, {"CONNECTIONS_FILE_PATH": temp_connections_file}):
-            import app.services.connection_storage as cs
-            cs._storage_service = None
+        response = client.post("/api/v1/connections/", json={
+            "name": "Test DB",
+            "db_type": "oracle",
+            "host": "localhost",
+            "port": 1521,
+            "username": "testuser",
+            "password": "testpass",
+            "service_name": "ORCL",
+        })
 
-            response = client.post("/api/v1/connections/", json={
-                "name": "Test DB",
-                "db_type": "oracle",
-                "host": "localhost",
-                "port": 1521,
-                "username": "testuser",
-                "password": "testpass",
-                "service_name": "ORCL",
-            })
-
-            assert response.status_code == 201
-            data = response.json()
-            assert data["name"] == "Test DB"
-            assert data["host"] == "localhost"
-            assert data["db_type"] == "oracle"
-            assert "id" in data
-            assert data["is_default"] == True
-            # Password should NOT be in response
-            assert "password" not in data or data.get("password") != "testpass"
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "Test DB"
+        assert data["host"] == "localhost"
+        assert data["db_type"] == "oracle"
+        assert "id" in data
+        assert data["is_default"] == True
+        # Password should NOT be in response
+        assert "password" not in data or data.get("password") != "testpass"
+        
+        # Clean up for next tests
+        conn_id = data["id"]
+        delete_resp = client.delete(f"/api/v1/connections/{conn_id}")
+        assert delete_resp.status_code == 204
 
     def test_create_and_list_connections(self, client, mock_test_connection, temp_connections_file):
         """Test creating multiple connections and listing them"""
-        with patch.dict(os.environ, {"CONNECTIONS_FILE_PATH": temp_connections_file}):
-            import app.services.connection_storage as cs
-            cs._storage_service = None
+        # Create first connection
+        resp1 = client.post("/api/v1/connections/", json={
+            "name": "DB 1",
+            "host": "host1",
+            "username": "user1",
+            "password": "pass1",
+            "service_name": "ORCL1",
+        })
+        assert resp1.status_code == 201
 
-            # Create first connection
-            resp1 = client.post("/api/v1/connections/", json={
-                "name": "DB 1",
-                "host": "host1",
-                "username": "user1",
-                "password": "pass1",
-                "service_name": "ORCL1",
-            })
-            assert resp1.status_code == 201
+        # Create second connection
+        resp2 = client.post("/api/v1/connections/", json={
+            "name": "DB 2",
+            "host": "host2",
+            "username": "user2",
+            "password": "pass2",
+            "service_name": "ORCL2",
+        })
+        assert resp2.status_code == 201
 
-            # Create second connection
-            resp2 = client.post("/api/v1/connections/", json={
-                "name": "DB 2",
-                "host": "host2",
-                "username": "user2",
-                "password": "pass2",
-                "service_name": "ORCL2",
-            })
-            assert resp2.status_code == 201
+        # List connections
+        list_resp = client.get("/api/v1/connections/")
+        assert list_resp.status_code == 200
+        data = list_resp.json()
+        assert data["total_count"] == 2
+        assert len(data["connections"]) == 2
 
-            # List connections
-            list_resp = client.get("/api/v1/connections/")
-            assert list_resp.status_code == 200
-            data = list_resp.json()
-            assert data["total_count"] == 2
-            assert len(data["connections"]) == 2
-
-            # First connection should be active
-            assert data["active_connection_id"] == resp1.json()["id"]
+        # First connection should be active
+        assert data["active_connection_id"] == resp1.json()["id"]
 
     def test_update_connection(self, client, mock_test_connection, temp_connections_file):
         """Test updating a connection"""
-        with patch.dict(os.environ, {"CONNECTIONS_FILE_PATH": temp_connections_file}):
-            import app.services.connection_storage as cs
-            cs._storage_service = None
+        # Create connection
+        create_resp = client.post("/api/v1/connections/", json={
+            "name": "Original Name",
+            "host": "localhost",
+            "username": "user",
+            "password": "pass",
+            "service_name": "ORCL",
+        })
+        conn_id = create_resp.json()["id"]
 
-            # Create connection
-            create_resp = client.post("/api/v1/connections/", json={
-                "name": "Original Name",
-                "host": "localhost",
-                "username": "user",
-                "password": "pass",
-                "service_name": "ORCL",
-            })
-            conn_id = create_resp.json()["id"]
+        # Update connection
+        update_resp = client.put(f"/api/v1/connections/{conn_id}", json={
+            "name": "Updated Name",
+        })
 
-            # Update connection
-            update_resp = client.put(f"/api/v1/connections/{conn_id}", json={
-                "name": "Updated Name",
-            })
-
-            assert update_resp.status_code == 200
-            assert update_resp.json()["name"] == "Updated Name"
+        assert update_resp.status_code == 200
+        assert update_resp.json()["name"] == "Updated Name"
 
     def test_delete_connection(self, client, mock_test_connection, temp_connections_file):
         """Test deleting a connection"""
-        with patch.dict(os.environ, {"CONNECTIONS_FILE_PATH": temp_connections_file}):
-            import app.services.connection_storage as cs
-            cs._storage_service = None
+        # Create connection
+        create_resp = client.post("/api/v1/connections/", json={
+            "name": "To Delete",
+            "host": "localhost",
+            "username": "user",
+            "password": "pass",
+            "service_name": "ORCL",
+        })
+        conn_id = create_resp.json()["id"]
 
-            # Create connection
-            create_resp = client.post("/api/v1/connections/", json={
-                "name": "To Delete",
-                "host": "localhost",
-                "username": "user",
-                "password": "pass",
-                "service_name": "ORCL",
-            })
-            conn_id = create_resp.json()["id"]
+        # Delete connection
+        delete_resp = client.delete(f"/api/v1/connections/{conn_id}")
+        assert delete_resp.status_code == 204
 
-            # Delete connection
-            delete_resp = client.delete(f"/api/v1/connections/{conn_id}")
-            assert delete_resp.status_code == 204
-
-            # Verify deleted
-            get_resp = client.get(f"/api/v1/connections/{conn_id}")
-            assert get_resp.status_code == 404
+        # Verify deleted
+        get_resp = client.get(f"/api/v1/connections/{conn_id}")
+        assert get_resp.status_code == 404
 
     def test_activate_connection(self, client, mock_test_connection, temp_connections_file):
         """Test activating a different connection"""
-        with patch.dict(os.environ, {"CONNECTIONS_FILE_PATH": temp_connections_file}):
-            import app.services.connection_storage as cs
-            cs._storage_service = None
+        # Check for leftover connections and clean them up
+        list_resp = client.get("/api/v1/connections/")
+        existing = list_resp.json()["connections"]
+        for conn in existing:
+            client.delete(f"/api/v1/connections/{conn['id']}")
+        
+        # Create two connections
+        resp1 = client.post("/api/v1/connections/", json={
+            "name": "DB 1",
+            "host": "host1",
+            "username": "user1",
+            "password": "pass1",
+            "service_name": "ORCL1",
+        })
+        conn1_id = resp1.json()["id"]
 
-            # Create two connections
-            resp1 = client.post("/api/v1/connections/", json={
-                "name": "DB 1",
-                "host": "host1",
-                "username": "user1",
-                "password": "pass1",
-                "service_name": "ORCL1",
-            })
-            conn1_id = resp1.json()["id"]
+        resp2 = client.post("/api/v1/connections/", json={
+            "name": "DB 2",
+            "host": "host2",
+            "username": "user2",
+            "password": "pass2",
+            "service_name": "ORCL2",
+        })
+        conn2_id = resp2.json()["id"]
 
-            resp2 = client.post("/api/v1/connections/", json={
-                "name": "DB 2",
-                "host": "host2",
-                "username": "user2",
-                "password": "pass2",
-                "service_name": "ORCL2",
-            })
-            conn2_id = resp2.json()["id"]
+        # First should be active
+        list_resp = client.get("/api/v1/connections/")
+        assert list_resp.json()["active_connection_id"] == conn1_id
 
-            # First should be active
-            list_resp = client.get("/api/v1/connections/")
-            assert list_resp.json()["active_connection_id"] == conn1_id
+        # Activate second
+        activate_resp = client.post(f"/api/v1/connections/{conn2_id}/activate")
+        assert activate_resp.status_code == 200
 
-            # Activate second
-            activate_resp = client.post(f"/api/v1/connections/{conn2_id}/activate")
-            assert activate_resp.status_code == 200
-
-            # Second should now be active
-            list_resp = client.get("/api/v1/connections/")
-            assert list_resp.json()["active_connection_id"] == conn2_id
+        # Second should now be active
+        list_resp = client.get("/api/v1/connections/")
+        assert list_resp.json()["active_connection_id"] == conn2_id
 
     def test_get_single_connection(self, client, mock_test_connection, temp_connections_file):
         """Test getting a single connection by ID"""
-        with patch.dict(os.environ, {"CONNECTIONS_FILE_PATH": temp_connections_file}):
-            import app.services.connection_storage as cs
-            cs._storage_service = None
+        # Create connection
+        create_resp = client.post("/api/v1/connections/", json={
+            "name": "Test DB",
+            "host": "localhost",
+            "port": 5432,
+            "db_type": "postgresql",
+            "username": "admin",
+            "password": "secret",
+            "database": "mydb",
+        })
+        conn_id = create_resp.json()["id"]
 
-            # Create connection
-            create_resp = client.post("/api/v1/connections/", json={
-                "name": "Test DB",
-                "host": "localhost",
-                "port": 5432,
-                "db_type": "postgresql",
-                "username": "admin",
-                "password": "secret",
-                "database": "mydb",
-            })
-            conn_id = create_resp.json()["id"]
+        # Get connection
+        get_resp = client.get(f"/api/v1/connections/{conn_id}")
 
-            # Get connection
-            get_resp = client.get(f"/api/v1/connections/{conn_id}")
-
-            assert get_resp.status_code == 200
-            data = get_resp.json()
-            assert data["id"] == conn_id
-            assert data["name"] == "Test DB"
-            assert data["db_type"] == "postgresql"
-            assert data["database"] == "mydb"
+        assert get_resp.status_code == 200
+        data = get_resp.json()
+        assert data["id"] == conn_id
+        assert data["name"] == "Test DB"
+        assert data["db_type"] == "postgresql"
+        assert data["database"] == "mydb"
 
 
 class TestConnectionValidation:
