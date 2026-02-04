@@ -291,7 +291,12 @@ async def preview_fields(
                 headers=task.headers_json,
                 params=task.query_params_json,
                 json_body=task.body_json,
-                record_path=task.record_path
+                record_path=task.record_path,
+                auth_type=task.auth_type,
+                api_key=task.api_key,
+                username=task.username,
+                password=task.password,
+                oauth_config=task.oauth_config
             )
         else:
             if not sample_json:
@@ -413,7 +418,12 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
                 headers=request.headers,
                 params=request.params,
                 json_body=request.json_body,
-                record_path=request.record_path
+                record_path=request.record_path,
+                auth_type=request.auth_type,
+                api_key=request.api_key,
+                username=request.username,
+                password=request.password,
+                oauth_config=request.oauth_config
             )
         else:
             if not request.sample_json:

@@ -60,6 +60,12 @@ class PreviewFieldsRequest(BaseModel):
     params: Optional[dict] = Field(None, description="Query parameters for auto-fetch")
     json_body: Optional[dict] = Field(None, description="Request body for auto-fetch")
     record_path: Optional[str] = Field(None, description="JSONPath to extract records")
+    # Authentication fields (Phase 7)
+    auth_type: Optional[str] = Field(None, description="Authentication type: 'none', 'bearer', 'api_key', 'basic', 'oauth'")
+    api_key: Optional[str] = Field(None, description="API key (encrypted)")
+    username: Optional[str] = Field(None, description="Username for Basic auth")
+    password: Optional[str] = Field(None, description="Password for Basic auth (encrypted)")
+    oauth_config: Optional[dict] = Field(None, description="OAuth configuration")
 
 
 class FieldsPreviewResponse(BaseModel):

@@ -203,7 +203,12 @@ async def fetch_sample_response(
     headers: dict | None = None,
     params: dict | None = None,
     json_body: dict | None = None,
-    record_path: str | None = None
+    record_path: str | None = None,
+    auth_type: str | None = None,
+    api_key: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    oauth_config: dict | None = None
 ) -> dict | list:
     """
     Fetch sample API response for preview and field mapping purposes.
@@ -218,6 +223,11 @@ async def fetch_sample_response(
         params: Optional query parameters
         json_body: Optional JSON request body
         record_path: Optional JSONPath to extract records (e.g., "data.items[0]" or "results")
+        auth_type: Authentication type ('none', 'bearer', 'api_key', 'basic', 'oauth')
+        api_key: Encrypted API key for Bearer or API Key auth
+        username: Username for Basic auth
+        password: Encrypted password for Basic auth
+        oauth_config: OAuth configuration dictionary
     
     Returns:
         Extracted sample data (dict or list depending on record_path)
@@ -235,7 +245,12 @@ async def fetch_sample_response(
             headers=headers,
             params=params,
             json_body=json_body,
-            max_retries=2  # Reduce retries for sample fetch
+            max_retries=2,  # Reduce retries for sample fetch
+            auth_type=auth_type,
+            api_key=api_key,
+            username=username,
+            password=password,
+            oauth_config=oauth_config
         )
         
         # Extract data at record_path if provided
