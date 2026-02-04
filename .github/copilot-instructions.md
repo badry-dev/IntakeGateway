@@ -14,6 +14,7 @@ Quick reference for AI agents developing or extending this full-stack applicatio
 
 **Tech Stack**: FastAPI + SQLAlchemy (backend) | React 18 + TypeScript + Vite (frontend)
 
+**instractions.md** provides critical architecture insights, development workflows, project conventions, integration points, common pitfalls, file navigation, and reference documentation to ensure efficient onboarding and high-quality contributions.
 ---
 
 ## 🏗️ Critical Architecture Understanding
