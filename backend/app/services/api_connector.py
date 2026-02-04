@@ -7,6 +7,86 @@ from app.core.config import settings
 from app.core.encryption import decrypt_value
 
 
+def apply_authentication(
+    headers: dict,
+    auth_type: str | None = None,
+    api_key: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    oauth_config: dict | None = None
+) -> dict:
+    """
+    Apply authentication to HTTP headers based on auth type.
+    
+    Args:
+        headers: Base HTTP headers dictionary
+        auth_type: Authentication type ('none', 'bearer', 'api_key', 'basic', 'oauth')
+        api_key: Encrypted API key for Bearer or API Key auth
+        username: Username for Basic auth
+        password: Encrypted password for Basic auth
+        oauth_config: OAuth configuration dictionary
+    
+    Returns:
+        Updated headers dictionary with authentication
+    
+    Raises:
+        ValueError: If auth configuration is invalid
+    """
+    if not auth_type or auth_type == 'none':
+        return headers
+    
+    headers = dict(headers)  # Create copy to avoid mutating original
+    
+    if auth_type == 'bearer':
+        # Bearer token authentication
+        if not api_key:
+            raise ValueError("Bearer auth requires api_key")
+        
+        # Decrypt the API key
+        decrypted_key = decrypt_value(api_key)
+        headers['Authorization'] = f'Bearer {decrypted_key}'
+        logger.debug("Applied Bearer token authentication")
+    
+    elif auth_type == 'api_key':
+        # API Key in custom header (X-API-Key)
+        if not api_key:
+            raise ValueError("API Key auth requires api_key")
+        
+        # Decrypt the API key
+        decrypted_key = decrypt_value(api_key)
+        headers['X-API-Key'] = decrypted_key
+        logger.debug("Applied API Key authentication")
+    
+    elif auth_type == 'basic':
+        # HTTP Basic Authentication
+        if not username or not password:
+            raise ValueError("Basic auth requires username and password")
+        
+        # Decrypt the password
+        decrypted_password = decrypt_value(password)
+        
+        # Encode credentials
+        credentials = f"{username}:{decrypted_password}"
+        encoded = base64.b64encode(credentials.encode()).decode()
+        headers['Authorization'] = f'Basic {encoded}'
+        logger.debug(f"Applied Basic authentication for user: {username}")
+    
+    elif auth_type == 'oauth':
+        # OAuth token authentication (simplified - assumes token is already obtained)
+        if not oauth_config or 'access_token' not in oauth_config:
+            raise ValueError("OAuth auth requires oauth_config with access_token")
+        
+        # Decrypt the access token
+        access_token = decrypt_value(oauth_config['access_token'])
+        headers['Authorization'] = f'Bearer {access_token}'
+        logger.debug("Applied OAuth authentication")
+    
+    else:
+        raise ValueError(f"Unsupported auth_type: {auth_type}")
+    
+    return headers
+
+
 async def fetch_json(
     method: str,
     url: str,

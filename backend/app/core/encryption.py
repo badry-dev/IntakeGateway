@@ -28,7 +28,7 @@ class EncryptionService:
         if not key:
             # For development, generate a temporary key (NOT for production!)
             app_env = os.getenv("APP_ENV", "dev").lower()
-            if app_env in ("development", "dev"):
+            if app_env in ("dev-only"):
                 logger.warning("No ENCRYPTION_KEY found, generating temporary key for development")
                 key = Fernet.generate_key().decode()
                 logger.warning(f"Generated temporary encryption key: {key}")
