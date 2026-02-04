@@ -238,6 +238,9 @@ async def fetch_sample_response(
         ValueError: If response is not valid JSON
         KeyError: If record_path doesn't exist in response
     """
+    # Debug logging for auth parameters
+    logger.debug(f"fetch_sample_response called with auth_type={auth_type}, api_key={'***' if api_key else None}")
+    
     try:
         response_data = await fetch_json(
             method=method,

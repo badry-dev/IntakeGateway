@@ -282,6 +282,9 @@ async def preview_fields(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     
+    # Debug logging for task authentication
+    logger.info(f"Task {task_id} auth config: auth_type={task.auth_type}, has_api_key={bool(task.api_key)}, has_username={bool(task.username)}")
+    
     try:
         if use_auto_fetch:
             # Auto-fetch mode: make test API call
