@@ -228,3 +228,61 @@ export interface ScheduleListResponse {
   limit: number
   schedules: TaskScheduleWithTaskName[]
 }
+
+// Database Connection types
+export type DatabaseType = 'oracle' | 'postgresql' | 'mysql'
+
+export interface Connection {
+  id: string
+  name: string
+  db_type: DatabaseType
+  host: string
+  port: number
+  username: string
+  // password excluded from responses for security
+  service_name?: string   // Oracle
+  database?: string       // PostgreSQL/MySQL
+  connection_options?: Record<string, any>
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ConnectionCreate {
+  name: string
+  db_type?: DatabaseType
+  host: string
+  port?: number
+  username: string
+  password: string
+  service_name?: string
+  database?: string
+  connection_options?: Record<string, any>
+}
+
+export interface ConnectionUpdate extends Partial<Omit<ConnectionCreate, 'password'>> {
+  password?: string  // Only include if changing
+}
+
+export interface ConnectionTestRequest {
+  db_type?: DatabaseType
+  host: string
+  port?: number
+  username: string
+  password: string
+  service_name?: string
+  database?: string
+}
+
+export interface ConnectionTestResult {
+  success: boolean
+  message: string
+  latency_ms?: number
+  server_version?: string
+}
+
+export interface ConnectionListResponse {
+  connections: Connection[]
+  active_connection_id: string | null
+  total_count: number
+}

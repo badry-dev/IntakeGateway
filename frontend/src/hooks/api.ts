@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
-import { 
-  Task, 
-  TaskRun, 
-  TaskStats, 
-  TaskCreate, 
+import {
+  Task,
+  TaskRun,
+  TaskStats,
+  TaskCreate,
   TaskUpdate,
   ColumnMapping,
   ColumnMappingCreate,
@@ -16,6 +16,10 @@ import {
   TaskSchedule,
   ScheduleCreate,
   ScheduleUpdate,
+  Connection,
+  ConnectionCreate,
+  ConnectionUpdate,
+  ConnectionTestRequest,
 } from '@/types'
 
 // Query keys
@@ -389,5 +393,82 @@ export function useResumeSchedule(onSuccess?: () => void) {
       queryClient.invalidateQueries({ queryKey: scheduleKeys.all })
       onSuccess?.()
     },
+  })
+}
+
+// Connection query keys
+export const connectionKeys = {
+  all: ['connections'] as const,
+  lists: () => [...connectionKeys.all, 'list'] as const,
+  detail: (id: string) => [...connectionKeys.all, 'detail', id] as const,
+}
+
+// Connection hooks
+export function useConnections() {
+  return useQuery({
+    queryKey: connectionKeys.lists(),
+    queryFn: () => apiClient.getConnections(),
+    staleTime: 30000, // 30 seconds
+  })
+}
+
+export function useConnection(id: string) {
+  return useQuery({
+    queryKey: connectionKeys.detail(id),
+    queryFn: () => apiClient.getConnection(id),
+    enabled: id.length > 0,
+    staleTime: 30000,
+  })
+}
+
+export function useCreateConnection(onSuccess?: (conn: Connection) => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: ConnectionCreate) => apiClient.createConnection(data),
+    onSuccess: (conn) => {
+      queryClient.invalidateQueries({ queryKey: connectionKeys.lists() })
+      onSuccess?.(conn)
+    },
+  })
+}
+
+export function useUpdateConnection(onSuccess?: (conn: Connection) => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ConnectionUpdate }) =>
+      apiClient.updateConnection(id, data),
+    onSuccess: (conn) => {
+      queryClient.invalidateQueries({ queryKey: connectionKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: connectionKeys.detail(conn.id) })
+      onSuccess?.(conn)
+    },
+  })
+}
+
+export function useDeleteConnection(onSuccess?: () => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.deleteConnection(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: connectionKeys.lists() })
+      onSuccess?.()
+    },
+  })
+}
+
+export function useActivateConnection(onSuccess?: () => void) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiClient.activateConnection(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: connectionKeys.lists() })
+      onSuccess?.()
+    },
+  })
+}
+
+export function useTestConnection() {
+  return useMutation({
+    mutationFn: (data: ConnectionTestRequest) => apiClient.testConnection(data),
   })
 }

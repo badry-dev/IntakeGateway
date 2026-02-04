@@ -1,0 +1,284 @@
+"""
+Dynamic connection pool manager.
+
+Manages SQLAlchemy engines per connection configuration.
+Pools are created on-demand and cached for performance.
+Supports Oracle, PostgreSQL, and MySQL databases.
+"""
+import time
+from typing import Optional
+from urllib.parse import quote_plus
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.engine import Engine
+from loguru import logger
+from app.services.connection_storage import get_connection_storage
+
+
+# Cache of engines by connection_id
+_engine_cache: dict[str, Engine] = {}
+_session_factories: dict[str, sessionmaker] = {}
+
+
+def build_connection_url(conn: dict, password: str) -> str:
+    """
+    Build SQLAlchemy connection URL from connection config.
+
+    Args:
+        conn: Connection configuration dict
+        password: Decrypted password
+
+    Returns:
+        SQLAlchemy connection URL string
+
+    Raises:
+        ValueError: If db_type is not supported
+    """
+    db_type = conn.get("db_type", "oracle")
+    host = conn.get("host", "localhost")
+    port = conn.get("port", 1521)
+    username = conn.get("username", "")
+
+    # URL-encode password to handle special characters
+    encoded_password = quote_plus(password)
+
+    if db_type == "oracle":
+        service_name = conn.get("service_name", "ORCL")
+        return (
+            f"oracle+oracledb://{username}:{encoded_password}"
+            f"@{host}:{port}/?service_name={service_name}"
+        )
+    elif db_type == "postgresql":
+        database = conn.get("database", "postgres")
+        return (
+            f"postgresql+psycopg2://{username}:{encoded_password}"
+            f"@{host}:{port}/{database}"
+        )
+    elif db_type == "mysql":
+        database = conn.get("database", "")
+        return (
+            f"mysql+pymysql://{username}:{encoded_password}"
+            f"@{host}:{port}/{database}"
+        )
+    else:
+        raise ValueError(f"Unsupported database type: {db_type}")
+
+
+def get_engine(connection_id: Optional[str] = None) -> Engine:
+    """
+    Get SQLAlchemy engine for a connection.
+
+    Engines are cached for performance. If no connection_id is provided,
+    returns engine for the active connection. If no connections are configured,
+    falls back to environment variable configuration.
+
+    Args:
+        connection_id: Specific connection ID, or None for active/default
+
+    Returns:
+        SQLAlchemy Engine
+
+    Raises:
+        ValueError: If specified connection not found
+    """
+    storage = get_connection_storage()
+
+    # Determine which connection to use
+    if connection_id:
+        conn = storage.get_connection(connection_id, include_password=True)
+        if not conn:
+            raise ValueError(f"Connection {connection_id} not found")
+    else:
+        # Try active connection first
+        conn = storage.get_active_connection(include_password=True)
+        if not conn:
+            # Fall back to environment variables
+            logger.info("No active connection configured, using environment variables")
+            return _get_env_engine()
+
+    conn_id = conn["id"]
+
+    # Return cached engine if available
+    if conn_id in _engine_cache:
+        logger.debug(f"Returning cached engine for connection {conn_id}")
+        return _engine_cache[conn_id]
+
+    # Create new engine
+    password = storage.get_decrypted_password(conn_id)
+    if not password:
+        raise ValueError(f"Failed to decrypt password for connection {conn_id}")
+
+    url = build_connection_url(conn, password)
+
+    engine = create_engine(
+        url,
+        pool_size=5,
+        max_overflow=5,
+        pool_pre_ping=True,  # Check connection health before use
+        future=True
+    )
+
+    _engine_cache[conn_id] = engine
+    logger.info(f"Created connection pool for {conn['name']} ({conn_id})")
+
+    return engine
+
+
+def _get_env_engine() -> Engine:
+    """
+    Create engine from environment variables (fallback).
+
+    Returns:
+        SQLAlchemy Engine from default session configuration
+    """
+    if "env" not in _engine_cache:
+        from app.db.session import engine as default_engine
+        _engine_cache["env"] = default_engine
+        logger.debug("Using environment variable engine")
+    return _engine_cache["env"]
+
+
+def get_session(connection_id: Optional[str] = None) -> Session:
+    """
+    Get a database session for a connection.
+
+    Args:
+        connection_id: Specific connection ID, or None for active/default
+
+    Returns:
+        SQLAlchemy Session instance
+    """
+    engine = get_engine(connection_id)
+
+    # Cache session factory
+    key = connection_id or "env"
+    if key not in _session_factories:
+        _session_factories[key] = sessionmaker(
+            autocommit=False,
+            autoflush=False,
+            bind=engine,
+            expire_on_commit=False
+        )
+
+    return _session_factories[key]()
+
+
+def invalidate_pool(connection_id: str) -> None:
+    """
+    Invalidate cached pool when connection is updated/deleted.
+
+    Args:
+        connection_id: ID of connection to invalidate
+    """
+    if connection_id in _engine_cache:
+        try:
+            _engine_cache[connection_id].dispose()
+            logger.info(f"Disposed engine for connection {connection_id}")
+        except Exception as e:
+            logger.warning(f"Error disposing engine for {connection_id}: {e}")
+        del _engine_cache[connection_id]
+
+    if connection_id in _session_factories:
+        del _session_factories[connection_id]
+
+    logger.info(f"Invalidated connection pool for {connection_id}")
+
+
+def test_connection(config: dict) -> dict:
+    """
+    Test a database connection without saving.
+
+    Args:
+        config: Connection configuration with plaintext password
+
+    Returns:
+        Dict with success, message, latency_ms, and server_version
+    """
+    password = config.get("password", "")
+    test_config = {k: v for k, v in config.items() if k != "password"}
+
+    try:
+        url = build_connection_url(test_config, password)
+
+        # Create temporary engine with minimal pool
+        test_engine = create_engine(
+            url,
+            pool_size=1,
+            max_overflow=0,
+            pool_timeout=10,
+            connect_args={"connect_timeout": 10} if test_config.get("db_type") != "oracle" else {}
+        )
+
+        start = time.time()
+
+        with test_engine.connect() as conn:
+            db_type = test_config.get("db_type", "oracle")
+
+            # Get server version based on database type
+            if db_type == "oracle":
+                result = conn.execute(text("SELECT banner FROM v$version WHERE ROWNUM = 1"))
+                version = result.scalar()
+            elif db_type == "postgresql":
+                result = conn.execute(text("SELECT version()"))
+                version = result.scalar()
+            elif db_type == "mysql":
+                result = conn.execute(text("SELECT VERSION()"))
+                version = result.scalar()
+            else:
+                version = "Unknown"
+
+        latency = int((time.time() - start) * 1000)
+
+        # Cleanup
+        test_engine.dispose()
+
+        logger.info(f"Connection test successful: {test_config.get('host')}:{test_config.get('port')}")
+
+        return {
+            "success": True,
+            "message": "Connection successful",
+            "latency_ms": latency,
+            "server_version": str(version) if version else None
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        # Sanitize error message to not expose sensitive info
+        if "password" in error_msg.lower():
+            error_msg = "Authentication failed - please check credentials"
+
+        logger.error(f"Connection test failed for {test_config.get('host')}: {e}")
+
+        return {
+            "success": False,
+            "message": error_msg,
+            "latency_ms": None,
+            "server_version": None
+        }
+
+
+def get_all_engines() -> dict[str, Engine]:
+    """
+    Get all cached engines (for debugging/monitoring).
+
+    Returns:
+        Dict of connection_id -> Engine
+    """
+    return dict(_engine_cache)
+
+
+def clear_all_pools() -> None:
+    """
+    Clear all cached connection pools.
+
+    Use with caution - primarily for testing or shutdown.
+    """
+    for conn_id, engine in list(_engine_cache.items()):
+        try:
+            engine.dispose()
+        except Exception as e:
+            logger.warning(f"Error disposing engine {conn_id}: {e}")
+
+    _engine_cache.clear()
+    _session_factories.clear()
+    logger.info("Cleared all connection pools")

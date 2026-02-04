@@ -1,9 +1,9 @@
 import axios, { AxiosInstance } from 'axios'
-import { 
-  Task, 
-  TaskRun, 
-  TaskStats, 
-  TaskCreate, 
+import {
+  Task,
+  TaskRun,
+  TaskStats,
+  TaskCreate,
   TaskUpdate,
   ColumnMapping,
   ColumnMappingCreate,
@@ -16,6 +16,12 @@ import {
   ScheduleCreate,
   ScheduleUpdate,
   ScheduleListResponse,
+  Connection,
+  ConnectionCreate,
+  ConnectionUpdate,
+  ConnectionTestRequest,
+  ConnectionTestResult,
+  ConnectionListResponse,
 } from '@/types'
 
 const API_BASE_URL = '/api/v1'
@@ -229,6 +235,41 @@ class ApiClient {
 
   async resumeSchedule(scheduleId: number): Promise<{ message: string }> {
     const response = await this.client.post(`/schedules/${scheduleId}/resume`)
+    return response.data
+  }
+
+  // Database Connection endpoints
+  async getConnections(): Promise<ConnectionListResponse> {
+    const response = await this.client.get('/connections/')
+    return response.data
+  }
+
+  async getConnection(id: string): Promise<Connection> {
+    const response = await this.client.get(`/connections/${id}`)
+    return response.data
+  }
+
+  async createConnection(data: ConnectionCreate): Promise<Connection> {
+    const response = await this.client.post('/connections/', data)
+    return response.data
+  }
+
+  async updateConnection(id: string, data: ConnectionUpdate): Promise<Connection> {
+    const response = await this.client.put(`/connections/${id}`, data)
+    return response.data
+  }
+
+  async deleteConnection(id: string): Promise<void> {
+    await this.client.delete(`/connections/${id}`)
+  }
+
+  async activateConnection(id: string): Promise<{ message: string }> {
+    const response = await this.client.post(`/connections/${id}/activate`)
+    return response.data
+  }
+
+  async testConnection(data: ConnectionTestRequest): Promise<ConnectionTestResult> {
+    const response = await this.client.post('/connections/test', data)
     return response.data
   }
 }
