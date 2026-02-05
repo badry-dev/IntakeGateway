@@ -23,5 +23,7 @@ class TaskRun(Base):
     ended_at = Column(DateTime(timezone=True), nullable=True)
     rows_fetched = Column(Integer, default=0)
     rows_inserted = Column(Integer, default=0)
+    rows_updated = Column(Integer, default=0)  # Phase 8: Upsert updates
+    rows_skipped = Column(Integer, default=0)  # Phase 8: Skipped due to skip condition
     error_count = Column(Integer, default=0)
     warning_count = Column(Integer, default=0)

@@ -1,7 +1,11 @@
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
+from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, DatabaseError
 from loguru import logger
 
 from app.db.session import SessionLocal
@@ -11,6 +15,22 @@ from app.db.models.task_log import TaskLog
 from app.db.models.task_run_log import TaskRunLog
 from app.services import api_connector, normalizer, mapper, validator
 from app.core.logging import set_task_context, clear_task_context
+
+
+class RowStatus(str, Enum):
+    """Status of individual row processing"""
+    INSERTED = "inserted"
+    UPDATED = "updated"
+    SKIPPED = "skipped"
+    ERROR = "error"
+
+
+@dataclass
+class RowResult:
+    """Result of processing a single row"""
+    status: RowStatus
+    record_key: str
+    message: str = ""
 
 
 async def run_import(task_id: int, db: Session = None) -> dict:
@@ -144,25 +164,52 @@ async def run_import(task_id: int, db: Session = None) -> dict:
         task_run.error_count = len(invalid_rows)
         db.commit()
         
-        # Step 9: Insert valid rows to Oracle
+        # Step 9: Insert/Upsert valid rows to Oracle
         if valid_rows:
-            log_step(db, task_run_id, "INSERT_DB", f"Inserting {len(valid_rows)} rows to {task.dest_table}")
-            
-            rows_inserted = insert_batch(
-                db=db,
-                table_name=task.dest_table,
-                rows=valid_rows,
-                batch_size=task.batch_size
-            )
-            
-            task_run.rows_inserted = rows_inserted
-            logger.info(f"Successfully inserted {rows_inserted} rows to {task.dest_table}")
+            if task.upsert_enabled:
+                # Use upsert logic with skip conditions
+                log_step(db, task_run_id, "UPSERT_DB", f"Upserting {len(valid_rows)} rows to {task.dest_table}")
+
+                upsert_results = process_rows_with_upsert(
+                    db=db,
+                    task=task,
+                    task_run_id=task_run_id,
+                    rows=valid_rows
+                )
+
+                task_run.rows_inserted = upsert_results["inserted"]
+                task_run.rows_updated = upsert_results["updated"]
+                task_run.rows_skipped = upsert_results["skipped"]
+                task_run.error_count += upsert_results["errors"]
+
+                logger.info(
+                    f"Upsert complete: {upsert_results['inserted']} inserted, "
+                    f"{upsert_results['updated']} updated, "
+                    f"{upsert_results['skipped']} skipped, "
+                    f"{upsert_results['errors']} errors"
+                )
+            else:
+                # Standard insert batch
+                log_step(db, task_run_id, "INSERT_DB", f"Inserting {len(valid_rows)} rows to {task.dest_table}")
+
+                rows_inserted = insert_batch(
+                    db=db,
+                    table_name=task.dest_table,
+                    rows=valid_rows,
+                    batch_size=task.batch_size
+                )
+
+                task_run.rows_inserted = rows_inserted
+                logger.info(f"Successfully inserted {rows_inserted} rows to {task.dest_table}")
         else:
             task_run.rows_inserted = 0
+            task_run.rows_updated = 0
+            task_run.rows_skipped = 0
             logger.warning("No valid rows to insert")
-        
+
         # Step 10: Update TaskRun status
-        if task_run.error_count > 0 and task_run.rows_inserted > 0:
+        total_success = task_run.rows_inserted + task_run.rows_updated
+        if task_run.error_count > 0 and total_success > 0:
             task_run.status = TaskStatus.PARTIAL_SUCCESS.value
         elif task_run.error_count > 0:
             task_run.status = TaskStatus.FAILED.value
@@ -180,6 +227,8 @@ async def run_import(task_id: int, db: Session = None) -> dict:
             "status": task_run.status,
             "rows_fetched": task_run.rows_fetched,
             "rows_inserted": task_run.rows_inserted,
+            "rows_updated": task_run.rows_updated,
+            "rows_skipped": task_run.rows_skipped,
             "error_count": task_run.error_count,
         }
         
@@ -213,47 +262,276 @@ def insert_batch(
 ) -> int:
     """
     Insert rows into Oracle table in batches with transaction handling
-    
+
     Args:
         db: SQLAlchemy session
         table_name: Target table name
         rows: List of row dictionaries
         batch_size: Number of rows per batch
-    
+
     Returns:
         Number of rows inserted
     """
     if not rows:
         return 0
-    
+
     total_inserted = 0
-    
+
     # Process in batches
     for i in range(0, len(rows), batch_size):
         batch = rows[i:i + batch_size]
-        
+
         try:
             # Build dynamic INSERT statement
             if batch:
                 columns = list(batch[0].keys())
                 column_str = ", ".join(columns)
                 placeholders = ", ".join([f":{col}" for col in columns])
-                
+
                 insert_sql = f"INSERT INTO {table_name} ({column_str}) VALUES ({placeholders})"
-                
+
                 # Execute batch insert
                 db.execute(text(insert_sql), batch)
                 db.commit()
-                
+
                 total_inserted += len(batch)
                 logger.debug(f"Inserted batch of {len(batch)} rows ({total_inserted}/{len(rows)})")
-        
+
         except Exception as e:
             logger.error(f"Failed to insert batch: {str(e)}")
             db.rollback()
             raise
-    
+
     return total_inserted
+
+
+def process_rows_with_upsert(
+    db: Session,
+    task: Task,
+    task_run_id: int,
+    rows: list[dict],
+) -> dict:
+    """
+    Process rows with upsert logic and skip conditions.
+    Never stops on individual row errors - logs and continues.
+
+    Args:
+        db: SQLAlchemy session
+        task: Task configuration with upsert settings
+        task_run_id: ID of current run for logging
+        rows: List of row dictionaries to process
+
+    Returns:
+        Dictionary with processing statistics
+    """
+    results = {
+        "inserted": 0,
+        "updated": 0,
+        "skipped": 0,
+        "errors": 0,
+        "error_details": []
+    }
+
+    if not rows:
+        return results
+
+    upsert_keys = task.upsert_keys or []
+    table_name = task.dest_table
+
+    for idx, row in enumerate(rows):
+        try:
+            result = _process_single_row(
+                db=db,
+                task=task,
+                row=row,
+                row_index=idx
+            )
+
+            # Update statistics based on result
+            if result.status == RowStatus.INSERTED:
+                results["inserted"] += 1
+            elif result.status == RowStatus.UPDATED:
+                results["updated"] += 1
+            elif result.status == RowStatus.SKIPPED:
+                results["skipped"] += 1
+                logger.info(f"Row {idx} skipped: {result.message}")
+            elif result.status == RowStatus.ERROR:
+                results["errors"] += 1
+                results["error_details"].append({
+                    "row_index": idx,
+                    "record_key": result.record_key,
+                    "error": result.message
+                })
+                # Log to TaskRunLog
+                log_row_error(
+                    db=db,
+                    task_run_id=task_run_id,
+                    row_number=idx,
+                    column_name="_upsert",
+                    error_type="UPSERT_ERROR",
+                    error_message=result.message,
+                    source_value=result.record_key
+                )
+
+        except Exception as e:
+            # Catch-all: log and continue to next record (NEVER stop)
+            logger.error(f"Unexpected error processing row {idx}: {e}")
+            results["errors"] += 1
+            results["error_details"].append({
+                "row_index": idx,
+                "error": str(e)
+            })
+
+            if not task.continue_on_error:
+                logger.warning("continue_on_error is False, stopping processing")
+                raise
+
+            continue  # Continue to next row
+
+    return results
+
+
+def _process_single_row(
+    db: Session,
+    task: Task,
+    row: dict,
+    row_index: int
+) -> RowResult:
+    """
+    Process a single row with upsert and skip logic.
+
+    Args:
+        db: SQLAlchemy session
+        task: Task configuration
+        row: Row data dictionary
+        row_index: Index of row for logging
+
+    Returns:
+        RowResult with status and details
+    """
+    upsert_keys = task.upsert_keys or []
+    record_key = _get_record_key(row, upsert_keys)
+
+    try:
+        # If upsert is not enabled, just insert
+        if not task.upsert_enabled or not upsert_keys:
+            _insert_single_row(db, task.dest_table, row)
+            db.commit()
+            return RowResult(status=RowStatus.INSERTED, record_key=record_key)
+
+        # Check if record exists
+        existing = _find_existing_record(db, task.dest_table, row, upsert_keys)
+
+        if existing:
+            # Check skip condition
+            if _should_skip(task, existing):
+                return RowResult(
+                    status=RowStatus.SKIPPED,
+                    record_key=record_key,
+                    message=f"Skip condition met: {task.skip_column}={task.skip_value}"
+                )
+
+            # Update existing record
+            _update_existing_row(db, task.dest_table, row, upsert_keys)
+            db.commit()
+            return RowResult(status=RowStatus.UPDATED, record_key=record_key)
+        else:
+            # Insert new record
+            _insert_single_row(db, task.dest_table, row)
+            db.commit()
+            return RowResult(status=RowStatus.INSERTED, record_key=record_key)
+
+    except IntegrityError as e:
+        # Primary key or unique constraint violation
+        db.rollback()
+        error_msg = f"Constraint violation: {str(e)[:200]}"
+        logger.warning(f"Row {row_index} ({record_key}): {error_msg}")
+        return RowResult(
+            status=RowStatus.ERROR,
+            record_key=record_key,
+            message=error_msg
+        )
+
+    except DatabaseError as e:
+        # Other database errors
+        db.rollback()
+        error_msg = f"Database error: {str(e)[:200]}"
+        logger.error(f"Row {row_index} ({record_key}): {error_msg}")
+        return RowResult(
+            status=RowStatus.ERROR,
+            record_key=record_key,
+            message=error_msg
+        )
+
+
+def _get_record_key(row: dict, upsert_keys: list) -> str:
+    """Generate a readable key for logging."""
+    if upsert_keys:
+        return ", ".join(f"{k}={row.get(k)}" for k in upsert_keys)
+    return f"row_{id(row)}"
+
+
+def _find_existing_record(
+    db: Session,
+    table_name: str,
+    row: dict,
+    upsert_keys: list
+) -> Optional[dict]:
+    """Check if a record exists in the database based on upsert keys."""
+    if not upsert_keys:
+        return None
+
+    where_clauses = " AND ".join([f"{key} = :{key}" for key in upsert_keys])
+    params = {key: row.get(key) for key in upsert_keys}
+
+    query = f"SELECT * FROM {table_name} WHERE {where_clauses}"
+    result = db.execute(text(query), params).fetchone()
+
+    if result:
+        # Convert to dictionary
+        return dict(result._mapping)
+    return None
+
+
+def _should_skip(task: Task, existing_record: dict) -> bool:
+    """Check if record should be skipped based on skip_column/skip_value."""
+    if not task.skip_column or not task.skip_value:
+        return False
+
+    current_value = existing_record.get(task.skip_column.upper())  # Oracle returns uppercase
+    if current_value is None:
+        current_value = existing_record.get(task.skip_column.lower())
+    if current_value is None:
+        current_value = existing_record.get(task.skip_column)
+
+    if current_value is None:
+        return False
+
+    return str(current_value).upper() == str(task.skip_value).upper()
+
+
+def _insert_single_row(db: Session, table_name: str, row: dict):
+    """Insert a single row into the table."""
+    columns = list(row.keys())
+    column_str = ", ".join(columns)
+    placeholders = ", ".join([f":{col}" for col in columns])
+
+    insert_sql = f"INSERT INTO {table_name} ({column_str}) VALUES ({placeholders})"
+    db.execute(text(insert_sql), row)
+
+
+def _update_existing_row(db: Session, table_name: str, row: dict, upsert_keys: list):
+    """Update an existing row in the table."""
+    update_cols = [col for col in row.keys() if col not in upsert_keys]
+
+    if not update_cols:
+        return  # Nothing to update
+
+    set_clause = ", ".join([f"{col} = :{col}" for col in update_cols])
+    where_clause = " AND ".join([f"{key} = :{key}" for key in upsert_keys])
+
+    update_sql = f"UPDATE {table_name} SET {set_clause} WHERE {where_clause}"
+    db.execute(text(update_sql), row)
 
 
 def log_step(db: Session, task_run_id: int, step_name: str, message: str, details: dict = None):
