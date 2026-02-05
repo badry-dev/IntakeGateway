@@ -35,8 +35,10 @@ class TaskCreate(BaseModel):
     def validate_upsert_keys(cls, v: Optional[list[str]], info):
         """Validate that upsert_keys is provided when upsert is enabled"""
         upsert_enabled = info.data.get('upsert_enabled')
-        if upsert_enabled and (not v or len(v) == 0):
-            raise ValueError("upsert_enabled requires at least one column in upsert_keys")
+        if upsert_enabled and not v:
+            raise ValueError(
+                "When upsert_enabled is true, upsert_keys must contain at least one column name for record matching"
+            )
         return v
 
     @field_validator('api_key')

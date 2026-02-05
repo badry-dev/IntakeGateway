@@ -373,8 +373,12 @@ def process_rows_with_upsert(
                     source_value=result.record_key
                 )
 
+        except (IntegrityError, DatabaseError):
+            # Let database-related errors propagate; they should be handled upstream
+            raise
+
         except Exception as e:
-            # Catch-all: log and continue to next record (NEVER stop)
+            # Catch-all for unexpected errors: log and continue to next record (NEVER stop)
             logger.error(f"Unexpected error processing row {idx}: {e}")
             results["errors"] += 1
             results["error_details"].append({
@@ -382,9 +386,6 @@ def process_rows_with_upsert(
                 "error": str(e)
             })
 
-            if not task.continue_on_error:
-                logger.warning("continue_on_error is False, stopping processing")
-                raise
 
             continue  # Continue to next row
 
@@ -493,16 +494,29 @@ def _find_existing_record(
     return None
 
 
+def _get_case_insensitive_value(record: dict, column_name: str):
+    """
+    Retrieve a value from a record using a column name in a case-insensitive way.
+
+    Tries UPPER, lower, then the original column name to match how Oracle
+    typically returns column names, while remaining robust to variations.
+    """
+    if not record or not column_name:
+        return None
+
+    for key in (column_name.upper(), column_name.lower(), column_name):
+        if key in record:
+            return record.get(key)
+
+    return None
+
+
 def _should_skip(task: Task, existing_record: dict) -> bool:
     """Check if record should be skipped based on skip_column/skip_value."""
     if not task.skip_column or not task.skip_value:
         return False
 
-    current_value = existing_record.get(task.skip_column.upper())  # Oracle returns uppercase
-    if current_value is None:
-        current_value = existing_record.get(task.skip_column.lower())
-    if current_value is None:
-        current_value = existing_record.get(task.skip_column)
+    current_value = _get_case_insensitive_value(existing_record, task.skip_column)
 
     if current_value is None:
         return False

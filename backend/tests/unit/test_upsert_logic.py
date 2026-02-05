@@ -347,18 +347,24 @@ class TestProcessRowsWithUpsert:
 
     @patch('app.services.runner._process_single_row')
     @patch('app.services.runner.log_row_error')
-    def test_stop_on_error_when_disabled(
+    def test_continue_and_log_all_errors_when_continue_on_error_disabled(
         self, mock_log_error, mock_process, mock_db, mock_task_no_continue
     ):
-        """Test processing stops when error occurs and continue_on_error=False"""
+        """Test processing logs error and continues when continue_on_error=False"""
         rows = [
             {"employee_id": 1, "name": "Alice"},
             {"employee_id": 2, "name": "Bob"},
         ]
         mock_process.side_effect = Exception("Unexpected error")
 
-        with pytest.raises(Exception, match="Unexpected error"):
-            process_rows_with_upsert(mock_db, mock_task_no_continue, 1, rows)
+        results = process_rows_with_upsert(mock_db, mock_task_no_continue, 1, rows)
+
+        assert results["inserted"] == 0
+        assert results["updated"] == 0
+        assert results["skipped"] == 0
+        assert results["errors"] == 2
+        assert len(results["error_details"]) == 2
+        assert mock_log_error.call_count == 2
 
     @patch('app.services.runner._process_single_row')
     @patch('app.services.runner.log_row_error')

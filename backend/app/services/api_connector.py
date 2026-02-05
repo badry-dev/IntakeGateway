@@ -46,7 +46,7 @@ async def fetch_json(
         ValueError: If response size exceeds limit or auth is invalid
     """
     # Apply authentication to headers
-    headers = apply_authentication(
+    headers = _apply_authentication(
         headers=headers or {},
         auth_type=auth_type,
         api_key=api_key,
@@ -392,3 +392,48 @@ def _get_parent_path(field_path: str) -> str | None:
     if "." not in field_path:
         return None
     return field_path.rsplit(".", 1)[0]
+
+
+def _apply_authentication(
+    headers: dict,
+    auth_type: str | None = None,
+    api_key: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    oauth_config: dict | None = None
+) -> dict:
+    """
+    Apply authentication to headers based on auth_type.
+    Supports: none, bearer, api_key, basic, oauth.
+    """
+    auth_type = (auth_type or "none").lower()
+    headers = dict(headers) if headers else {}
+
+    if auth_type == "bearer":
+        if not api_key:
+            raise ValueError("Bearer token required for Bearer authentication")
+        token = decrypt_value(api_key) if hasattr(decrypt_value, "__call__") else api_key
+        headers["Authorization"] = f"Bearer {token}"
+    elif auth_type == "api_key":
+        if not api_key:
+            raise ValueError("API key required for API Key authentication")
+        token = decrypt_value(api_key) if hasattr(decrypt_value, "__call__") else api_key
+        # Default header name; in production, make this configurable
+        headers["X-API-Key"] = token
+    elif auth_type == "basic":
+        if not username or not password:
+            raise ValueError("Username and password required for Basic authentication")
+        pwd = decrypt_value(password) if hasattr(decrypt_value, "__call__") else password
+        userpass = f"{username}:{pwd}"
+        encoded = base64.b64encode(userpass.encode("utf-8")).decode("utf-8")
+        headers["Authorization"] = f"Basic {encoded}"
+    elif auth_type == "oauth":
+        # Placeholder for OAuth logic; typically would use oauth_config
+        # For now, treat as Bearer if access_token present
+        if oauth_config and "access_token" in oauth_config:
+            headers["Authorization"] = f"Bearer {oauth_config['access_token']}"
+        else:
+            raise ValueError("OAuth config missing access_token")
+    # else: none, do nothing
+
+    return headers

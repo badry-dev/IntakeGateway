@@ -42,7 +42,7 @@ export interface TaskCreateAuth {
   oauth_config?: Record<string, any>
 }
 
-export interface TaskCreate extends Omit<Task, 'id'>, TaskCreateAuth {}
+export interface TaskCreate extends Omit<Task, 'id' | 'auth_type' | 'username'>, TaskCreateAuth {}
 export interface TaskUpdate extends Partial<Omit<Task, 'id'>> {}
 
 // Column Mapping types
@@ -131,8 +131,8 @@ export interface TaskRun {
   status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED'
   rows_fetched: number
   rows_inserted: number
-  rows_updated?: number   // Phase 8: Upsert updates
-  rows_skipped?: number   // Phase 8: Skipped due to skip condition
+  rows_updated: number    // Phase 8: Upsert updates (backend default=0)
+  rows_skipped: number    // Phase 8: Skipped due to skip condition (backend default=0)
   error_count: number
   warning_count?: number
   started_at: string

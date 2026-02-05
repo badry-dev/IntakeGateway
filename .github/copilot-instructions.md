@@ -253,7 +253,7 @@ export function useGetTasks() {
 
 For detailed context, see:
 - **[claude.md](../claude.md)** - Full architecture, data flow, troubleshooting
-- **[PHASE_5_TESTING_GUIDE.md](../PHASE_5_TESTING_GUIDE.md)** - Comprehensive test examples
+<!-- - **[PHASE_5_TESTING_GUIDE.md](../PHASE_5_TESTING_GUIDE.md)** - Comprehensive test examples -->
 - **[README.md](../README.md)** - Quick start, setup verification
 - **[Backend README](../backend/README.md)** - Backend-specific setup
 
@@ -346,4 +346,4 @@ For detailed context, see:
 
 ---
 
-**Questions?** Consult the detailed [claude.md](../claude.md) guide, [PHASE_7_PLAN.md](../PHASE_7_PLAN.md), or run tests to understand current behavior.
+**Questions?** Consult the detailed [claude.md](../claude.md) guide or run tests to understand current behavior.

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,8 +25,14 @@ export function UpsertConfigEditor({
 
   // Add a new upsert key
   const addUpsertKey = () => {
-    if (!selectedKey || config.upsert_keys?.includes(selectedKey)) return
+    // If nothing is selected, do nothing.
+    if (!selectedKey) return
 
+    // If the key is already selected, inform the user and do not add it again.
+    if (config.upsert_keys?.includes(selectedKey)) {
+      window.alert('This column is already configured as an upsert key.')
+      return
+    }
     const newKeys = [...(config.upsert_keys || []), selectedKey]
     onChange({ ...config, upsert_keys: newKeys })
     setSelectedKey('')

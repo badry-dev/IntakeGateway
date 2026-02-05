@@ -45,7 +45,7 @@ class Task(Base):
 
     # Upsert configuration (Phase 8)
     upsert_enabled = Column(Boolean, nullable=False, default=False)
-    upsert_keys = Column(JSONEncodedDict, nullable=True)  # JSON array of column names for matching
+    upsert_keys = Column(JSONEncodedDict, nullable=True)  # List of column names for matching (stored as JSON)
     skip_column = Column(String(100), nullable=True)  # Column to check for skip condition
     skip_value = Column(String(100), nullable=True)  # Value that triggers skip (e.g., 'Y')
     continue_on_error = Column(Boolean, nullable=False, default=True)  # Continue processing on row errors
