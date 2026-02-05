@@ -135,6 +135,37 @@ async def fetch_json(
         oauth_config=oauth_config
     )
     
+    # Debug: Show request details (mask sensitive headers)
+    debug_headers = dict(headers)
+    if 'Authorization' in debug_headers:
+        auth_value = debug_headers['Authorization']
+        if auth_value.startswith('Bearer '):
+            debug_headers['Authorization'] = f"Bearer ***{auth_value[-4:]}"
+        elif auth_value.startswith('Basic '):
+            debug_headers['Authorization'] = f"Basic ***"
+    if 'X-API-Key' in debug_headers:
+        debug_headers['X-API-Key'] = f"***{debug_headers['X-API-Key'][-4:]}"
+    
+    logger.info(f"Making API request: {method} {url}")
+    logger.info(f"Request headers: {debug_headers}")
+    if params:
+        logger.debug(f"Query params: {params}")
+    if json_body:
+        logger.debug(f"Request body: {json_body}")
+    
+    # Generate curl command for debugging
+    curl_cmd = f"curl -X {method} '{url}'"
+    for key, value in headers.items():
+        if key == 'Authorization':
+            curl_cmd += f" -H '{key}: ***'"
+        else:
+            curl_cmd += f" -H '{key}: {value}'"
+    if params:
+        curl_cmd += f" -G {' '.join([f'-d {k}={v}' for k, v in params.items()])}"
+    if json_body:
+        curl_cmd += f" -d '{json_body}'"
+    logger.info(f"Equivalent curl: {curl_cmd}")
+    
     timeout = httpx.Timeout(settings.HTTP_TIMEOUT_SECONDS)
     
     for attempt in range(max_retries + 1):

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+from loguru import logger
 
 from app.db.session import SessionLocal
 from app.db.models.task import Task
@@ -11,6 +12,7 @@ from app.db.models.task_log import TaskLog
 from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import TaskCreate, TaskOut, TaskRunOut, TaskStatsOut, TaskLogOut, TaskRunLogOut
 from app.workers.tasks import enqueue_run
+from app.core.encryption import encrypt_value
 
 router = APIRouter()
 
@@ -33,7 +35,20 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
     if exists:
         raise HTTPException(status_code=400, detail="Task with this name already exists")
     
-    task = Task(**payload.model_dump())
+    # Prepare task data and encrypt sensitive fields
+    task_data = payload.model_dump()
+    
+    # Encrypt api_key if provided
+    if task_data.get('api_key'):
+        task_data['api_key'] = encrypt_value(task_data['api_key'])
+        logger.debug(f"Encrypted api_key for task '{payload.name}'")
+    
+    # Encrypt password if provided
+    if task_data.get('password'):
+        task_data['password'] = encrypt_value(task_data['password'])
+        logger.debug(f"Encrypted password for task '{payload.name}'")
+    
+    task = Task(**task_data)
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -80,8 +95,21 @@ def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)
         if exists:
             raise HTTPException(status_code=400, detail="Task with this name already exists")
     
-    # Update all fields
-    for key, value in payload.model_dump().items():
+    # Prepare update data and encrypt sensitive fields
+    update_data = payload.model_dump()
+    
+    # Encrypt api_key if provided
+    if update_data.get('api_key'):
+        update_data['api_key'] = encrypt_value(update_data['api_key'])
+        logger.debug(f"Encrypted api_key for task '{payload.name}'")
+    
+    # Encrypt password if provided
+    if update_data.get('password'):
+        update_data['password'] = encrypt_value(update_data['password'])
+        logger.debug(f"Encrypted password for task '{payload.name}'")
+    
+    # Update task with all fields from payload
+    for key, value in update_data.items():
         setattr(task, key, value)
     
     db.commit()
