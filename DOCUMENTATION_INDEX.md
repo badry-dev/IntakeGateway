@@ -1,375 +1,145 @@
 # API2DB-Importer: Documentation Index
 
-**Project Status**: Phase 5 ✅ COMPLETE | Phase 4 ✅ COMPLETE | Phase 6 ⏳ IN PROGRESS  
-**Overall Progress**: Backend (100%) + Frontend (100%) + Phase 6 Enhancements (Active)  
-**Date**: January 2026
+**Project Status**: All Phases Complete (1-9) | Production Ready
+**Last Updated**: April 2026
 
 ---
 
-## 📋 Quick Links
+## Quick Links
 
-### Phase 5 Completion Documents
-1. **[PHASE_5_ALL_TODOS_COMPLETE.md](PHASE_5_ALL_TODOS_COMPLETE.md)** ⭐ START HERE
-   - All 15 todos completed
-   - Quick verification
-   - How to use
+### Core Documentation
+1. **[README.md](README.md)** - Project overview, setup, and quick start
+2. **[claude.md](claude.md)** - AI development guide, architecture, API reference
+3. **[PROJECT_ORIENTATION.md](PROJECT_ORIENTATION.md)** - Detailed architecture and business flows
+4. **[PROJECT_ORIENTATION_MERMAID.md](PROJECT_ORIENTATION_MERMAID.md)** - Architecture diagrams
 
-2. **[PHASE_5_COMPLETION_REPORT.md](PHASE_5_COMPLETION_REPORT.md)** 📊 FULL REPORT
-   - Executive summary
-   - Detailed breakdown
-   - Metrics and statistics
-   - Deployment readiness
+### Frontend
+5. **[frontend/PROMPT.md](frontend/PROMPT.md)** - Ant Design UI specification (target design)
+6. **[frontend/README.md](frontend/README.md)** - Frontend setup and structure
 
-3. **[PHASE_5_FINAL_SUMMARY.md](PHASE_5_FINAL_SUMMARY.md)** 📝 OVERVIEW
-   - All deliverables
-   - Component list
-   - Feature inventory
-
-### Setup & Getting Started
-4. **[frontend/FRONTEND_SETUP_GUIDE.md](frontend/FRONTEND_SETUP_GUIDE.md)** 🚀 SETUP
-   - Installation steps
-   - Commands
-   - Routes reference
-   - **Troubleshooting** (PostCSS config, dependencies)
-
-### Testing & Verification
-5. **[PHASE_5_TESTING_GUIDE.md](PHASE_5_TESTING_GUIDE.md)** ✅ TESTING
-   - Unit tests (Vitest)
-   - Integration testing (10 scenarios)
-   - Performance testing
-   - Troubleshooting
-
-### Architecture & Design
-6. **[frontend/FRONTEND_ARCHITECTURE.md](frontend/FRONTEND_ARCHITECTURE.md)** 🏗️ ARCHITECTURE
-   - System design
-   - Component hierarchy
-   - Data flow
-   - Integration points
-
-### Additional Documentation
-- [PHASE_5_STATUS.md](PHASE_5_STATUS.md) - Progress tracking
-- [PHASE_5_COMPLETE.md](PHASE_5_COMPLETE.md) - Executive summary
-- [PHASE_5_FRONTEND_SUMMARY.md](PHASE_5_FRONTEND_SUMMARY.md) - Feature overview
-- **[SETUP_CHANGES_JAN2026.md](SETUP_CHANGES_JAN2026.md)** - Recent fixes & changes
-
-### Phase 6 Active Docs
-- [PHASE_6_SESSION_SUMMARY.md](PHASE_6_SESSION_SUMMARY.md) - Session overview
-- [PHASE_6_IMPLEMENTATION_SESSION_1.md](PHASE_6_IMPLEMENTATION_SESSION_1.md) - Implementation details
-- [PHASE_6_QUICK_REFERENCE.md](PHASE_6_QUICK_REFERENCE.md) - Quick API/hook reference
-- [PHASE_6_SESSION_1_COMPLETE.md](PHASE_6_SESSION_1_COMPLETE.md) - Completion summary
-- [PHASE_6_FETCH_PARSE_IMPLEMENTATION.md](PHASE_6_FETCH_PARSE_IMPLEMENTATION.md) - Fetch/parse implementation
-- [PHASE_6_BUG_FIXES_SUMMARY.md](PHASE_6_BUG_FIXES_SUMMARY.md) - Bug fixes log
+### Phase Documentation
+- [PHASE_8_FEATURE_1_SESSION_SUMMARY.md](PHASE_8_FEATURE_1_SESSION_SUMMARY.md) - Upsert feature implementation
+- [PHASE_8_FEATURE_1_VALIDATION.md](PHASE_8_FEATURE_1_VALIDATION.md) - Upsert validation report
 
 ---
 
-## 🔧 Recent Setup Changes (January 2026)
+## What Was Built
 
-**Configuration Fixes for Latest Node.js/npm**:
-- ✅ PostCSS config renamed from `.js` to `.cjs` for ES module compatibility
-- ✅ Radix UI `react-slot` downgraded to v1.1.0 (v2.x not yet in npm registry)
-- ✅ Added `date-fns` dependency for date formatting
+### Phase 1-4: Backend API
+- FastAPI REST API with 15+ endpoints
+- SQLAlchemy ORM models (Task, TaskRun, ColumnMapping, TaskSchedule)
+- Service layer (runner, api_connector, mapper, validator, normalizer)
+- Celery async task processing with Redis
+- 110+ backend tests
 
-**See detailed changelog**: [SETUP_CHANGES_JAN2026.md](SETUP_CHANGES_JAN2026.md)
+### Phase 5: Frontend (Initial)
+- React 18 + TypeScript + Vite frontend
+- 8 page components with routing
+- React Query hooks for all API entities
+- Axios HTTP client
 
-**See troubleshooting sections in**:
-- [README.md](README.md) - Main setup guide
-- [FRONTEND_SETUP_GUIDE.md](FRONTEND_SETUP_GUIDE.md) - Detailed frontend setup
-- [PHASE_5_TESTING_GUIDE.md](PHASE_5_TESTING_GUIDE.md) - Test prerequisites
+### Phase 6: Column Mapping Editor
+- Field tree view with API response preview
+- Auto-fetch and manual JSON paste modes
+- Oracle column metadata integration
+- Transform suggestions
+
+### Phase 7: Database Connections
+- Multi-database connection management (Oracle, PostgreSQL, MySQL)
+- Encrypted credential storage
+- Connection testing and activation
+
+### Phase 8: Upsert & Skip Logic
+- Upsert (insert or update) with configurable key columns
+- Skip conditions for already-processed records
+- Continue-on-error mode
+- Row-level error tracking
+
+### Phase 9: Ant Design UI Migration
+- **Migrated entire frontend from Radix UI + Tailwind CSS to Ant Design 5**
+- Dark collapsible sidebar with `Layout.Sider` and `Menu`
+- `ConfigProvider` theme with brand colors (#1677FF primary)
+- All pages rewritten with AntD components (Card, Table, Tag, Modal, Steps, Tabs, Statistic, etc.)
+- All 4 editor components migrated (ColumnMapping, Connection, Schedule, Upsert)
+- Removed 11 Radix UI wrapper components, Tailwind CSS, CVA, lucide-react
+- Added `@ant-design/icons`, `dayjs`
+- 14 test files rewritten for new component APIs
+- Fixed `TaskCreate` interface type conflict
+- Zero TypeScript errors
 
 ---
 
-## 🎯 What Was Built in Phase 5
+## Technology Stack
 
-### Frontend Application
-- **Framework**: React 18 + TypeScript 5.3 + Vite 5.0
-- **Pages**: 6 fully functional pages
-- **Routes**: 11 configured routes
-- **Components**: 15 (9 UI + 6 pages)
-- **Hooks**: 10 React Query hooks
-- **Tests**: 6 test files with 42+ test cases
-- **TypeScript**: 100% coverage, zero errors
+### Backend
+- Python 3.11 + FastAPI 0.104
+- SQLAlchemy 2.0 + Oracle Database
+- Celery 5.4 + Redis
+- APScheduler 3.10
+- Pydantic 2.4
+- cryptography (encrypted credentials)
 
-### Key Features
-✅ Dashboard with statistics  
-✅ Task management (CRUD)  
-✅ Task creation wizard (5 steps)  
-✅ Run management and triggering  
-✅ Full error handling  
-✅ Loading states  
-✅ Toast notifications  
-✅ Responsive design  
-
-### UI Library
-- Button, Card, Input, Label, Dialog (basic components)
-- Table, Select, Toast, Tabs (advanced components)
-- All built with Radix primitives + Tailwind CSS
+### Frontend
+- React 18.2 + TypeScript 5.3
+- Vite 5.0
+- **Ant Design 5** + **@ant-design/icons**
+- React Router v6
+- React Query 5.28 (TanStack Query)
+- Axios + dayjs
+- Vitest + React Testing Library
 
 ---
 
-## 📊 Project Structure
+## Project Structure
 
 ```
 API2DB-Importer/
-├── backend/                    (Phase 4 - Completed)
+├── backend/                    # FastAPI application
 │   ├── app/
-│   │   ├── api/               Routes (runs, tasks)
-│   │   ├── core/              Config, logging
-│   │   ├── db/                Models, schemas, session
-│   │   ├── services/          Business logic
-│   │   └── workers/           Celery tasks
-│   └── tests/                 110+ tests passing
+│   │   ├── api/v1/routes/     # REST endpoints
+│   │   ├── services/          # Business logic
+│   │   ├── db/                # Models, schemas, session
+│   │   ├── workers/           # Celery tasks
+│   │   └── core/              # Config, encryption, logging
+│   └── tests/                 # 110+ test cases
 │
-├── frontend/                   (Phase 5 - Completed)
+├── frontend/                   # React + Ant Design application
 │   ├── src/
-│   │   ├── pages/             6 pages (Dashboard, TaskList, TaskDetail, RunsList, RunDetail, TaskWizard)
-│   │   ├── components/        15 components (9 UI + 6 pages)
-│   │   ├── hooks/             10 React Query hooks
-│   │   ├── api/               ApiClient class
-│   │   ├── types/             TypeScript definitions
-│   │   ├── __tests__/         6 test files, 42+ cases
-│   │   └── App.tsx            Main routing (11 routes)
-│   ├── vite.config.ts         Build config
-│   ├── tsconfig.json          TypeScript config
-│   └── FRONTEND_SETUP_GUIDE.md
+│   │   ├── pages/             # 8 pages
+│   │   ├── components/        # 4 editor components
+│   │   ├── hooks/api.ts       # React Query hooks
+│   │   ├── api/client.ts      # Axios HTTP client
+│   │   ├── types/index.ts     # TypeScript interfaces
+│   │   ├── __tests__/         # 14 test files
+│   │   ├── theme.ts           # Ant Design theme config
+│   │   └── App.tsx            # Routing + Layout
+│   └── PROMPT.md              # Ant Design UI specification
 │
-└── Documentation/
-    ├── PHASE_5_ALL_TODOS_COMPLETE.md      ⭐ START HERE
-    ├── PHASE_5_COMPLETION_REPORT.md       Full report
-    ├── PHASE_5_FINAL_SUMMARY.md           Overview
-    ├── PHASE_5_TESTING_GUIDE.md           Testing guide
-    ├── FRONTEND_ARCHITECTURE.md           System design
-    ├── PHASE_5_STATUS.md                  Progress tracking
-    └── [more guides...]
+├── docker-compose.yml
+├── claude.md                   # AI development guide
+├── PROJECT_ORIENTATION.md      # Architecture overview
+└── README.md
 ```
 
 ---
 
-## ✅ Verification Checklist
+## Quick Start
 
-### Unit Tests
-- [x] 6 test files created
-- [x] 42+ test cases written
-- [x] All tests passing
-- [x] Vitest configured
-- [x] React Testing Library setup
-
-### Integration
-- [x] API client fully implemented
-- [x] 10 React Query hooks
-- [x] Backend API integration verified
-- [x] CORS configured
-- [x] Error handling working
-
-### Code Quality
-- [x] TypeScript strict mode: 100% coverage
-- [x] Zero TypeScript errors
-- [x] ESLint configured
-- [x] Prettier formatting
-- [x] Comprehensive comments
-
-### Pages & Routes
-- [x] 6 pages fully functional
-- [x] 11 routes configured
-- [x] All navigation working
-- [x] Proper URL params
-- [x] Link validation
-
-### UI/UX
-- [x] 9 UI components working
-- [x] Responsive design verified
-- [x] Loading states visible
-- [x] Error messages clear
-- [x] Toast notifications functional
-
-### Documentation
-- [x] 8 documentation files
-- [x] Setup guide complete
-- [x] Testing guide comprehensive
-- [x] Architecture documented
-- [x] Code examples provided
-
----
-
-## 🚀 Quick Start
-
-### 1. Setup Frontend
 ```bash
-cd frontend
-npm install
-npm run dev
+# Frontend
+cd frontend && npm install && npm run dev
+# → http://localhost:5173
+
+# Backend
+cd backend && pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --port 8000
+# → http://localhost:8000
+
+# Tests
+cd frontend && npm test
+cd backend && pytest tests/ -v
 ```
-Frontend: `http://localhost:5173`
-
-### 2. Setup Backend
-```bash
-cd backend
-python -m uvicorn app.main:app --reload
-```
-Backend: `http://localhost:8000`
-
-### 3. Run Tests
-```bash
-cd frontend
-npm run test
-```
-Expected: 42+ tests passing ✅
-
-### 4. Build for Production
-```bash
-npm run build
-```
-Creates optimized `dist/` folder
 
 ---
 
-## 📈 Metrics Summary
-
-| Metric | Value | Status |
-|--------|-------|--------|
-| **Phase 5 Todos** | 15/15 | ✅ 100% |
-| **Frontend LOC** | 1,950+ | ✅ Complete |
-| **Test Files** | 6 | ✅ Complete |
-| **Test Cases** | 42+ | ✅ All Passing |
-| **UI Components** | 9 | ✅ Complete |
-| **Pages** | 6 | ✅ Complete |
-| **Routes** | 11 | ✅ Configured |
-| **TypeScript Coverage** | 100% | ✅ Perfect |
-| **Documentation Files** | 8 | ✅ Complete |
-| **Bundle Size** | <100KB | ✅ Optimized |
-
----
-
-## 🔍 Where to Find Things
-
-### Setup & Installation
-→ See [frontend/FRONTEND_SETUP_GUIDE.md](frontend/FRONTEND_SETUP_GUIDE.md)
-
-### How to Run Tests
-→ See [PHASE_5_TESTING_GUIDE.md](PHASE_5_TESTING_GUIDE.md)
-
-### What Was Built
-→ See [PHASE_5_ALL_TODOS_COMPLETE.md](PHASE_5_ALL_TODOS_COMPLETE.md)
-
-### Full Breakdown
-→ See [PHASE_5_COMPLETION_REPORT.md](PHASE_5_COMPLETION_REPORT.md)
-
-### Architecture Details
-→ See [frontend/FRONTEND_ARCHITECTURE.md](frontend/FRONTEND_ARCHITECTURE.md)
-
-### Page Components
-→ See `frontend/src/pages/`
-
-### UI Components
-→ See `frontend/src/components/ui/`
-
-### API Integration
-→ See `frontend/src/api/client.ts` and `frontend/src/hooks/api.ts`
-
-### Tests
-→ See `frontend/src/__tests__/pages/`
-
----
-
-## 💡 Key Accomplishments
-
-### Phase 5 Deliverables
-1. ✅ React + TypeScript frontend setup
-2. ✅ API integration layer (10 hooks, ApiClient)
-3. ✅ 6 fully functional pages
-4. ✅ 11 routes with navigation
-5. ✅ 9 reusable UI components
-6. ✅ Comprehensive test suite (42+ cases)
-7. ✅ 100% TypeScript type safety
-8. ✅ Extensive documentation (8 files)
-
-### Code Quality
-- 100% TypeScript with strict mode
-- Zero type errors
-- 42+ passing test cases
-- Accessibility compliant (WCAG 2.1 AA)
-- Responsive design
-- Dark mode infrastructure
-
-### Ready For
-- ✅ Production deployment
-- ✅ Backend integration
-- ✅ Phase 6 development
-- ✅ End-to-end testing
-- ✅ Performance optimization
-
----
-
-## 🎓 For Next Developers
-
-### Getting Oriented
-1. Read [PHASE_5_ALL_TODOS_COMPLETE.md](PHASE_5_ALL_TODOS_COMPLETE.md) first (5 mins)
-2. Review [frontend/FRONTEND_ARCHITECTURE.md](frontend/FRONTEND_ARCHITECTURE.md) (15 mins)
-3. Run setup: `cd frontend && npm install && npm run dev` (5 mins)
-4. Run tests: `npm run test` (2 mins)
-5. Review code in `src/pages/` and `src/components/` (20 mins)
-
-### Key Files to Know
-- `src/App.tsx` - Main routing
-- `src/api/client.ts` - HTTP client
-- `src/hooks/api.ts` - React Query hooks
-- `src/pages/*.tsx` - Page components
-- `src/components/ui/*.tsx` - UI components
-- `src/__tests__/pages/*.test.tsx` - Tests
-
-### Common Tasks
-- **Run dev server**: `npm run dev`
-- **Run tests**: `npm run test`
-- **Build**: `npm run build`
-- **Type check**: `npx tsc --noEmit`
-- **Format code**: `npm run format` (if configured)
-
----
-
-## 📞 Support
-
-### Issues with Setup?
-→ See [frontend/FRONTEND_SETUP_GUIDE.md](frontend/FRONTEND_SETUP_GUIDE.md) troubleshooting
-
-### Tests Not Running?
-→ See [PHASE_5_TESTING_GUIDE.md](PHASE_5_TESTING_GUIDE.md) troubleshooting
-
-### Need Architecture Overview?
-→ See [frontend/FRONTEND_ARCHITECTURE.md](frontend/FRONTEND_ARCHITECTURE.md)
-
-### Want Full Details?
-→ See [PHASE_5_COMPLETION_REPORT.md](PHASE_5_COMPLETION_REPORT.md)
-
----
-
-## 🎉 Status: READY FOR PRODUCTION
-
-✅ **Phase 5 Complete**
-- All 15 todos delivered
-- 1,950+ lines of code
-- 42+ tests passing
-- 100% TypeScript
-- 8 documentation files
-
-✅ **Phase 4 Complete**
-- Backend API fully functional
-- 110+ tests passing
-- All CRUD endpoints working
-
-✅ **Ready For Next Steps**
-- Production deployment
-- Phase 6 development
-- E2E testing
-- Performance optimization
-
----
-
-**Start Here**: [PHASE_5_ALL_TODOS_COMPLETE.md](PHASE_5_ALL_TODOS_COMPLETE.md)  
-**Full Details**: [PHASE_5_COMPLETION_REPORT.md](PHASE_5_COMPLETION_REPORT.md)  
-**Setup Guide**: [frontend/FRONTEND_SETUP_GUIDE.md](frontend/FRONTEND_SETUP_GUIDE.md)  
-**Testing**: [PHASE_5_TESTING_GUIDE.md](PHASE_5_TESTING_GUIDE.md)  
-
----
-
-**Status**: ✅ Phase 5 Complete - Production Ready  
-**Date**: January 2024  
-**Next**: Phase 6 Planning
+**Status**: All phases complete. Production ready.

@@ -1,7 +1,7 @@
 # API2DB-Importer: Project Context & Development Guidelines
 
-**Last Updated**: February 3, 2026
-**Project Status**: Phase 4 Complete | Phase 5 Complete | Phase 6 Complete | Phase 7 Complete
+**Last Updated**: April 13, 2026
+**Project Status**: Phase 4 Complete | Phase 5 Complete | Phase 6 Complete | Phase 7 Complete | Phase 8 Complete | Phase 9 Complete (Ant Design Migration)
 **AI Assistant Guide**: Use this document to understand the project architecture, conventions, and development practices.
 
 ---
@@ -29,9 +29,11 @@
 - React 18.2 with TypeScript 5.3
 - Vite 5.0 build tool
 - React Router v6
-- React Query 5.28 for state management
-- Tailwind CSS 3.4 + Radix UI for styling
-- Vitest for testing (12 test files)
+- React Query 5.28 (TanStack Query) for server state management
+- **Ant Design 5** UI component library (migrated from Radix UI + Tailwind in Phase 9)
+- **@ant-design/icons** for iconography
+- **dayjs** for date handling
+- Vitest + React Testing Library for testing (14 test files)
 
 ---
 
@@ -201,46 +203,39 @@ backend/
 ```
 frontend/
 ├── src/
-│   ├── pages/                  # Page components (7 pages)
-│   │   ├── Dashboard.tsx       # Overview with stats
-│   │   ├── TaskList.tsx        # All tasks
-│   │   ├── TaskDetail.tsx      # Single task view + edit
-│   │   ├── TaskWizard.tsx      # 5-step task creation
-│   │   ├── RunsList.tsx        # All runs
-│   │   ├── RunDetail.tsx       # Single run view
-│   │   └── Schedules.tsx       # Task scheduling management
+│   ├── pages/                  # Page components (8 pages)
+│   │   ├── Dashboard.tsx       # KPI cards, recent runs table, quick actions
+│   │   ├── TaskList.tsx        # Card-based task list with actions
+│   │   ├── TaskDetail.tsx      # Tabbed view (Details, Schedule, Mappings)
+│   │   ├── TaskWizard.tsx      # 6-step task creation wizard (Steps component)
+│   │   ├── RunsList.tsx        # Runs table with status tags
+│   │   ├── RunDetail.tsx       # Statistics, logs, error breakdown
+│   │   ├── Schedules.tsx       # Schedule table with filter controls
+│   │   └── Settings.tsx        # Database connection management
 │   │
-│   ├── components/
-│   │   ├── ui/                 # UI component library (9 components)
-│   │   │   ├── button.tsx
-│   │   │   ├── card.tsx
-│   │   │   ├── input.tsx
-│   │   │   ├── label.tsx
-│   │   │   ├── dialog.tsx
-│   │   │   ├── table.tsx
-│   │   │   ├── select.tsx
-│   │   │   ├── toast.tsx
-│   │   │   ├── tabs.tsx
-│   │   │   └── __init__.ts
-│   │   └── layout/
-│   │       └── [Navigation, Sidebar components]
+│   ├── components/             # Editor components
+│   │   ├── ColumnMappingEditor.tsx  # Field mapping with tree view
+│   │   ├── ConnectionEditor.tsx     # DB connection form
+│   │   ├── ScheduleEditor.tsx       # Cron schedule form
+│   │   └── UpsertConfigEditor.tsx   # Upsert/skip configuration
 │   │
-│   ├── hooks/                  # React Query hooks (10 hooks)
-│   │   ├── api.ts              # All API hooks (useTasks, useTask, etc.)
-│   │   └── useQuery utilities
+│   ├── hooks/
+│   │   └── api.ts              # React Query hooks (all entities)
 │   │
 │   ├── api/
-│   │   ├── client.ts           # ApiClient class with all endpoints
-│   │   └── types.ts            # Request/response types
+│   │   └── client.ts           # Axios HTTP client (all endpoints)
 │   │
 │   ├── types/
-│   │   ├── task.ts             # Task interfaces
-│   │   ├── run.ts              # Run interfaces
-│   │   └── common.ts           # Common types
+│   │   └── index.ts            # TypeScript interfaces (all types)
 │   │
-│   ├── __tests__/              # Test suite (12 test files)
+│   ├── lib/
+│   │   └── utils.ts            # Date parsing/formatting utilities
+│   │
+│   ├── __tests__/              # Test suite (14 test files)
+│   │   ├── setup.ts            # jest-dom setup
 │   │   ├── components/
 │   │   │   ├── ColumnMappingEditor.test.tsx
+│   │   │   ├── ConnectionEditor.test.tsx
 │   │   │   ├── ScheduleEditor.test.tsx
 │   │   │   └── ScheduleTab.test.tsx
 │   │   └── pages/
@@ -250,18 +245,19 @@ frontend/
 │   │       ├── RunsList.test.tsx
 │   │       ├── RunDetail.test.tsx
 │   │       ├── Schedules.test.tsx
+│   │       ├── Settings.test.tsx
 │   │       ├── TaskWizard.test.tsx
 │   │       ├── TaskWizard-Mapping.test.tsx
 │   │       └── TaskWizardAuth.test.tsx
 │   │
-│   ├── App.tsx                 # Main routing configuration
+│   ├── theme.ts                # Ant Design theme configuration (ConfigProvider)
+│   ├── App.tsx                 # Routing + AntD Layout (Sider, Menu, Content)
 │   ├── main.tsx                # Entry point
-│   └── index.css               # Global styles
+│   └── index.css               # Minimal global styles
 │
-├── public/                     # Static assets
+├── PROMPT.md                   # Ant Design UI specification
 ├── vite.config.ts              # Vite configuration
 ├── tsconfig.json               # TypeScript configuration
-├── tailwind.config.ts          # Tailwind CSS configuration
 ├── vitest.config.ts            # Vitest configuration
 ├── package.json
 └── README.md
