@@ -57,7 +57,11 @@ export function Settings() {
         ) : (
           <Button
             size="small"
-            onClick={() => activateConnection.mutateAsync(record.id)}
+            onClick={() => {
+              activateConnection.mutateAsync(record.id)
+                .then(() => message.success('Connection activated'))
+                .catch(() => message.error('Failed to activate connection'))
+            }}
             loading={activateConnection.isPending}
           >
             Set Active

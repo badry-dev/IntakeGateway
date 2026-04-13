@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useRun } from '@/hooks/api'
-import { Card, Button, Tag, Spin, Table, Typography, Descriptions, Space, Collapse, Row, Col, Statistic, Result } from 'antd'
+import { Card, Button, Tag, Spin, Table, Typography, Descriptions, Space, Row, Col, Statistic, Result } from 'antd'
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
@@ -60,23 +60,11 @@ export function RunDetail() {
   ]
 
   const errorColumns = [
-    { title: 'Row Index', dataIndex: 'row_index', key: 'row_index', width: 100 },
-    { title: 'Error', dataIndex: 'error_message', key: 'error_message', render: (v: string) => <Text type="danger">{v}</Text> },
-    {
-      title: 'Data',
-      dataIndex: 'row_data',
-      key: 'row_data',
-      render: (data: any) => (
-        <Collapse
-          size="small"
-          items={[{
-            key: '1',
-            label: 'View Data',
-            children: <pre style={{ fontSize: 12, margin: 0 }}>{JSON.stringify(data, null, 2)}</pre>,
-          }]}
-        />
-      ),
-    },
+    { title: 'Row', dataIndex: 'row_number', key: 'row_number', width: 80 },
+    { title: 'Column', dataIndex: 'column_name', key: 'column_name', width: 150, render: (v: string) => <Text code>{v}</Text> },
+    { title: 'Error Type', dataIndex: 'error_type', key: 'error_type', width: 140 },
+    { title: 'Message', dataIndex: 'error_message', key: 'error_message', render: (v: string) => <Text type="danger">{v}</Text> },
+    { title: 'Source Value', dataIndex: 'source_value', key: 'source_value', render: (v: string) => v ? <Text code>{v}</Text> : <Text type="secondary">null</Text> },
   ]
 
   return (

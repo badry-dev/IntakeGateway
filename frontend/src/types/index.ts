@@ -154,11 +154,12 @@ export interface TaskLog {
 
 export interface TaskRunLog {
   id: number
-  task_id: number
-  run_id: number
-  row_index: number
-  row_data: Record<string, any>
-  errors: Array<{ column: string; error_type: string; message: string }>
+  task_run_id: number
+  row_number: number
+  column_name: string
+  error_type: string
+  error_message: string
+  source_value?: string
   created_at: string
 }
 
