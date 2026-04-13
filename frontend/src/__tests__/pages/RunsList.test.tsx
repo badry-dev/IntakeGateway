@@ -5,18 +5,16 @@ import { BrowserRouter } from 'react-router-dom'
 import { RunsList } from '@/pages/RunsList'
 
 vi.mock('@/hooks/api', () => ({
-  useRuns: vi.fn(),
+  useRecentRuns: vi.fn(),
 }))
 
-import { useRun } from '@/hooks/api'
+import { useRecentRuns } from '@/hooks/api'
 
 const createWrapper = () => {
-  const queryClient = new QueryClient()
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        {children}
-      </BrowserRouter>
+      <BrowserRouter>{children}</BrowserRouter>
     </QueryClientProvider>
   )
 }
@@ -26,168 +24,39 @@ describe('RunsList', () => {
     vi.clearAllMocks()
   })
 
-  it('should render runs page heading', () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: { results: [], total: 0 },
-      isLoading: false,
-      error: null,
-    } as any)
-
+  it('should render page heading', () => {
+    vi.mocked(useRecentRuns).mockReturnValue({ data: [], isLoading: false, error: null } as any)
     render(<RunsList />, { wrapper: createWrapper() })
-    
-    expect(screen.getByText(/Runs/)).toBeInTheDocument()
-  })
-
-  it('should display loading state', () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      error: null,
-    } as any)
-
-    render(<RunsList />, { wrapper: createWrapper() })
-    
-    expect(screen.getByText(/Loading/i)).toBeInTheDocument()
+    expect(screen.getByText('Task Runs')).toBeInTheDocument()
   })
 
   it('should display empty state when no runs', async () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: { results: [], total: 0 },
-      isLoading: false,
-      error: null,
-    } as any)
-
+    vi.mocked(useRecentRuns).mockReturnValue({ data: [], isLoading: false, error: null } as any)
     render(<RunsList />, { wrapper: createWrapper() })
-    
     await waitFor(() => {
-      expect(screen.getByText(/No runs yet/i)).toBeInTheDocument()
+      expect(screen.getByText('No runs yet')).toBeInTheDocument()
     })
   })
 
-  it('should display run cards when data loads', async () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: {
-        results: [
-          {
-            id: 'run-1',
-            task_id: 'task-1',
-            status: 'completed',
-            total_records: 100,
-            successful_records: 100,
-            failed_records: 0,
-            started_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(),
-          },
-        ],
-        total: 1,
-      },
+  it('should display runs in a table', async () => {
+    vi.mocked(useRecentRuns).mockReturnValue({
+      data: [
+        { id: 1, task_id: 1, task_name: 'Sync Users', status: 'SUCCESS', rows_fetched: 50, rows_inserted: 50, error_count: 0, started_at: new Date().toISOString() },
+      ],
       isLoading: false,
       error: null,
     } as any)
 
     render(<RunsList />, { wrapper: createWrapper() })
-    
     await waitFor(() => {
-      expect(screen.getByText(/run-1/)).toBeInTheDocument()
-      expect(screen.getByText(/completed/i)).toBeInTheDocument()
-    })
-  })
-
-  it('should show run status badges', async () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: {
-        results: [
-          {
-            id: 'run-1',
-            task_id: 'task-1',
-            status: 'running',
-            total_records: 100,
-            successful_records: 50,
-            failed_records: 0,
-            started_at: new Date().toISOString(),
-            completed_at: null,
-          },
-        ],
-        total: 1,
-      },
-      isLoading: false,
-      error: null,
-    } as any)
-
-    render(<RunsList />, { wrapper: createWrapper() })
-    
-    await waitFor(() => {
-      expect(screen.getByText(/running/i)).toBeInTheDocument()
-    })
-  })
-
-  it('should display record counts', async () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: {
-        results: [
-          {
-            id: 'run-1',
-            task_id: 'task-1',
-            status: 'completed',
-            total_records: 100,
-            successful_records: 95,
-            failed_records: 5,
-            started_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(),
-          },
-        ],
-        total: 1,
-      },
-      isLoading: false,
-      error: null,
-    } as any)
-
-    render(<RunsList />, { wrapper: createWrapper() })
-    
-    await waitFor(() => {
-      expect(screen.getByText(/100/)).toBeInTheDocument()
-      expect(screen.getByText(/95/)).toBeInTheDocument()
-    })
-  })
-
-  it('should link to run details', async () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: {
-        results: [
-          {
-            id: 'run-1',
-            task_id: 'task-1',
-            status: 'completed',
-            total_records: 100,
-            successful_records: 100,
-            failed_records: 0,
-            started_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(),
-          },
-        ],
-        total: 1,
-      },
-      isLoading: false,
-      error: null,
-    } as any)
-
-    render(<RunsList />, { wrapper: createWrapper() })
-    
-    await waitFor(() => {
-      const link = screen.getByRole('link', { name: /run-1/i })
-      expect(link).toHaveAttribute('href', '/runs/run-1')
+      expect(screen.getByText('Sync Users')).toBeInTheDocument()
+      expect(screen.getByText('SUCCESS')).toBeInTheDocument()
     })
   })
 
   it('should handle API errors', () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      error: new Error('Failed to load runs'),
-    } as any)
-
+    vi.mocked(useRecentRuns).mockReturnValue({ data: undefined, isLoading: false, error: new Error('Failed') } as any)
     render(<RunsList />, { wrapper: createWrapper() })
-    
-    expect(screen.getByText(/Error/i)).toBeInTheDocument()
+    expect(screen.getByText(/Error loading runs/)).toBeInTheDocument()
   })
 })

@@ -24,6 +24,13 @@ lerna-debug.log*
 .env.local
 .env.*.local
 
+# TypeScript build info
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
+vitest.config.d.ts
+vitest.config.js
+
 # IDE
 .vscode/
 .idea/

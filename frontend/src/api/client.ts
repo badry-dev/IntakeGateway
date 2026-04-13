@@ -12,7 +12,6 @@ import {
   OracleColumnsResponse,
   TransformSuggestionsResponse,
   TaskSchedule,
-  TaskScheduleWithTaskName,
   ScheduleCreate,
   ScheduleUpdate,
   ScheduleListResponse,

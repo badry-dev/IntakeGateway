@@ -1,70 +1,72 @@
 # API→DB Importer: Full-Stack Application
 
-**Status**: ✅ Phase 5 Complete (Frontend) | ✅ Phase 4 Complete (Backend) | 🚀 Production Ready
+**Status**: ✅ Phase 8 Complete (Upsert/Skip) | ✅ Phase 9 Complete (Ant Design Migration) | Production Ready
 
-A modern web application for importing data from external APIs into Oracle databases. Features a comprehensive React frontend with real-time monitoring, a robust Python FastAPI backend with async task processing, and full test coverage.
+A modern web application for importing data from external APIs into Oracle databases. Features a comprehensive React frontend with Ant Design UI, a robust Python FastAPI backend with async task processing, and full test coverage.
 
 ---
 
-## 📋 Quick Links
+## Quick Links
 
 - **[Project Context & Guidelines](claude.md)** - AI development reference
-- **[Phase 5 Completion Report](PHASE_5_COMPLETION_REPORT.md)** - Full technical details
-- **[Frontend Setup Guide](frontend/FRONTEND_SETUP_GUIDE.md)** - React frontend setup
-- **[Testing Guide](PHASE_5_TESTING_GUIDE.md)** - Testing procedures
-- **[Architecture Overview](frontend/FRONTEND_ARCHITECTURE.md)** - System design
+- **[Project Orientation](PROJECT_ORIENTATION.md)** - Architecture overview
+- **[Frontend UI Prompt](frontend/PROMPT.md)** - Ant Design UI specification
 - **[Documentation Index](DOCUMENTATION_INDEX.md)** - All guides
 
 ---
 
-## 🎯 Project Overview
+## Project Overview
 
 **API2DB-Importer** enables users to:
-- ✅ Create and manage API data import tasks
-- ✅ Configure API endpoints with authentication and headers
-- ✅ Map API response fields to database columns
-- ✅ Trigger task executions with real-time monitoring
-- ✅ View detailed logs, statistics, and error reports
-- ✅ Dashboard with live task and run statistics
-- ✅ Run list labels with task name + retry badge
+- Create and manage API data import tasks
+- Configure API endpoints with authentication (Bearer, API Key, Basic, OAuth)
+- Map API response fields to database columns with transform suggestions
+- Schedule recurring imports with cron expressions
+- Trigger task executions with real-time monitoring
+- Configure upsert logic with skip conditions
+- View detailed logs, statistics, and error reports
+- Manage multiple database connections with encrypted credentials
 
 ---
 
-## 🏗️ Technology Stack
+## Technology Stack
 
 ### Frontend
 - **React 18.2** with **TypeScript 5.3** (strict mode)
 - **Vite 5.0** development environment with HMR
-- **React Router v6** for routing (11 routes)
-- **React Query 5.28** for server state management
-- **Tailwind CSS 3.4** + **Radix UI** for styling
-- **Vitest** for testing (42+ test cases)
+- **Ant Design 5** UI component library
+- **@ant-design/icons** for iconography
+- **React Router v6** for routing (8 routes)
+- **React Query 5.28** (TanStack Query) for server state management
+- **dayjs** for date handling
+- **Vitest** + **React Testing Library** for testing (14 test files)
 
 ### Backend
-- **Python 3.11** with **FastAPI**
-- **SQLAlchemy ORM** for database operations
-- **Celery** for async task execution
-- **Pydantic** for data validation
+- **Python 3.11** with **FastAPI 0.104**
+- **SQLAlchemy 2.0** ORM for database operations
+- **Celery 5.4** with Redis for async task execution
+- **APScheduler 3.10** for cron-based scheduling
+- **Pydantic 2.4** for data validation
+- **cryptography** for encrypted credential storage
 - **pytest** for testing (110+ test cases)
-- **Oracle Database** for data storage
+- **Oracle Database** (11g+ compatible)
 
 ---
 
-## 📊 Project Metrics
+## Project Metrics
 
 | Metric | Backend | Frontend | Total |
 |--------|---------|----------|-------|
-| **Lines of Code** | 2,500+ | 1,950+ | 4,450+ |
-| **Test Files** | 5 | 6 | 11 |
-| **Test Cases** | 110+ | 42+ | 150+ |
-| **Components** | 6 services | 15 components | 21 |
-| **Routes/Endpoints** | 10 | 11 | 21 |
-| **TypeScript Coverage** | N/A | 100% | 100% |
-| **Documentation Files** | - | - | 8+ |
+| **Lines of Code** | 2,500+ | 2,600+ | 5,100+ |
+| **Test Files** | 11 | 14 | 25 |
+| **Test Cases** | 110+ | 60+ | 170+ |
+| **Components/Services** | 8 services | 12 components | 20 |
+| **Routes/Endpoints** | 15+ | 8 | 23+ |
+| **TypeScript Coverage** | N/A | 100% | - |
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Node.js 18+ (for frontend)
@@ -90,29 +92,8 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --port 8000
 ```
-Backend API available at: **http://localhost:8000**  
+Backend API available at: **http://localhost:8000**
 API Docs available at: **http://localhost:8000/docs**
-
-### Setup Troubleshooting
-
-**Common Setup Issues (Updated January 2026)**:
-
-1. **PostCSS Configuration Error**
-   ```bash
-   # If you see: "module is not defined in ES module scope"
-   cd frontend
-   mv postcss.config.js postcss.config.cjs
-   ```
-
-2. **Dependency Version Issues**
-   - If `@radix-ui/react-slot` installation fails, ensure version is `^1.1.0` in package.json
-   - Missing `date-fns`? Run: `npm install date-fns`
-
-3. **Backend Missing uvicorn**
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   ```
 
 ### Run Tests
 
@@ -120,188 +101,156 @@ API Docs available at: **http://localhost:8000/docs**
 ```bash
 cd frontend
 npm run test
-# Expected: 42+ tests passing ✅
 ```
 
 **Backend**:
 ```bash
 cd backend
-pytest tests/unit/ -v
-# Expected: 110+ tests passing ✅
+pytest tests/ -v
 ```
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 API2DB-Importer/
 ├── backend/                    # FastAPI application
 │   ├── app/
-│   │   ├── api/v1/routes/     # REST endpoints
-│   │   ├── services/          # Business logic (6 modules)
-│   │   ├── db/                # Database models & schemas
-│   │   ├── workers/           # Celery configuration
-│   │   └── core/              # Config & logging
-│   ├── tests/unit/            # 110+ unit tests
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── pyproject.toml
+│   │   ├── api/v1/routes/     # REST endpoints (tasks, runs, schedules, connections, mappings)
+│   │   ├── services/          # Business logic (runner, api_connector, mapper, validator, etc.)
+│   │   ├── db/                # Database models & schemas (SQLAlchemy)
+│   │   ├── workers/           # Celery task queue configuration
+│   │   └── core/              # Config, encryption, logging
+│   └── tests/                 # Unit + integration tests (110+ cases)
 │
-├── frontend/                   # React application
+├── frontend/                   # React application (Ant Design)
 │   ├── src/
-│   │   ├── pages/            # 6 page components
-│   │   ├── components/       # 9 UI components
-│   │   ├── hooks/            # 10 React Query hooks
-│   │   ├── api/              # API client
-│   │   ├── __tests__/        # 6 test files (42+ cases)
-│   │   └── App.tsx           # Routing
-│   ├── vite.config.ts
-│   ├── tsconfig.json
-│   ├── package.json
-│   └── FRONTEND_SETUP_GUIDE.md
+│   │   ├── pages/            # 8 page components
+│   │   ├── components/       # 4 editor components (ColumnMapping, Connection, Schedule, Upsert)
+│   │   ├── hooks/            # React Query hooks (api.ts)
+│   │   ├── api/              # Axios HTTP client (client.ts)
+│   │   ├── types/            # TypeScript interfaces
+│   │   ├── __tests__/        # 14 test files
+│   │   ├── theme.ts          # Ant Design theme configuration
+│   │   └── App.tsx           # Routing + AntD Layout
+│   ├── PROMPT.md             # Ant Design UI specification
+│   └── package.json
 │
 ├── docker-compose.yml         # Multi-container setup
 ├── Makefile                   # Convenience commands
-├── claude.md                  # AI development guide ⭐
+├── claude.md                  # AI development guide
+├── PROJECT_ORIENTATION.md     # Architecture overview
 ├── DOCUMENTATION_INDEX.md     # Documentation index
-├── PHASE_5_COMPLETION_REPORT.md
-├── PHASE_5_TESTING_GUIDE.md
-├── FRONTEND_ARCHITECTURE.md
 └── README.md                  # This file
 ```
 
 ---
 
-## 🌐 API Endpoints
+## API Endpoints
 
 ### Task Management
 ```
 GET    /api/v1/tasks              # List all tasks (paginated)
 GET    /api/v1/tasks/{task_id}    # Get task details
 POST   /api/v1/tasks              # Create new task
-PATCH  /api/v1/tasks/{task_id}    # Update task
+PUT    /api/v1/tasks/{task_id}    # Update task
 DELETE /api/v1/tasks/{task_id}    # Delete task
+POST   /api/v1/tasks/{task_id}/run # Trigger task execution
 ```
 
 ### Run Management
 ```
-GET    /api/v1/runs               # List all runs (paginated)
+GET    /api/v1/runs               # List recent runs
 GET    /api/v1/runs/{run_id}      # Get run details
-POST   /api/v1/runs               # Trigger new run
 ```
 
-### Statistics
+### Schedule Management
 ```
-GET    /api/v1/stats/tasks        # Task statistics
-GET    /api/v1/stats/runs         # Run statistics
+GET    /api/v1/schedules          # List all schedules
+POST   /api/v1/tasks/{task_id}/schedule  # Create schedule
+PUT    /api/v1/schedules/{id}     # Update schedule
+DELETE /api/v1/schedules/{id}     # Delete schedule
 ```
 
-See [claude.md](claude.md) for full API documentation.
+### Column Mappings
+```
+GET    /api/v1/tasks/{task_id}/mappings         # Get mappings
+POST   /api/v1/tasks/{task_id}/mappings         # Create mappings
+POST   /api/v1/tasks/{task_id}/preview-fields   # Preview API fields
+POST   /api/v1/tasks/preview-fields-standalone  # Preview fields (wizard)
+```
+
+### Database Connections
+```
+GET    /api/v1/connections        # List connections
+POST   /api/v1/connections        # Create connection
+PUT    /api/v1/connections/{id}   # Update connection
+DELETE /api/v1/connections/{id}   # Delete connection
+POST   /api/v1/connections/test   # Test connection
+POST   /api/v1/connections/{id}/activate  # Set active connection
+```
 
 ---
 
-## 🎨 Frontend Features
+## Frontend Features
 
 ### Pages
-- **Dashboard** - Overview with statistics and recent runs
-- **Task List** - All tasks with CRUD operations
-- **Task Detail** - Full task view with edit & delete
-- **Task Wizard** - 5-step form for creating tasks
-- **Runs List** - All runs with status filtering
-- **Run Detail** - Full run details with logs and errors
+- **Dashboard** - KPI cards (running, succeeded, failed, total), recent runs table, quick actions
+- **Tasks** - Card-based task list with run/edit/delete actions, schedule indicators
+- **Task Wizard** - 6-step form (Basic Info, Endpoint, Headers, Auth, Mapping, Review)
+- **Task Detail** - Tabbed view (Details, Schedule, Column Mappings) with edit/delete
+- **Runs List** - Table with status tags, pagination, duration tracking
+- **Run Detail** - Statistics, execution logs, row-level error breakdown
+- **Schedules** - Table with filter controls, cron management, create dialog
+- **Settings** - Database connection management with test, activate, CRUD
 
-### Components
-- 9 reusable UI components (Button, Card, Input, Dialog, Table, Select, Toast, Tabs)
-- Responsive design (mobile, tablet, desktop)
-- Dark mode infrastructure
-- Accessibility compliant (WCAG 2.1 AA)
-- Smooth animations and transitions
+### UI Components (Ant Design)
+- Layout with collapsible dark sidebar, menu navigation
+- Cards, Tables, Tags, Badges for data display
+- Modals, Steps, Tabs for navigation
+- Statistic, Descriptions for data presentation
+- Alert, message, Result for feedback
+- Form inputs: Input, Select, Switch, Radio, Checkbox, InputNumber
 
 ---
 
-## 🔧 Backend Features
+## Backend Features
 
 ### Services
-- **TaskService** - Task CRUD and management
-- **RunService** - Run execution and monitoring
-- **ApiConnector** - External API communication
-- **Mapper** - Field mapping logic
-- **Normalizer** - Data transformation
-- **Validator** - Data validation
+- **Runner** - Main execution pipeline (fetch → normalize → validate → map → insert)
+- **ApiConnector** - External API communication with auth support
+- **Mapper** - Field value mapping and transformation
+- **Validator** - Data validation against Oracle schema
+- **Normalizer** - JSON flattening and data normalization
+- **ConnectionService** - Multi-database connection management
+- **Scheduler** - APScheduler integration for cron jobs
+- **TransformSuggester** - Type-based transform recommendations
 
 ### Infrastructure
-- Connection pooling for Oracle Database
-- Async task processing with Celery
-- Error handling and logging
-- Request validation with Pydantic
-- Type hints on all functions
+- Oracle connection pooling (thin mode)
+- Encrypted credential storage
+- Async task processing with Celery + Redis
+- Comprehensive error handling and logging (loguru)
+- Request validation with Pydantic v2
 
 ---
 
-## ✅ Test Coverage
+## Development Phases
 
-### Frontend Tests (42+ cases)
-- Dashboard (6 tests)
-- TaskList (7 tests)
-- TaskDetail (7 tests)
-- RunsList (7 tests)
-- RunDetail (8 tests)
-- TaskWizard (7 tests)
-
-**Run with**: `cd frontend && npm run test`
-
-### Backend Tests (110+ cases)
-- Model validation
-- Data mapping
-- Data normalization
-- Data validation
-- API endpoints
-
-**Run with**: `cd backend && pytest tests/unit/ -v`
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1-4 | ✅ Complete | Backend API, services, database models |
+| Phase 5 | ✅ Complete | React frontend with Radix UI + Tailwind |
+| Phase 6 | ✅ Complete | Column mapping editor, field preview |
+| Phase 7 | ✅ Complete | Encrypted connections, multi-DB support |
+| Phase 8 | ✅ Complete | Upsert logic, skip conditions, continue-on-error |
+| Phase 9 | ✅ Complete | **Ant Design UI migration** (from Radix UI + Tailwind) |
 
 ---
 
-## 📚 Documentation
+## Docker Setup
 
-| Document | Purpose |
-|----------|---------|
-| **[claude.md](claude.md)** ⭐ | Project context & AI development guide |
-| **[PHASE_5_COMPLETION_REPORT.md](PHASE_5_COMPLETION_REPORT.md)** | Full technical breakdown & metrics |
-| **[frontend/FRONTEND_SETUP_GUIDE.md](frontend/FRONTEND_SETUP_GUIDE.md)** | Frontend setup & commands |
-| **[PHASE_5_TESTING_GUIDE.md](PHASE_5_TESTING_GUIDE.md)** | Testing procedures & scenarios |
-| **[frontend/FRONTEND_ARCHITECTURE.md](frontend/FRONTEND_ARCHITECTURE.md)** | System design & component architecture |
-| **[DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)** | Master documentation index |
-| **[PHASE_5_FINAL_SUMMARY.md](PHASE_5_FINAL_SUMMARY.md)** | Executive summary |
-| **[PHASE_5_ALL_TODOS_COMPLETE.md](PHASE_5_ALL_TODOS_COMPLETE.md)** | Completion checklist |
-
----
-
-## 🔒 Security & Configuration
-
-### Environment Variables
-```env
-# Backend
-ORACLE_USER=your_oracle_user
-ORACLE_PASSWORD=your_oracle_password
-ORACLE_HOST=localhost
-ORACLE_PORT=1521
-ORACLE_SERVICE=your_service
-REDIS_URL=redis://localhost:6379
-CELERY_BROKER_URL=redis://localhost:6379/0
-```
-
-### Database Setup
-```bash
-# Run schema creation
-sqlplus your_user@your_db @backend/app/db/sql/schema.sql
-```
-
----
-
-## 🐳 Docker Setup
-
-### Docker Compose (Recommended)
 ```bash
 docker compose up --build
 ```
@@ -315,168 +264,34 @@ This starts:
 
 ---
 
-## 🔍 Development Workflow
+## Environment Variables
 
-### Making Changes
-
-1. **Create feature branch**
-   ```bash
-   git checkout -b feature/description
-   ```
-
-2. **Make changes** (follow coding conventions in [claude.md](claude.md))
-
-3. **Run tests**
-   ```bash
-   # Backend
-   cd backend && pytest tests/unit/ -v
-   
-   # Frontend
-   cd frontend && npm run test
-   ```
-
-4. **Commit changes**
-   ```bash
-   git commit -m "feat: description of changes"
-   ```
-
-### Code Quality Standards
-- TypeScript strict mode (frontend)
-- Type hints on all functions (backend)
-- 100+ tests passing (backend)
-- 42+ tests passing (frontend)
-- Comprehensive comments on complex logic
-- Follow existing code patterns
-
----
-
-## 📈 Performance
-
-### Frontend
-- Bundle size: < 100KB (gzipped)
-- Page load time: < 2 seconds
-- HMR reload time: < 200ms
-- React Query caching strategies
-- Code splitting by route
-
-### Backend
-- Connection pooling for Oracle
-- Async operations with Celery
-- Query optimization with indexes
-- Response caching (future enhancement)
-
----
-
-## 🚦 Current Status
-
-### Phase 4: Backend ✅ COMPLETE
-- FastAPI REST API fully implemented
-- 6 service modules
-- 110+ unit tests passing
-- Production-ready
-
-### Phase 5: Frontend ✅ COMPLETE
-- React + TypeScript application
-- 6 fully functional pages
-- 11 configured routes
-- 42+ tests passing
-- Production-ready
-
-### Phase 6: Next Steps (Future)
-- Advanced authentication (JWT)
-- E2E testing (Cypress/Playwright)
-- Real-time updates (WebSocket)
-- Performance optimization
-- Advanced search & filtering
-
----
-
-## 🆘 Troubleshooting
-
-### Frontend Won't Start
-```bash
-# Clear cache and reinstall
-rm -rf node_modules package-lock.json
-npm install
-npm run dev
+```env
+# Backend
+ORACLE_USER=your_oracle_user
+ORACLE_PASSWORD=your_oracle_password
+ORACLE_HOST=localhost
+ORACLE_PORT=1521
+ORACLE_SERVICE_NAME=your_service
+REDIS_URL=redis://localhost:6379
+CELERY_BROKER_URL=redis://localhost:6379/0
+SECRET_KEY=your_secret_key
 ```
 
-### Backend Tests Fail
-```bash
-# Check Oracle connection
-# Verify environment variables
-cd backend && pytest tests/unit/test_placeholder.py -v
-```
-
-### CORS Errors
-```
-# Ensure backend CORS is configured for frontend URL
-# Check app/core/config.py CORS settings
-```
-
-See [PHASE_5_TESTING_GUIDE.md](PHASE_5_TESTING_GUIDE.md) for detailed troubleshooting.
-
 ---
 
-## 📞 Support & Resources
-
-- **Architecture Overview**: See [frontend/FRONTEND_ARCHITECTURE.md](frontend/FRONTEND_ARCHITECTURE.md)
-- **API Documentation**: Visit `http://localhost:8000/docs` when backend is running
-- **Testing Details**: See [PHASE_5_TESTING_GUIDE.md](PHASE_5_TESTING_GUIDE.md)
-- **Setup Issues**: See [frontend/FRONTEND_SETUP_GUIDE.md](frontend/FRONTEND_SETUP_GUIDE.md)
-- **Development Guide**: See [claude.md](claude.md)
-
----
-
-## 🎯 Key Achievements
-
-✅ **Full-stack application** with frontend and backend  
-✅ **150+ tests** passing across both applications  
-✅ **4,450+ lines** of production-ready code  
-✅ **100% TypeScript** coverage on frontend  
-✅ **8+ documentation** files covering all aspects  
-✅ **Responsive design** working on all devices  
-✅ **Type-safe APIs** with Pydantic validation  
-✅ **Async task processing** with Celery  
-✅ **Comprehensive error handling** throughout  
-✅ **Professional code quality** with strict standards  
-
----
-
-## 🤝 Contributing
-
-When contributing to this project:
+## Contributing
 
 1. Read [claude.md](claude.md) for development guidelines
-2. Follow coding conventions (types, comments, testing)
-3. Ensure all tests pass before committing
+2. Follow coding conventions (TypeScript strict, type hints, testing)
+3. Ensure all tests pass: `tsc -b` + `vite build` + `npm test`
 4. Update documentation for major changes
 5. Keep commits atomic and well-described
 
 ---
 
-## 📄 License
+**Last Updated**: April 2026
+**Version**: 2.0.0
+**Status**: Production Ready
 
-This project is provided as-is for development and educational purposes.
-
----
-
-## 🎉 Ready for Production
-
-This application is **production-ready** with:
-- Complete test coverage
-- Comprehensive error handling
-- Security best practices
-- Performance optimization
-- Full documentation
-- Type safety throughout
-
-Deploy with confidence!
-
----
-
-**Last Updated**: January 2024  
-**Version**: 1.0.0  
-**Status**: ✅ Production Ready
-
-For detailed project context, see [claude.md](claude.md) ⭐
+For detailed project context, see [claude.md](claude.md)

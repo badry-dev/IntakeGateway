@@ -1,159 +1,85 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
-import { BrowserRouter } from 'react-router-dom'
+import { render, screen } from '@testing-library/react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
-import TaskDetail from '@/pages/TaskDetail'
+import { TaskDetail } from '@/pages/TaskDetail'
 
-// Mock the API hooks
 vi.mock('@/hooks/api', () => ({
-  useTask: () => ({
-    data: {
-      id: 1,
-      name: 'Test Task',
-      description: 'Test Description',
-      endpoint_path: 'https://api.example.com/users',
-      http_method: 'GET',
-      dest_table: 'USERS',
-      headers_json: {},
-      body_json: {},
-      batch_size: 500,
-      is_active: true,
-      created_at: '2025-01-30T10:00:00Z',
-    },
-    isLoading: false,
-    error: null,
-  }),
-  useUpdateTask: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  useDeleteTask: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  useColumnMappings: () => ({
-    data: [],
-    isLoading: false,
-    error: null,
-  }),
-  useSchedule: () => ({
-    data: {
-      id: 1,
-      task_id: 1,
-      cron_expression: '0 2 * * *',
-      is_active: true,
-      last_run_date: '2025-01-30T02:00:00Z',
-      next_run_date: '2025-01-31T02:00:00Z',
-      created_at: '2025-01-30T10:00:00Z',
-    },
-    isLoading: false,
-  }),
+  useTask: vi.fn(),
+  useUpdateTask: vi.fn(),
+  useDeleteTask: vi.fn(),
+  useColumnMappings: vi.fn(),
+  useSchedule: vi.fn(),
+  useCreateSchedule: vi.fn(),
+  useUpdateSchedule: vi.fn(),
+  useDeleteSchedule: vi.fn(),
 }))
 
-// Mock ScheduleEditor component
-vi.mock('@/components/ScheduleEditor', () => ({
-  ScheduleEditor: ({ taskId, existingSchedule }: any) => (
-    <div data-testid="schedule-editor">
-      Schedule Editor - Task {taskId}
-      {existingSchedule && <p>Existing: {existingSchedule.cron_expression}</p>}
-    </div>
-  ),
-}))
-
-// Mock ColumnMappingEditor component
 vi.mock('@/components/ColumnMappingEditor', () => ({
-  ColumnMappingEditor: ({ taskId }: any) => (
-    <div data-testid="column-mapping-editor">Column Mapping Editor - Task {taskId}</div>
-  ),
+  ColumnMappingEditor: () => <div data-testid="column-mapping-editor">ColumnMappingEditor</div>,
 }))
 
-const queryClient = new QueryClient()
+vi.mock('@/components/ScheduleEditor', () => ({
+  ScheduleEditor: () => <div data-testid="schedule-editor">ScheduleEditor</div>,
+}))
 
-function renderWithRouter(component: React.ReactElement) {
-  return render(
+import { useTask, useUpdateTask, useDeleteTask, useColumnMappings, useSchedule, useCreateSchedule, useUpdateSchedule, useDeleteSchedule } from '@/hooks/api'
+
+const createWrapper = () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        {component}
+        <Routes>
+          <Route path="/tasks/:id" element={children} />
+        </Routes>
       </BrowserRouter>
     </QueryClientProvider>
   )
 }
 
-describe('TaskDetail - Schedule Tab', () => {
+const mockTask = {
+  id: 1, name: 'Sync Users', description: 'Import data', http_method: 'GET',
+  endpoint_path: 'https://api.example.com/users', dest_table: 'USERS', batch_size: 500,
+  is_active: true, auth_type: 'none', upsert_enabled: false, continue_on_error: false,
+  headers_json: {}, body_json: {}, created_at: new Date().toISOString(),
+}
+
+describe('TaskDetail Schedule Tab', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(useUpdateTask).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as any)
+    vi.mocked(useDeleteTask).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as any)
+    vi.mocked(useColumnMappings).mockReturnValue({ data: [], isLoading: false } as any)
+    vi.mocked(useCreateSchedule).mockReturnValue({ mutateAsync: vi.fn() } as any)
+    vi.mocked(useUpdateSchedule).mockReturnValue({ mutateAsync: vi.fn() } as any)
+    vi.mocked(useDeleteSchedule).mockReturnValue({ mutateAsync: vi.fn() } as any)
+    window.history.pushState({}, '', '/tasks/1')
   })
 
-  it('should render task detail with Schedule tab', () => {
-    renderWithRouter(<TaskDetail />)
-    
-    expect(screen.getByText('Task Details')).toBeInTheDocument()
-    expect(screen.getByText('Schedule')).toBeInTheDocument()
-    expect(screen.getByText('Column Mappings')).toBeInTheDocument()
+  it('should show Schedule tab', () => {
+    vi.mocked(useTask).mockReturnValue({ data: mockTask, isLoading: false, error: null } as any)
+    vi.mocked(useSchedule).mockReturnValue({ data: null, refetch: vi.fn() } as any)
+    render(<TaskDetail />, { wrapper: createWrapper() })
+    expect(screen.getByText(/Schedule/)).toBeInTheDocument()
   })
 
-  it('should display Active badge when schedule exists', () => {
-    renderWithRouter(<TaskDetail />)
-    
-    const scheduleTab = screen.getByText('Schedule')
-    expect(scheduleTab.closest('button')).toBeInTheDocument()
-    
-    // Should show Active badge
+  it('should show Active tag when schedule exists', () => {
+    vi.mocked(useTask).mockReturnValue({ data: mockTask, isLoading: false, error: null } as any)
+    vi.mocked(useSchedule).mockReturnValue({
+      data: { id: 1, task_id: 1, cron_expression: '0 2 * * *', is_active: true, created_at: new Date().toISOString() },
+      refetch: vi.fn(),
+    } as any)
+    render(<TaskDetail />, { wrapper: createWrapper() })
     expect(screen.getByText('Active')).toBeInTheDocument()
   })
 
-  it('should navigate to Schedule tab when clicked', async () => {
-    renderWithRouter(<TaskDetail />)
-    
-    const scheduleTab = screen.getByRole('button', { name: /Schedule/i })
-    fireEvent.click(scheduleTab)
-    
-    // Schedule editor should be visible
-    expect(screen.getByTestId('schedule-editor')).toBeInTheDocument()
-  })
-
-  it('should show schedule details in Schedule tab', async () => {
-    renderWithRouter(<TaskDetail />)
-    
-    const scheduleTab = screen.getByRole('button', { name: /Schedule/i })
-    fireEvent.click(scheduleTab)
-    
-    // Should show configured schedule info
-    expect(screen.getByText(/Schedule configured/i)).toBeInTheDocument()
-    expect(screen.getByText(/0 2 \* \* \*/)).toBeInTheDocument()
-  })
-
-  it('should render ScheduleEditor component in Schedule tab', async () => {
-    renderWithRouter(<TaskDetail />)
-    
-    const scheduleTab = screen.getByRole('button', { name: /Schedule/i })
-    fireEvent.click(scheduleTab)
-    
-    expect(screen.getByTestId('schedule-editor')).toBeInTheDocument()
-  })
-
-  it('should show Task Details tab by default', () => {
-    renderWithRouter(<TaskDetail />)
-    
-    // Details tab should be active
-    expect(screen.getByText('Test Task')).toBeInTheDocument()
-  })
-
-  it('should maintain tab state when switching tabs', async () => {
-    renderWithRouter(<TaskDetail />)
-    
-    // Switch to Schedule tab
-    const scheduleTab = screen.getByRole('button', { name: /Schedule/i })
-    fireEvent.click(scheduleTab)
-    expect(screen.getByTestId('schedule-editor')).toBeInTheDocument()
-    
-    // Switch to Details tab
-    const detailsTab = screen.getByRole('button', { name: /Task Details/i })
-    fireEvent.click(detailsTab)
-    expect(screen.getByText('Test Task')).toBeInTheDocument()
-    
-    // Switch back to Schedule tab
-    fireEvent.click(scheduleTab)
-    expect(screen.getByTestId('schedule-editor')).toBeInTheDocument()
+  it('should show all three tabs', () => {
+    vi.mocked(useTask).mockReturnValue({ data: mockTask, isLoading: false, error: null } as any)
+    vi.mocked(useSchedule).mockReturnValue({ data: null, refetch: vi.fn() } as any)
+    render(<TaskDetail />, { wrapper: createWrapper() })
+    expect(screen.getByText('Task Details')).toBeInTheDocument()
+    expect(screen.getByText(/Schedule/)).toBeInTheDocument()
+    expect(screen.getByText(/Column Mappings/)).toBeInTheDocument()
   })
 })

@@ -1,6 +1,15 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
+import { ConfigProvider, Layout, Menu, Typography } from 'antd'
+import {
+  DashboardOutlined,
+  ApiOutlined,
+  ThunderboltOutlined,
+  ClockCircleOutlined,
+  SettingOutlined,
+  DatabaseOutlined,
+} from '@ant-design/icons'
 import { Dashboard } from '@/pages/Dashboard'
 import { TaskList } from '@/pages/TaskList'
 import { TaskDetail } from '@/pages/TaskDetail'
@@ -9,108 +18,94 @@ import { RunsList } from '@/pages/RunsList'
 import { RunDetail } from '@/pages/RunDetail'
 import { Schedules } from '@/pages/Schedules'
 import { Settings } from '@/pages/Settings'
-import { Button } from '@/components/ui/button'
-import { Database, LayoutDashboard, CheckSquare, Activity, Clock, Settings as SettingsIcon } from 'lucide-react'
+import theme from '@/theme'
 import '@/index.css'
+
+const { Sider, Content } = Layout
+const { Text } = Typography
 
 const queryClient = new QueryClient()
 
-function Layout({ children }: { children: React.ReactNode }) {
-  const location = useLocation()
+const menuItems = [
+  { key: '/', icon: <DashboardOutlined />, label: <Link to="/">Dashboard</Link> },
+  { key: '/tasks', icon: <ApiOutlined />, label: <Link to="/tasks">Tasks</Link> },
+  { key: '/runs', icon: <ThunderboltOutlined />, label: <Link to="/runs">Runs</Link> },
+  { key: '/schedules', icon: <ClockCircleOutlined />, label: <Link to="/schedules">Schedules</Link> },
+  { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">Settings</Link> },
+]
 
-  const isActive = (path: string) => location.pathname === path ||
-    (path === '/tasks' && location.pathname.startsWith('/tasks')) ||
-    (path === '/runs' && location.pathname.startsWith('/runs')) ||
-    (path === '/schedules' && location.pathname.startsWith('/schedules')) ||
-    (path === '/settings' && location.pathname.startsWith('/settings'))
+function getSelectedKey(pathname: string): string {
+  if (pathname === '/') return '/'
+  if (pathname.startsWith('/tasks')) return '/tasks'
+  if (pathname.startsWith('/runs')) return '/runs'
+  if (pathname.startsWith('/schedules')) return '/schedules'
+  if (pathname.startsWith('/settings')) return '/settings'
+  return '/'
+}
+
+function AppLayout({ children }: { children: React.ReactNode }) {
+  const location = useLocation()
+  const [collapsed, setCollapsed] = useState(false)
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
-      <aside className="w-64 border-r bg-card sticky top-0 h-screen overflow-y-auto">
-        <div className="p-6 flex items-center gap-2 border-b">
-          <Database className="h-6 w-6" />
-          <h1 className="text-lg font-bold">API→DB</h1>
+    <Layout style={{ minHeight: '100vh' }}>
+      <Sider
+        collapsible
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        breakpoint="lg"
+        style={{ position: 'sticky', top: 0, height: '100vh', overflow: 'auto' }}
+      >
+        <div style={{ padding: collapsed ? '16px 8px' : '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <DatabaseOutlined style={{ fontSize: 20, color: '#fff' }} />
+          {!collapsed && <Text strong style={{ color: '#fff', fontSize: 16 }}>API→DB</Text>}
         </div>
-        <nav className="p-4 space-y-2">
-          <Link to="/">
-            <Button 
-              variant={isActive('/') && location.pathname === '/' ? 'default' : 'ghost'} 
-              className="w-full justify-start"
-            >
-              <LayoutDashboard className="h-4 w-4 mr-2" />
-              Dashboard
-            </Button>
-          </Link>
-          <Link to="/tasks">
-            <Button 
-              variant={isActive('/tasks') ? 'default' : 'ghost'} 
-              className="w-full justify-start"
-            >
-              <CheckSquare className="h-4 w-4 mr-2" />
-              Tasks
-            </Button>
-          </Link>
-          <Link to="/runs">
-            <Button 
-              variant={isActive('/runs') ? 'default' : 'ghost'} 
-              className="w-full justify-start"
-            >
-              <Activity className="h-4 w-4 mr-2" />
-              Runs
-            </Button>
-          </Link>
-          <Link to="/schedules">
-            <Button
-              variant={isActive('/schedules') ? 'default' : 'ghost'}
-              className="w-full justify-start"
-            >
-              <Clock className="h-4 w-4 mr-2" />
-              Schedules
-            </Button>
-          </Link>
-          <Link to="/settings">
-            <Button
-              variant={isActive('/settings') ? 'default' : 'ghost'}
-              className="w-full justify-start"
-            >
-              <SettingsIcon className="h-4 w-4 mr-2" />
-              Settings
-            </Button>
-          </Link>
-        </nav>
-
-        {/* Footer Info */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-card text-xs text-muted-foreground">
-          <p>API→DB Importer v0.1.0</p>
-          <p className="mt-1">Backend: <span className="text-green-600">✓ Connected</span></p>
+        <Menu
+          theme="dark"
+          mode="inline"
+          selectedKeys={[getSelectedKey(location.pathname)]}
+          items={menuItems}
+          style={{ borderRight: 0 }}
+        />
+        <div style={{
+          position: 'absolute', bottom: 48, left: 0, right: 0,
+          padding: collapsed ? '8px' : '12px 24px',
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+          color: 'rgba(255,255,255,0.45)', fontSize: 12,
+        }}>
+          {!collapsed && (
+            <>
+              <div>API→DB Importer v0.1.0</div>
+              <div style={{ marginTop: 4 }}>Backend: <span style={{ color: '#52C41A' }}>Connected</span></div>
+            </>
+          )}
         </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 p-8 overflow-auto">
+      </Sider>
+      <Content style={{ padding: 24, background: '#F5F7FA', overflow: 'auto' }}>
         {children}
-      </main>
-    </div>
+      </Content>
+    </Layout>
   )
 }
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Layout><Dashboard /></Layout>} />
-          <Route path="/tasks" element={<Layout><TaskList /></Layout>} />
-          <Route path="/tasks/new" element={<Layout><TaskWizard /></Layout>} />
-          <Route path="/tasks/:id" element={<Layout><TaskDetail /></Layout>} />
-          <Route path="/runs" element={<Layout><RunsList /></Layout>} />
-          <Route path="/runs/:id" element={<Layout><RunDetail /></Layout>} />
-          <Route path="/schedules" element={<Layout><Schedules /></Layout>} />
-          <Route path="/settings" element={<Layout><Settings /></Layout>} />
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ConfigProvider theme={theme}>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<AppLayout><Dashboard /></AppLayout>} />
+            <Route path="/tasks" element={<AppLayout><TaskList /></AppLayout>} />
+            <Route path="/tasks/new" element={<AppLayout><TaskWizard /></AppLayout>} />
+            <Route path="/tasks/:id" element={<AppLayout><TaskDetail /></AppLayout>} />
+            <Route path="/runs" element={<AppLayout><RunsList /></AppLayout>} />
+            <Route path="/runs/:id" element={<AppLayout><RunDetail /></AppLayout>} />
+            <Route path="/schedules" element={<AppLayout><Schedules /></AppLayout>} />
+            <Route path="/settings" element={<AppLayout><Settings /></AppLayout>} />
+          </Routes>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ConfigProvider>
   )
 }
 

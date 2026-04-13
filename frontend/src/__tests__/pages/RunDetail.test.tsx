@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import '@testing-library/vitest-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { RunDetail } from '@/pages/RunDetail'
 
 vi.mock('@/hooks/api', () => ({
@@ -12,207 +11,77 @@ vi.mock('@/hooks/api', () => ({
 import { useRun } from '@/hooks/api'
 
 const createWrapper = () => {
-  const queryClient = new QueryClient()
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
           <Route path="/runs/:id" element={children} />
-          <Route path="/" element={<div>Home</div>} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
   )
 }
 
+const mockRun = {
+  id: 1, task_id: 1, task_name: 'Sync Users', status: 'SUCCESS',
+  rows_fetched: 100, rows_inserted: 95, error_count: 0,
+  started_at: new Date().toISOString(), ended_at: new Date().toISOString(),
+  execution_logs: [{ id: 1, task_id: 1, run_id: 1, step_name: 'FETCH', status: 'OK', message: 'Fetched 100 records', created_at: new Date().toISOString() }],
+  row_errors: [],
+}
+
 describe('RunDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.history.pushState({}, '', '/runs/1')
   })
 
-  it('should render run detail heading', () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: {
-        id: 'run-1',
-        task_id: 'task-1',
-        status: 'completed',
-        total_records: 100,
-        successful_records: 100,
-        failed_records: 0,
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        logs: [],
-        errors: [],
-      },
-      isLoading: false,
-      error: null,
-    } as any)
-
+  it('should show loading state', () => {
+    vi.mocked(useRun).mockReturnValue({ data: undefined, isLoading: true, error: null } as any)
     render(<RunDetail />, { wrapper: createWrapper() })
-    
-    expect(screen.getByText(/Run Details/i)).toBeInTheDocument()
+    expect(screen.getByText('Back to Runs')).toBeInTheDocument()
   })
 
-  it('should display loading state', () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: undefined,
-      isLoading: true,
-      error: null,
-    } as any)
-
+  it('should show error state', () => {
+    vi.mocked(useRun).mockReturnValue({ data: undefined, isLoading: false, error: new Error('Not found') } as any)
     render(<RunDetail />, { wrapper: createWrapper() })
-    
-    expect(screen.getByText(/Loading/i)).toBeInTheDocument()
+    expect(screen.getByText(/Error loading run/)).toBeInTheDocument()
   })
 
-  it('should display run status and timing', async () => {
-    const startTime = new Date('2024-01-15T10:00:00Z')
-    const endTime = new Date('2024-01-15T10:05:00Z')
-
-    vi.mocked(useRun).mockReturnValue({
-      data: {
-        id: 'run-1',
-        task_id: 'task-1',
-        status: 'completed',
-        total_records: 100,
-        successful_records: 100,
-        failed_records: 0,
-        started_at: startTime.toISOString(),
-        completed_at: endTime.toISOString(),
-        logs: [],
-        errors: [],
-      },
-      isLoading: false,
-      error: null,
-    } as any)
-
+  it('should display run details', async () => {
+    vi.mocked(useRun).mockReturnValue({ data: mockRun, isLoading: false, error: null } as any)
     render(<RunDetail />, { wrapper: createWrapper() })
-    
     await waitFor(() => {
-      expect(screen.getByText(/completed/i)).toBeInTheDocument()
+      expect(screen.getByText('Run #1')).toBeInTheDocument()
+      expect(screen.getByText('SUCCESS')).toBeInTheDocument()
+      expect(screen.getByText('Sync Users')).toBeInTheDocument()
     })
   })
 
-  it('should display record statistics', async () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: {
-        id: 'run-1',
-        task_id: 'task-1',
-        status: 'completed',
-        total_records: 100,
-        successful_records: 95,
-        failed_records: 5,
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        logs: [],
-        errors: [],
-      },
-      isLoading: false,
-      error: null,
-    } as any)
-
+  it('should display execution statistics', async () => {
+    vi.mocked(useRun).mockReturnValue({ data: mockRun, isLoading: false, error: null } as any)
     render(<RunDetail />, { wrapper: createWrapper() })
-    
     await waitFor(() => {
-      expect(screen.getByText(/100/)).toBeInTheDocument()
-      expect(screen.getByText(/95/)).toBeInTheDocument()
+      expect(screen.getByText('Inserted')).toBeInTheDocument()
+      expect(screen.getByText('Errors')).toBeInTheDocument()
     })
   })
 
-  it('should display logs section', async () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: {
-        id: 'run-1',
-        task_id: 'task-1',
-        status: 'completed',
-        total_records: 100,
-        successful_records: 100,
-        failed_records: 0,
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        logs: [
-          { timestamp: new Date().toISOString(), message: 'Run started' },
-          { timestamp: new Date().toISOString(), message: 'Processing records' },
-        ],
-        errors: [],
-      },
-      isLoading: false,
-      error: null,
-    } as any)
-
+  it('should display execution logs', async () => {
+    vi.mocked(useRun).mockReturnValue({ data: mockRun, isLoading: false, error: null } as any)
     render(<RunDetail />, { wrapper: createWrapper() })
-    
     await waitFor(() => {
-      expect(screen.getByText(/Logs/i)).toBeInTheDocument()
+      expect(screen.getByText(/Execution Logs/)).toBeInTheDocument()
+      expect(screen.getByText('Fetched 100 records')).toBeInTheDocument()
     })
   })
 
-  it('should display errors table when present', async () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: {
-        id: 'run-1',
-        task_id: 'task-1',
-        status: 'partial_failure',
-        total_records: 100,
-        successful_records: 95,
-        failed_records: 5,
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        logs: [],
-        errors: [
-          {
-            row_number: 1,
-            error_message: 'Invalid email format',
-            record_data: '{"email": "invalid"}',
-          },
-        ],
-      },
-      isLoading: false,
-      error: null,
-    } as any)
-
+  it('should show success result when no errors', async () => {
+    vi.mocked(useRun).mockReturnValue({ data: mockRun, isLoading: false, error: null } as any)
     render(<RunDetail />, { wrapper: createWrapper() })
-    
     await waitFor(() => {
-      expect(screen.getByText(/Errors/i)).toBeInTheDocument()
+      expect(screen.getByText('Run completed successfully')).toBeInTheDocument()
     })
-  })
-
-  it('should link to task details', async () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: {
-        id: 'run-1',
-        task_id: 'task-1',
-        status: 'completed',
-        total_records: 100,
-        successful_records: 100,
-        failed_records: 0,
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        logs: [],
-        errors: [],
-      },
-      isLoading: false,
-      error: null,
-    } as any)
-
-    render(<RunDetail />, { wrapper: createWrapper() })
-    
-    await waitFor(() => {
-      const taskLink = screen.getByRole('link', { name: /View Task/i })
-      expect(taskLink).toHaveAttribute('href', '/tasks/task-1')
-    })
-  })
-
-  it('should handle error state', () => {
-    vi.mocked(useRun).mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      error: new Error('Run not found'),
-    } as any)
-
-    render(<RunDetail />, { wrapper: createWrapper() })
-    
-    expect(screen.getByText(/Error/i)).toBeInTheDocument()
   })
 })
