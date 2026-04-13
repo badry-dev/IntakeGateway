@@ -1,9 +1,16 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTasks, useTriggerRun, useDeleteTask, useListSchedules } from '@/hooks/api'
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Play, Edit2, Trash2, Plus, Clock } from 'lucide-react'
+import { Card, Button, Tag, Space, Typography, Row, Col, Empty, Modal, Pagination, message } from 'antd'
+import {
+  PlusOutlined,
+  PlayCircleOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  ClockCircleOutlined,
+} from '@ant-design/icons'
+
+const { Title, Text, Paragraph } = Typography
 
 export function TaskList() {
   const [skip, setSkip] = useState(0)
@@ -13,14 +20,11 @@ export function TaskList() {
   const { data: schedulesResponse } = useListSchedules(0, 1000)
   const triggerRunMutation = useTriggerRun()
   const deleteTaskMutation = useDeleteTask()
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
 
-  // Create a map of taskId -> schedule for quick lookup
   const schedulesByTaskId = React.useMemo(() => {
     const map: Record<number, any> = {}
-    if (schedulesResponse?.items) {
-      schedulesResponse.items.forEach((schedule) => {
+    if (schedulesResponse?.schedules) {
+      schedulesResponse.schedules.forEach((schedule: any) => {
         map[schedule.task_id] = schedule
       })
     }
@@ -28,262 +32,133 @@ export function TaskList() {
   }, [schedulesResponse])
 
   const tasks = data || []
-  const total = tasks.length
   const hasMore = tasks.length === limit
 
-  const handleDelete = async (taskId: number) => {
-    try {
-      await deleteTaskMutation.mutateAsync(taskId)
-      setDeleteOpen(false)
-      setSelectedTaskId(null)
-    } catch (err) {
-      console.error('Failed to delete task:', err)
-    }
+  const handleDelete = (taskId: number, taskName: string) => {
+    Modal.confirm({
+      title: 'Delete Task',
+      content: `Are you sure you want to delete "${taskName}"? All associated run history will also be deleted.`,
+      okText: 'Delete',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await deleteTaskMutation.mutateAsync(taskId)
+          message.success('Task deleted')
+        } catch {
+          message.error('Failed to delete task')
+        }
+      },
+    })
   }
 
   const handleRun = async (taskId: number) => {
     try {
       await triggerRunMutation.mutateAsync(taskId)
-      alert('Task run triggered successfully!')
-    } catch (err) {
-      console.error('Failed to trigger run:', err)
+      message.success('Task run triggered successfully!')
+    } catch {
+      message.error('Failed to trigger run')
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Tasks</h1>
-          <Link to="/tasks/new">
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              New Task
-            </Button>
-          </Link>
-        </div>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground">Loading tasks...</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Tasks</h1>
-          <Link to="/tasks/new">
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              New Task
-            </Button>
-          </Link>
-        </div>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-destructive">Error loading tasks: {error.message}</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Tasks</h1>
-        <Link to="/tasks/new">
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
-            New Task
-          </Button>
-        </Link>
-      </div>
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Row justify="space-between" align="middle">
+        <Col><Title level={2} style={{ margin: 0 }}>Tasks</Title></Col>
+        <Col>
+          <Link to="/tasks/new">
+            <Button type="primary" icon={<PlusOutlined />}>New Task</Button>
+          </Link>
+        </Col>
+      </Row>
 
-      {/* Task List */}
-      {tasks.length === 0 ? (
+      {isLoading && <Card loading />}
+
+      {error && (
         <Card>
-          <CardContent className="pt-6 text-center">
-            <p className="text-muted-foreground mb-4">No tasks yet</p>
-            <Link to="/tasks/new">
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Create Your First Task
-              </Button>
-            </Link>
-          </CardContent>
+          <Text type="danger">Error loading tasks: {error.message}</Text>
         </Card>
-      ) : (
-        <div className="grid gap-4">
-          {tasks.map((task) => (
-            <Card key={task.id} className="hover:shadow-md transition">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <Link to={`/tasks/${task.id}`}>
-                        <CardTitle className="hover:text-primary cursor-pointer">
-                          {task.name}
-                        </CardTitle>
-                      </Link>
-                      {schedulesByTaskId[task.id] && (
-                        <Link to={`/schedules?task=${task.id}`} title={`Schedule: ${schedulesByTaskId[task.id].cron_expression}`}>
-                          <Clock 
-                            className={`h-4 w-4 cursor-pointer ${
-                              schedulesByTaskId[task.id].is_active 
-                                ? 'text-green-600' 
-                                : 'text-gray-400'
-                            }`}
-                          />
-                        </Link>
-                      )}
-                    </div>
-                    {task.description && (
-                      <CardDescription>{task.description}</CardDescription>
-                    )}
-                  </div>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      task.is_active
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}
-                  >
-                    {task.is_active ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Method</p>
-                    <p className="font-mono font-bold">{task.http_method}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Table</p>
-                    <p className="font-mono font-bold">{task.dest_table}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Endpoint</p>
-                    <p className="font-mono text-xs truncate">{task.endpoint_path}</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-4 border-t">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleRun(task.id)}
-                    disabled={triggerRunMutation.isPending}
-                    className="gap-2"
-                  >
-                    <Play className="h-4 w-4" />
-                    Run
-                  </Button>
-                  <Link to={`/tasks/${task.id}`}>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-2"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                      Edit
-                    </Button>
-                  </Link>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setSelectedTaskId(task.id)
-                      setDeleteOpen(true)
-                    }}
-                    className="gap-2"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       )}
 
-      {/* Pagination */}
-      {total > limit && (
-        <div className="flex justify-between items-center pt-4 border-t">
-          <p className="text-sm text-muted-foreground">
-            Showing {skip + 1} to {Math.min(skip + limit, total)} of {total} tasks
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSkip(Math.max(0, skip - limit))}
-              disabled={skip === 0}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSkip(skip + limit)}
-              disabled={!hasMore}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+      {!isLoading && !error && tasks.length === 0 && (
+        <Card>
+          <Empty description="No tasks yet">
+            <Link to="/tasks/new">
+              <Button type="primary" icon={<PlusOutlined />}>Create Your First Task</Button>
+            </Link>
+          </Empty>
+        </Card>
       )}
 
-      {/* Delete Confirmation Dialog */}
-      {deleteOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-          onClick={() => setDeleteOpen(false)}
+      {tasks.map((task) => (
+        <Card
+          key={task.id}
+          hoverable
+          title={
+            <Space>
+              <Link to={`/tasks/${task.id}`}>{task.name}</Link>
+              {schedulesByTaskId[task.id] && (
+                <Link to={`/schedules?task=${task.id}`}>
+                  <ClockCircleOutlined style={{ color: schedulesByTaskId[task.id].is_active ? '#52C41A' : '#d9d9d9' }} />
+                </Link>
+              )}
+            </Space>
+          }
+          extra={
+            <Tag color={task.is_active ? 'green' : 'default'}>
+              {task.is_active ? 'Active' : 'Inactive'}
+            </Tag>
+          }
         >
-          <Card 
-            className="w-full max-w-md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <CardHeader>
-              <CardTitle>Delete Task</CardTitle>
-              <CardDescription>This action cannot be undone</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Are you sure you want to delete this task? All associated run history will also be deleted.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setDeleteOpen(false)
-                    setSelectedTaskId(null)
-                  }}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => selectedTaskId && handleDelete(selectedTaskId)}
-                  disabled={deleteTaskMutation.isPending}
-                  className="flex-1"
-                >
-                  {deleteTaskMutation.isPending ? 'Deleting...' : 'Delete'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+          {task.description && <Paragraph type="secondary">{task.description}</Paragraph>}
+          <Row gutter={24} style={{ marginBottom: 16 }}>
+            <Col span={8}>
+              <Text type="secondary">Method</Text>
+              <div><Text code strong>{task.http_method}</Text></div>
+            </Col>
+            <Col span={8}>
+              <Text type="secondary">Table</Text>
+              <div><Text code strong>{task.dest_table}</Text></div>
+            </Col>
+            <Col span={8}>
+              <Text type="secondary">Endpoint</Text>
+              <div><Text code style={{ fontSize: 12 }} ellipsis>{task.endpoint_path}</Text></div>
+            </Col>
+          </Row>
+          <Space>
+            <Button
+              size="small"
+              icon={<PlayCircleOutlined />}
+              onClick={() => handleRun(task.id)}
+              loading={triggerRunMutation.isPending}
+            >
+              Run
+            </Button>
+            <Link to={`/tasks/${task.id}`}>
+              <Button size="small" icon={<EditOutlined />}>Edit</Button>
+            </Link>
+            <Button
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => handleDelete(task.id, task.name)}
+            >
+              Delete
+            </Button>
+          </Space>
+        </Card>
+      ))}
+
+      {(skip > 0 || hasMore) && (
+        <Row justify="center" style={{ paddingTop: 16 }}>
+          <Pagination
+            current={Math.floor(skip / limit) + 1}
+            pageSize={limit}
+            total={hasMore ? skip + limit + 1 : skip + tasks.length}
+            onChange={(page) => setSkip((page - 1) * limit)}
+            showSizeChanger={false}
+          />
+        </Row>
       )}
-    </div>
+    </Space>
   )
 }
-

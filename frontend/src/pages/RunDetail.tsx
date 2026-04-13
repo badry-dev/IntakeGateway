@@ -1,225 +1,170 @@
-import React from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useRun } from '@/hooks/api'
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { Card, Button, Tag, Spin, Table, Typography, Descriptions, Space, Collapse, Row, Col, Statistic, Result } from 'antd'
+import {
+  ArrowLeftOutlined,
+  CheckCircleOutlined,
+  InsertRowAboveOutlined,
+  WarningOutlined,
+  ClockCircleOutlined,
+} from '@ant-design/icons'
 import { formatDistanceToNow } from 'date-fns'
 import { formatLocalDateTime, parseUTCDateTime } from '@/lib/utils'
+
+const { Text } = Typography
+
+const statusColorMap: Record<string, string> = {
+  SUCCESS: 'green',
+  FAILED: 'red',
+  RUNNING: 'blue',
+  PENDING: 'default',
+  PARTIAL_SUCCESS: 'orange',
+}
 
 export function RunDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { data: run, isLoading, error } = useRun(id || '')
+  const { data: run, isLoading, error } = useRun(Number(id) || 0)
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <Button variant="outline" size="sm" onClick={() => navigate('/runs')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Runs
-        </Button>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground">Loading run details...</p>
-          </CardContent>
-        </Card>
+      <div>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/runs')} style={{ marginBottom: 16 }}>Back to Runs</Button>
+        <Spin tip="Loading run details..." size="large"><div style={{ padding: 50 }} /></Spin>
       </div>
     )
   }
 
   if (error || !run) {
     return (
-      <div className="space-y-6">
-        <Button variant="outline" size="sm" onClick={() => navigate('/runs')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Runs
-        </Button>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-destructive">Error loading run: {error?.message || 'Run not found'}</p>
-          </CardContent>
-        </Card>
+      <div>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/runs')} style={{ marginBottom: 16 }}>Back to Runs</Button>
+        <Card><Text type="danger">Error loading run: {error?.message || 'Run not found'}</Text></Card>
       </div>
     )
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'SUCCESS':
-        return 'bg-green-100 text-green-800'
-      case 'FAILED':
-        return 'bg-red-100 text-red-800'
-      case 'RUNNING':
-        return 'bg-blue-100 text-blue-800'
-      case 'PARTIAL_SUCCESS':
-        return 'bg-yellow-100 text-yellow-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
+  const logColumns = [
+    { title: '#', dataIndex: 'index', key: 'index', width: 60 },
+    { title: 'Step', dataIndex: 'step_name', key: 'step_name', width: 120 },
+    {
+      title: 'Message',
+      dataIndex: 'message',
+      key: 'message',
+      render: (msg: string, record: any) => (
+        <Text type={record.step_name === 'ERROR' ? 'danger' : undefined} style={{ fontFamily: 'monospace', fontSize: 12 }}>
+          {msg}
+        </Text>
+      ),
+    },
+  ]
+
+  const errorColumns = [
+    { title: 'Row Index', dataIndex: 'row_index', key: 'row_index', width: 100 },
+    { title: 'Error', dataIndex: 'error_message', key: 'error_message', render: (v: string) => <Text type="danger">{v}</Text> },
+    {
+      title: 'Data',
+      dataIndex: 'row_data',
+      key: 'row_data',
+      render: (data: any) => (
+        <Collapse
+          size="small"
+          items={[{
+            key: '1',
+            label: 'View Data',
+            children: <pre style={{ fontSize: 12, margin: 0 }}>{JSON.stringify(data, null, 2)}</pre>,
+          }]}
+        />
+      ),
+    },
+  ]
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <Button variant="outline" size="sm" onClick={() => navigate('/runs')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Runs
-        </Button>
-      </div>
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/runs')}>Back to Runs</Button>
 
-      {/* Run Info */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Run #{run.id}</CardTitle>
-              <CardDescription>
-                Task: {run.task_name ? run.task_name : `#${run.task_id}`}
-                {run.is_retry && (
-                  <span className="ml-2 text-xs text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full">
-                    Retry{run.retry_of_run_id ? ` of #${run.retry_of_run_id}` : ''}
-                  </span>
-                )}
-              </CardDescription>
-            </div>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(run.status)}`}>
-              {run.status}
-            </span>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Execution Stats */}
-          <div className="grid grid-cols-4 gap-4">
-            <div className="space-y-1 p-3 bg-secondary rounded">
-              <p className="text-sm text-muted-foreground">Records Inserted</p>
-              <p className="text-2xl font-bold">{run.rows_inserted || 0}</p>
-            </div>
-            <div className="space-y-1 p-3 bg-secondary rounded">
-              <p className="text-sm text-muted-foreground">Records Updated</p>
-              <p className="text-2xl font-bold">{run.records_updated || 0}</p>
-            </div>
-            <div className="space-y-1 p-3 bg-secondary rounded">
-              <p className="text-sm text-muted-foreground">Records Failed</p>
-              <p className="text-2xl font-bold text-red-600">{run.error_count || 0}</p>
-            </div>
-            <div className="space-y-1 p-3 bg-secondary rounded">
-              <p className="text-sm text-muted-foreground">Duration</p>
-              <p className="text-2xl font-bold">
-                {run.execution_time_ms ? `${(run.execution_time_ms / 1000).toFixed(2)}s` : 'N/A'}
-              </p>
-            </div>
-          </div>
+      {/* Run Summary */}
+      <Card
+        title={
+          <Space>
+            <span>Run #{run.id}</span>
+            <Tag color={statusColorMap[run.status]}>{run.status}</Tag>
+            {run.is_retry && <Tag color="orange">Retry{run.retry_of_run_id ? ` of #${run.retry_of_run_id}` : ''}</Tag>}
+          </Space>
+        }
+        extra={<Text type="secondary">Task: {run.task_name || `#${run.task_id}`}</Text>}
+      >
+        <Row gutter={16}>
+          <Col xs={12} sm={6}>
+            <Statistic title="Inserted" value={run.rows_inserted || 0} prefix={<InsertRowAboveOutlined />} />
+          </Col>
+          <Col xs={12} sm={6}>
+            <Statistic title="Updated" value={(run as any).records_updated || 0} prefix={<CheckCircleOutlined />} />
+          </Col>
+          <Col xs={12} sm={6}>
+            <Statistic title="Errors" value={run.error_count || 0} valueStyle={{ color: run.error_count ? '#FF4D4F' : undefined }} prefix={<WarningOutlined />} />
+          </Col>
+          <Col xs={12} sm={6}>
+            <Statistic
+              title="Duration"
+              value={(run as any).execution_time_ms ? `${((run as any).execution_time_ms / 1000).toFixed(2)}s` : 'N/A'}
+              prefix={<ClockCircleOutlined />}
+            />
+          </Col>
+        </Row>
 
-          {/* Timing Info */}
-          <div className="grid grid-cols-3 gap-4 pt-4 border-t">
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Started</p>
-              <p className="text-sm">
-                {formatLocalDateTime(run.started_at)}
-                <br />
-                <span className="text-xs text-muted-foreground">
-                  {(() => {
-                    const date = parseUTCDateTime(run.started_at)
-                    return date ? formatDistanceToNow(date, { addSuffix: true }) : 'N/A'
-                  })()}
-                </span>
-              </p>
-            </div>
-            {run.ended_at && (
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Ended</p>
-                <p className="text-sm">
-                  {formatLocalDateTime(run.ended_at)}
-                  <br />
-                  <span className="text-xs text-muted-foreground">
-                    {(() => {
-                      const date = parseUTCDateTime(run.ended_at)
-                      return date ? formatDistanceToNow(date, { addSuffix: true }) : 'N/A'
-                    })()}
-                  </span>
-                </p>
-              </div>
-            )}
-            {run.status === 'RUNNING' && (
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Status</p>
-                <p className="text-sm animate-pulse">⚙️ Running...</p>
-              </div>
-            )}
-          </div>
-        </CardContent>
+        <Descriptions column={3} style={{ marginTop: 24 }} size="small">
+          <Descriptions.Item label="Started">
+            {formatLocalDateTime(run.started_at)}
+            <br />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {(() => { const d = parseUTCDateTime(run.started_at); return d ? formatDistanceToNow(d, { addSuffix: true }) : 'N/A' })()}
+            </Text>
+          </Descriptions.Item>
+          {run.ended_at && (
+            <Descriptions.Item label="Ended">
+              {formatLocalDateTime(run.ended_at)}
+              <br />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {(() => { const d = parseUTCDateTime(run.ended_at); return d ? formatDistanceToNow(d, { addSuffix: true }) : 'N/A' })()}
+              </Text>
+            </Descriptions.Item>
+          )}
+          {run.status === 'RUNNING' && (
+            <Descriptions.Item label="Status"><Text type="warning">Running...</Text></Descriptions.Item>
+          )}
+        </Descriptions>
       </Card>
 
       {/* Execution Logs */}
       {run.execution_logs && run.execution_logs.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Execution Logs</CardTitle>
-            <CardDescription>{run.execution_logs.length} log entries</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2 bg-secondary p-4 rounded font-mono text-xs max-h-96 overflow-y-auto">
-              {run.execution_logs.map((log, idx) => (
-                <div key={idx} className={`flex gap-2 ${log.step_name === 'ERROR' ? 'text-red-600 font-semibold' : ''}`}>
-                  <span className="text-muted-foreground w-8 flex-shrink-0 text-right">{idx + 1}</span>
-                  <span className="w-24 flex-shrink-0 font-medium">[{log.step_name}]</span>
-                  <span className="flex-1">{log.message}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
+        <Card title={`Execution Logs (${run.execution_logs.length})`}>
+          <Table
+            columns={logColumns}
+            dataSource={run.execution_logs.map((log, idx) => ({ ...log, index: idx + 1, key: idx }))}
+            pagination={false}
+            size="small"
+            scroll={{ y: 400 }}
+          />
         </Card>
       )}
 
-      {/* Row-Level Errors */}
+      {/* Row Errors */}
       {run.row_errors && run.row_errors.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Row Errors</CardTitle>
-            <CardDescription>{run.row_errors.length} rows with errors</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-2">Row Index</th>
-                    <th className="text-left p-2">Error Message</th>
-                    <th className="text-left p-2">Data</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {run.row_errors.map((err, idx) => (
-                    <tr key={idx} className="border-b hover:bg-secondary">
-                      <td className="p-2 font-mono text-xs">{err.row_index}</td>
-                      <td className="p-2 text-red-600">{err.error_message}</td>
-                      <td className="p-2 text-xs">
-                        <details>
-                          <summary className="cursor-pointer text-blue-600">View Data</summary>
-                          <pre className="mt-2 p-2 bg-background rounded text-xs overflow-x-auto">
-                            {JSON.stringify(err.row_data, null, 2)}
-                          </pre>
-                        </details>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
+        <Card title={`Row Errors (${run.row_errors.length})`}>
+          <Table
+            columns={errorColumns}
+            dataSource={run.row_errors.map((err, idx) => ({ ...err, key: idx }))}
+            pagination={{ pageSize: 10 }}
+            size="small"
+          />
         </Card>
       )}
 
-      {/* No Errors - Only show for successful runs with no row errors */}
+      {/* Success */}
       {run.status === 'SUCCESS' && (!run.row_errors || run.row_errors.length === 0) && (
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-center text-green-600 font-medium">✓ No errors - Run completed successfully</p>
-          </CardContent>
-        </Card>
+        <Result status="success" title="Run completed successfully" subTitle="No errors encountered" />
       )}
-    </div>
+    </Space>
   )
 }

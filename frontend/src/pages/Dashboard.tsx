@@ -1,14 +1,63 @@
 import React from 'react'
 import { useRecentRuns, useTasks } from '@/hooks/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Card, Statistic, Row, Col, Table, Tag, Button, Space, Typography } from 'antd'
+import {
+  ThunderboltOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  DatabaseOutlined,
+  PlusOutlined,
+} from '@ant-design/icons'
 import { Link } from 'react-router-dom'
-import { Activity, CheckCircle, AlertCircle, Clock } from 'lucide-react'
 import { formatLocalDateTime } from '@/lib/utils'
+import type { TaskRun } from '@/types'
+
+const { Title, Text } = Typography
+
+const statusColorMap: Record<string, string> = {
+  SUCCESS: 'green',
+  FAILED: 'red',
+  RUNNING: 'blue',
+  PENDING: 'default',
+  PARTIAL_SUCCESS: 'orange',
+}
+
+const columns = [
+  {
+    title: 'Task',
+    dataIndex: 'task_id',
+    key: 'task_id',
+    render: (id: number, record: TaskRun) => record.task_name || `Task #${id}`,
+  },
+  {
+    title: 'Status',
+    dataIndex: 'status',
+    key: 'status',
+    render: (status: string) => <Tag color={statusColorMap[status] || 'default'}>{status}</Tag>,
+  },
+  {
+    title: 'Fetched',
+    dataIndex: 'rows_fetched',
+    key: 'rows_fetched',
+    render: (v: number) => v || 0,
+  },
+  {
+    title: 'Inserted',
+    dataIndex: 'rows_inserted',
+    key: 'rows_inserted',
+    render: (v: number) => v || 0,
+  },
+  {
+    title: 'Started',
+    dataIndex: 'started_at',
+    key: 'started_at',
+    render: (v: string) => formatLocalDateTime(v),
+  },
+]
 
 export function Dashboard() {
   const { data: recentRuns, isLoading: runsLoading } = useRecentRuns(0, 5)
-  const { data: tasks, isLoading: tasksLoading } = useTasks(0, 5)
+  const { data: tasks, isLoading: tasksLoading } = useTasks(0, 100)
 
   const stats = React.useMemo(() => {
     if (!recentRuns) return { running: 0, succeeded: 0, failed: 0 }
@@ -20,120 +69,83 @@ export function Dashboard() {
   }, [recentRuns])
 
   return (
-    <div className="space-y-8">
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground mt-2">Welcome to API→DB Importer</p>
-        </div>
-        <Link to="/tasks/new">
-          <Button>New Task</Button>
-        </Link>
-      </div>
+      <Row justify="space-between" align="middle">
+        <Col>
+          <Title level={2} style={{ margin: 0 }}>Dashboard</Title>
+          <Text type="secondary">Welcome to API→DB Importer</Text>
+        </Col>
+        <Col>
+          <Link to="/tasks/new">
+            <Button type="primary" icon={<PlusOutlined />}>New Task</Button>
+          </Link>
+        </Col>
+      </Row>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Running</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.running}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Succeeded</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.succeeded}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Failed</CardTitle>
-            <AlertCircle className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.failed}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{tasks?.length || 0}</div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* KPI Cards */}
+      <Row gutter={16}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={runsLoading}>
+            <Statistic
+              title="Running"
+              value={stats.running}
+              prefix={<ThunderboltOutlined />}
+              valueStyle={{ color: '#1677FF' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={runsLoading}>
+            <Statistic
+              title="Succeeded"
+              value={stats.succeeded}
+              prefix={<CheckCircleOutlined />}
+              valueStyle={{ color: '#52C41A' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={runsLoading}>
+            <Statistic
+              title="Failed"
+              value={stats.failed}
+              prefix={<CloseCircleOutlined />}
+              valueStyle={{ color: '#FF4D4F' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={tasksLoading}>
+            <Statistic
+              title="Total Tasks"
+              value={tasks?.length || 0}
+              prefix={<DatabaseOutlined />}
+            />
+          </Card>
+        </Col>
+      </Row>
 
       {/* Recent Runs */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Runs</CardTitle>
-          <CardDescription>Latest 5 task executions</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {runsLoading ? (
-            <p className="text-muted-foreground">Loading...</p>
-          ) : recentRuns && recentRuns.length > 0 ? (
-            <div className="space-y-4">
-              {recentRuns.map(run => (
-                <div key={run.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex-1">
-                    <p className="font-medium">Task #{run.task_id}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatLocalDateTime(run.started_at)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                      run.status === 'SUCCESS' ? 'bg-green-100 text-green-800' :
-                      run.status === 'FAILED' ? 'bg-red-100 text-red-800' :
-                      run.status === 'RUNNING' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {run.status}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {run.rows_inserted}/{run.rows_fetched}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No runs yet</p>
-          )}
-        </CardContent>
+      <Card title="Recent Runs" extra={<Text type="secondary">Latest 5 task executions</Text>}>
+        <Table
+          columns={columns}
+          dataSource={recentRuns || []}
+          rowKey="id"
+          loading={runsLoading}
+          pagination={false}
+          size="middle"
+          locale={{ emptyText: 'No runs yet' }}
+        />
       </Card>
 
       {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Link to="/tasks" className="block">
-            <Button variant="outline" className="w-full justify-start">
-              View All Tasks
-            </Button>
-          </Link>
-          <Link to="/runs" className="block">
-            <Button variant="outline" className="w-full justify-start">
-              View All Runs
-            </Button>
-          </Link>
-        </CardContent>
+      <Card title="Quick Actions">
+        <Space>
+          <Link to="/tasks"><Button>View All Tasks</Button></Link>
+          <Link to="/runs"><Button>View All Runs</Button></Link>
+        </Space>
       </Card>
-    </div>
+    </Space>
   )
 }

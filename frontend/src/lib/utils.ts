@@ -1,16 +1,10 @@
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
 /**
  * Parse a UTC ISO string (without Z indicator) into a proper Date object
  * Ensures the string is treated as UTC, not local time
  */
 export function parseUTCDateTime(dateString: string | null | undefined): Date | null {
   if (!dateString) return null
-  
+
   try {
     // Append 'Z' if not present to explicitly mark as UTC
     const utcString = dateString.endsWith('Z') ? dateString : dateString + 'Z'
@@ -28,7 +22,7 @@ export function parseUTCDateTime(dateString: string | null | undefined): Date | 
 export function formatLocalDateTime(dateString: string | null | undefined): string {
   const date = parseUTCDateTime(dateString)
   if (!date) return 'N/A'
-  
+
   try {
     // Format in local timezone
     const formatted = date.toLocaleString('en-US', {
@@ -41,7 +35,7 @@ export function formatLocalDateTime(dateString: string | null | undefined): stri
       hour12: true,
       timeZoneName: 'short'
     })
-    
+
     return formatted
   } catch (e) {
     console.error('Date formatting error:', e)

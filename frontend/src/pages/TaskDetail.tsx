@@ -1,30 +1,35 @@
 import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { 
-  useTask, 
-  useUpdateTask, 
-  useDeleteTask, 
-  useColumnMappings, 
-  useSchedule, 
-  useCreateSchedule, 
-  useUpdateSchedule, 
-  useDeleteSchedule 
+import {
+  useTask,
+  useUpdateTask,
+  useDeleteTask,
+  useColumnMappings,
+  useSchedule,
+  useCreateSchedule,
+  useUpdateSchedule,
+  useDeleteSchedule
 } from '@/hooks/api'
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { ArrowLeft, Edit2, Trash2, Copy, Database, Settings, Clock } from 'lucide-react'
-import { Task, TaskFormData, ColumnMappingCreate, ScheduleCreate } from '@/types'
-import { formatLocalDateTime } from '@/lib/utils'
+import { Card, Button, Input, Tabs, Tag, Space, Typography, Modal, Spin, Descriptions, message } from 'antd'
+import {
+  ArrowLeftOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  SettingOutlined,
+  ClockCircleOutlined,
+  DatabaseOutlined,
+} from '@ant-design/icons'
+import { TaskFormData, ScheduleCreate } from '@/types'
 import { ColumnMappingEditor } from '@/components/ColumnMappingEditor'
 import { ScheduleEditor } from '@/components/ScheduleEditor'
+import { Select } from 'antd'
+
+const { Text } = Typography
 
 export function TaskDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { data: task, isLoading, error } = useTask(id || '')
+  const { data: task, isLoading, error } = useTask(Number(id) || 0)
   const updateTaskMutation = useUpdateTask()
   const deleteTaskMutation = useDeleteTask()
   const { data: mappings } = useColumnMappings(Number(id) || 0)
@@ -34,461 +39,213 @@ export function TaskDetail() {
   const deleteScheduleMutation = useDeleteSchedule()
 
   const [isEditOpen, setIsEditOpen] = useState(false)
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<string>('details')
   const [formData, setFormData] = useState<TaskFormData>({
-    name: '',
-    description: '',
-    endpoint_path: '',
-    http_method: 'GET',
-    dest_table: '',
-    headers_json: {},
-    body_json: {},
-    batch_size: 500,
-    is_active: true,
+    name: '', description: '', endpoint_path: '', http_method: 'GET',
+    dest_table: '', headers_json: {}, body_json: {}, batch_size: 500, is_active: true,
   })
 
-  // Initialize form when task loads
   React.useEffect(() => {
     if (task) {
       setFormData({
-        name: task.name,
-        description: task.description || '',
-        endpoint_path: task.endpoint_path,
-        http_method: task.http_method,
-        dest_table: task.dest_table,
-        headers_json: task.headers_json || {},
-        body_json: task.body_json || {},
-        batch_size: task.batch_size,
-        is_active: task.is_active,
+        name: task.name, description: task.description || '', endpoint_path: task.endpoint_path,
+        http_method: task.http_method as any, dest_table: task.dest_table,
+        headers_json: task.headers_json || {}, body_json: task.body_json || {},
+        batch_size: task.batch_size, is_active: task.is_active,
       })
     }
   }, [task])
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <Button variant="outline" size="sm" onClick={() => navigate('/tasks')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Tasks
-        </Button>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-muted-foreground">Loading task details...</p>
-          </CardContent>
-        </Card>
+      <div>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/tasks')} style={{ marginBottom: 16 }}>Back to Tasks</Button>
+        <Spin tip="Loading task details..." size="large"><div style={{ padding: 50 }} /></Spin>
       </div>
     )
   }
 
   if (error || !task) {
     return (
-      <div className="space-y-6">
-        <Button variant="outline" size="sm" onClick={() => navigate('/tasks')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Tasks
-        </Button>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-destructive">Error loading task: {error?.message || 'Task not found'}</p>
-          </CardContent>
-        </Card>
+      <div>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/tasks')} style={{ marginBottom: 16 }}>Back to Tasks</Button>
+        <Card><Text type="danger">Error loading task: {error?.message || 'Task not found'}</Text></Card>
       </div>
     )
   }
 
   const handleSaveEdit = async () => {
     try {
-      await updateTaskMutation.mutateAsync({
-        id: task.id,
-        data: formData,
-      })
+      await updateTaskMutation.mutateAsync({ id: task.id, data: formData })
       setIsEditOpen(false)
-    } catch (err) {
-      console.error('Failed to update task:', err)
+      message.success('Task updated')
+    } catch {
+      message.error('Failed to update task')
     }
   }
 
-  const handleDelete = async () => {
-    try {
-      await deleteTaskMutation.mutateAsync(task.id)
-      navigate('/tasks')
-    } catch (err) {
-      console.error('Failed to delete task:', err)
-    }
+  const handleDelete = () => {
+    Modal.confirm({
+      title: 'Delete Task',
+      content: `Are you sure you want to delete "${task.name}"? This will remove the task and all associated run history.`,
+      okText: 'Delete', okType: 'danger',
+      onOk: async () => {
+        try {
+          await deleteTaskMutation.mutateAsync(task.id)
+          navigate('/tasks')
+        } catch {
+          message.error('Failed to delete task')
+        }
+      },
+    })
   }
 
   const handleCreateSchedule = async (data: ScheduleCreate) => {
-    try {
-      await createScheduleMutation.mutateAsync({
-        taskId: Number(id),
-        data,
-      })
-      await refetchSchedule()
-    } catch (err) {
-      console.error('Failed to create schedule:', err)
-      throw err
-    }
+    await createScheduleMutation.mutateAsync({ taskId: Number(id), data })
+    await refetchSchedule()
   }
 
   const handleUpdateSchedule = async (data: ScheduleCreate) => {
     if (!schedule) return
-    try {
-      await updateScheduleMutation.mutateAsync({
-        scheduleId: schedule.id,
-        data,
-      })
-      await refetchSchedule()
-    } catch (err) {
-      console.error('Failed to update schedule:', err)
-      throw err
-    }
+    await updateScheduleMutation.mutateAsync({ scheduleId: schedule.id, data })
+    await refetchSchedule()
   }
 
   const handleDeleteSchedule = async () => {
     if (!schedule) return
-    try {
-      await deleteScheduleMutation.mutateAsync(schedule.id)
-      await refetchSchedule()
-    } catch (err) {
-      console.error('Failed to delete schedule:', err)
-      throw err
-    }
+    await deleteScheduleMutation.mutateAsync(schedule.id)
+    await refetchSchedule()
   }
 
+  const tabItems = [
+    {
+      key: 'details',
+      label: <span><SettingOutlined /> Task Details</span>,
+      children: (
+        <Card>
+          <Descriptions column={2} bordered size="small">
+            <Descriptions.Item label="Name">{task.name}</Descriptions.Item>
+            <Descriptions.Item label="Status">
+              <Tag color={task.is_active ? 'green' : 'default'}>{task.is_active ? 'Active' : 'Inactive'}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="HTTP Method"><Text code>{task.http_method}</Text></Descriptions.Item>
+            <Descriptions.Item label="Destination Table"><Text code>{task.dest_table}</Text></Descriptions.Item>
+            <Descriptions.Item label="Endpoint URL" span={2}>
+              <Space>
+                <Text code copyable style={{ wordBreak: 'break-all' }}>{task.endpoint_path}</Text>
+              </Space>
+            </Descriptions.Item>
+            {task.description && (
+              <Descriptions.Item label="Description" span={2}>{task.description}</Descriptions.Item>
+            )}
+            <Descriptions.Item label="Created">
+              {task.created_at ? new Date(task.created_at).toLocaleString() : 'N/A'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Batch Size">{task.batch_size}</Descriptions.Item>
+          </Descriptions>
+
+          {Object.keys(task.headers_json || {}).length > 0 && (
+            <Card size="small" title="Headers" style={{ marginTop: 16 }}>
+              {Object.entries(task.headers_json || {}).map(([key, value]) => (
+                <div key={key}><Text code>{key}</Text>: <Text>{String(value)}</Text></div>
+              ))}
+            </Card>
+          )}
+
+          {Object.keys(task.body_json || {}).length > 0 && (
+            <Card size="small" title="Request Body" style={{ marginTop: 16 }}>
+              <pre style={{ margin: 0, fontSize: 12 }}>{JSON.stringify(task.body_json, null, 2)}</pre>
+            </Card>
+          )}
+        </Card>
+      ),
+    },
+    {
+      key: 'schedule',
+      label: (
+        <span>
+          <ClockCircleOutlined /> Schedule
+          {schedule && <Tag color="green" style={{ marginLeft: 8 }}>Active</Tag>}
+        </span>
+      ),
+      children: (
+        <Card title="Task Schedule" extra={<Text type="secondary">Configure automated execution</Text>}>
+          <ScheduleEditor
+            taskId={Number(id)}
+            schedule={schedule || undefined}
+            onSave={schedule ? handleUpdateSchedule : handleCreateSchedule}
+            onDelete={schedule ? handleDeleteSchedule : undefined}
+            isEditing={!!schedule}
+          />
+        </Card>
+      ),
+    },
+    {
+      key: 'mappings',
+      label: (
+        <span>
+          <DatabaseOutlined /> Column Mappings
+          {mappings && mappings.length > 0 && <Tag style={{ marginLeft: 8 }}>{mappings.length}</Tag>}
+        </span>
+      ),
+      children: (
+        <Card title="Column Mapping Configuration" extra={<Text type="secondary">Map API response fields to database columns</Text>}>
+          <ColumnMappingEditor taskId={Number(id)} />
+        </Card>
+      ),
+    },
+  ]
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <Button variant="outline" size="sm" onClick={() => navigate('/tasks')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Tasks
-        </Button>
-        <div className="flex gap-2">
-          <Button 
-            size="sm" 
-            onClick={() => setIsEditOpen(true)}
-            className="gap-2"
-          >
-            <Edit2 className="h-4 w-4" />
-            Edit
-          </Button>
-          <Button 
-            size="sm" 
-            variant="destructive"
-            onClick={() => setIsDeleteOpen(true)}
-            className="gap-2"
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </Button>
-        </div>
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/tasks')}>Back to Tasks</Button>
+        <Space>
+          <Button icon={<EditOutlined />} onClick={() => setIsEditOpen(true)}>Edit</Button>
+          <Button danger icon={<DeleteOutlined />} onClick={handleDelete}>Delete</Button>
+        </Space>
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="details" className="gap-2">
-            <Settings className="h-4 w-4" />
-            Task Details
-          </TabsTrigger>
-          <TabsTrigger value="schedule" className="gap-2">
-            <Clock className="h-4 w-4" />
-            Schedule
-            {schedule && (
-              <span className="ml-1 px-1.5 py-0.5 text-xs bg-green-600 text-white rounded-full">
-                Active
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="mappings" className="gap-2">
-            <Database className="h-4 w-4" />
-            Column Mappings
-            {mappings && mappings.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary text-primary-foreground rounded-full">
-                {mappings.length}
-              </span>
-            )}
-          </TabsTrigger>
-        </TabsList>
+      <Tabs items={tabItems} />
 
-        {/* Task Details Tab */}
-        <TabsContent value="details" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>{task.name}</CardTitle>
-              {task.description && <CardDescription>{task.description}</CardDescription>}
-            </CardHeader>
-            <CardContent className="space-y-6">
-          {/* API Configuration */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-muted-foreground">Method</Label>
-              <p className="text-lg font-mono bg-secondary p-2 rounded">{task.http_method}</p>
+      {/* Edit Modal */}
+      <Modal
+        title="Edit Task"
+        open={isEditOpen}
+        onCancel={() => setIsEditOpen(false)}
+        onOk={handleSaveEdit}
+        confirmLoading={updateTaskMutation.isPending}
+        width={700}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <div>
+            <Text strong>Task Name *</Text>
+            <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+          </div>
+          <div>
+            <Text strong>Description</Text>
+            <Input value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
+          </div>
+          <div>
+            <Text strong>Endpoint URL *</Text>
+            <Input value={formData.endpoint_path} onChange={(e) => setFormData({ ...formData, endpoint_path: e.target.value })} />
+          </div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <Text strong>HTTP Method *</Text>
+              <Select
+                value={formData.http_method}
+                onChange={(v) => setFormData({ ...formData, http_method: v })}
+                options={[{ value: 'GET' }, { value: 'POST' }, { value: 'PUT' }, { value: 'PATCH' }]}
+                style={{ width: '100%' }}
+              />
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-muted-foreground">Table</Label>
-              <p className="text-lg font-mono bg-secondary p-2 rounded">{task.dest_table}</p>
+            <div style={{ flex: 1 }}>
+              <Text strong>Table Name *</Text>
+              <Input value={formData.dest_table} onChange={(e) => setFormData({ ...formData, dest_table: e.target.value })} />
             </div>
           </div>
-
-          <div className="space-y-2">
-            <Label className="text-sm font-medium text-muted-foreground">Endpoint URL</Label>
-            <div className="flex items-center gap-2">
-              <p className="text-sm break-all flex-1 bg-secondary p-3 rounded font-mono">{task.endpoint_path}</p>
-              <button
-                onClick={() => navigator.clipboard.writeText(task.endpoint_path)}
-                className="p-2 hover:bg-secondary rounded"
-              >
-                <Copy className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Headers */}
-          {Object.keys(task.headers_json || {}).length > 0 && (
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-muted-foreground">Headers</Label>
-              <div className="bg-secondary p-3 rounded font-mono text-sm space-y-1">
-                {Object.entries(task.headers_json || {}).map(([key, value]) => (
-                  <div key={key}>
-                    <span className="text-blue-600">{key}</span>
-                    <span className="text-muted-foreground">: </span>
-                    <span>{String(value)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Body */}
-          {Object.keys(task.body_json || {}).length > 0 && (
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-muted-foreground">Request Body</Label>
-              <div className="bg-secondary p-3 rounded font-mono text-sm">
-                <pre>{JSON.stringify(task.body_json, null, 2)}</pre>
-              </div>
-            </div>
-          )}
-
-          {/* Status */}
-          <div className="pt-4 border-t">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label className="text-sm text-muted-foreground">Status</Label>
-                <p className={`text-sm font-medium ${task.is_active ? 'text-green-600' : 'text-yellow-600'}`}>
-                  {task.is_active ? '✓ Active' : '○ Inactive'}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-sm text-muted-foreground">Created</Label>
-                <p className="text-sm">
-                  {task.created_at ? new Date(task.created_at).toLocaleString('en-US', {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: true
-                  }) : 'N/A'}
-                </p>
-              </div>
-            </div>
-          </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Schedule Tab */}
-        <TabsContent value="schedule" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Task Schedule</CardTitle>
-              <CardDescription>
-                Configure automated execution of this task on a schedule
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {schedule ? (
-                <div className="space-y-4">
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-                    <p className="text-sm font-medium text-green-900">✓ Schedule configured</p>
-                    <p className="text-sm text-green-700 mt-1">
-                      Cron: <span className="font-mono font-semibold">{schedule.cron_expression}</span>
-                    </p>
-                  </div>
-                  <ScheduleEditor 
-                    taskId={Number(id)} 
-                    schedule={schedule} 
-                    onSave={handleUpdateSchedule}
-                    onDelete={handleDeleteSchedule}
-                    isEditing={true}
-                  />
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-                    <p className="text-sm font-medium text-yellow-900">No schedule configured</p>
-                    <p className="text-sm text-yellow-700 mt-1">Create a schedule to automate this task execution</p>
-                  </div>
-                  <ScheduleEditor 
-                    taskId={Number(id)} 
-                    onSave={handleCreateSchedule}
-                    isEditing={false}
-                  />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Column Mappings Tab */}
-        <TabsContent value="mappings" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Column Mapping Configuration</CardTitle>
-              <CardDescription>
-                Map API response fields to database columns with optional transformations
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ColumnMappingEditor taskId={Number(id)} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* Edit Dialog */}
-      {isEditOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-          onClick={() => setIsEditOpen(false)}
-        >
-          <Card 
-            className="w-full max-w-2xl max-h-[80vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <CardHeader className="border-b">
-              <CardTitle>Edit Task</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Task Name *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Sync Users"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Input
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Describe what this task does"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="endpoint_path">Endpoint URL *</Label>
-                <Input
-                  id="endpoint_path"
-                  value={formData.endpoint_path}
-                  onChange={(e) => setFormData({ ...formData, endpoint_path: e.target.value })}
-                  placeholder="https://api.example.com/users"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="http_method">HTTP Method *</Label>
-                  <select
-                    id="http_method"
-                    value={formData.http_method}
-                    onChange={(e) => setFormData({ ...formData, http_method: e.target.value as 'GET' | 'POST' | 'PUT' | 'PATCH' })}
-                    className="w-full px-3 py-2 border rounded-md bg-background"
-                  >
-                    <option>GET</option>
-                    <option>POST</option>
-                    <option>PUT</option>
-                    <option>PATCH</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="dest_table">Table Name *</Label>
-                  <Input
-                    id="dest_table"
-                    value={formData.dest_table}
-                    onChange={(e) => setFormData({ ...formData, dest_table: e.target.value })}
-                    placeholder="users"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsEditOpen(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleSaveEdit}
-                  disabled={updateTaskMutation.isPending}
-                  className="flex-1"
-                >
-                  {updateTaskMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Delete Confirmation Dialog */}
-      {isDeleteOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-          onClick={() => setIsDeleteOpen(false)}
-        >
-          <Card 
-            className="w-full max-w-md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <CardHeader>
-              <CardTitle>Delete Task</CardTitle>
-              <CardDescription>This action cannot be undone</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Are you sure you want to delete "<strong>{task.name}</strong>"? This will remove the task and all associated run history.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsDeleteOpen(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleDelete}
-                  disabled={deleteTaskMutation.isPending}
-                  className="flex-1"
-                >
-                  {deleteTaskMutation.isPending ? 'Deleting...' : 'Delete'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-    </div>
+        </Space>
+      </Modal>
+    </Space>
   )
 }
