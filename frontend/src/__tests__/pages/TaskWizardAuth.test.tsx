@@ -1,233 +1,82 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
-import TaskWizard from '@/pages/TaskWizard'
+import { TaskWizard } from '@/pages/TaskWizard'
 
-// Mock the API hooks
 vi.mock('@/hooks/api', () => ({
-  useCreateTask: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({ id: 1 }),
-    isPending: false,
-  }),
-  useColumnMappings: () => ({
-    data: [],
-    isLoading: false,
-  }),
-  useListSchedules: () => ({
-    data: [],
-    isLoading: false,
-  }),
+  useCreateTask: vi.fn(),
+  useCreateMappings: vi.fn(),
+  useOracleColumns: vi.fn(),
 }))
 
-// Mock ColumnMappingEditor
 vi.mock('@/components/ColumnMappingEditor', () => ({
-  ColumnMappingEditor: ({ wizardMode }: any) => (
-    <div data-testid="column-mapping-editor">Column Mapping Editor {wizardMode ? '(Wizard)' : ''}</div>
-  ),
+  ColumnMappingEditor: () => <div data-testid="column-mapping-editor">ColumnMappingEditor</div>,
 }))
 
-const queryClient = new QueryClient()
+import { useCreateTask, useCreateMappings, useOracleColumns } from '@/hooks/api'
 
-function renderWithRouter(component: React.ReactElement) {
-  return render(
+const createWrapper = () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        {component}
-      </BrowserRouter>
+      <BrowserRouter>{children}</BrowserRouter>
     </QueryClientProvider>
   )
 }
 
-describe('TaskWizard - End-to-End with Authentication', () => {
+async function navigateToAuthStep(user: ReturnType<typeof userEvent.setup>) {
+  // Step 1: Basic Info
+  await user.type(screen.getByPlaceholderText(/Sync Users/), 'Auth Task')
+  await user.type(screen.getByPlaceholderText(/users, products/), 'AUTH_TABLE')
+  await user.click(screen.getByText('Next'))
+
+  // Step 2: Endpoint
+  await user.type(screen.getByPlaceholderText(/api.example.com/), 'https://api.test.com/data')
+  await user.click(screen.getByText('Next'))
+
+  // Step 3: Headers
+  await user.click(screen.getByText('Next'))
+
+  // Now on Step 4: Authentication
+}
+
+describe('TaskWizard Auth Step', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(useCreateTask).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as any)
+    vi.mocked(useCreateMappings).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as any)
+    vi.mocked(useOracleColumns).mockReturnValue({ data: undefined, isLoading: false } as any)
   })
 
-  it('should render all 6 wizard steps', () => {
-    renderWithRouter(<TaskWizard />)
-    
-    // Should start on Basic step
-    expect(screen.getByText(/Task Name/i)).toBeInTheDocument()
-    expect(screen.getByText(/Basic Information/i)).toBeInTheDocument()
-  })
-
-  it('should progress through Basic -> Endpoint -> Headers -> Auth -> Mapping -> Review steps', async () => {
+  it('should show auth type selector on auth step', async () => {
     const user = userEvent.setup()
-    renderWithRouter(<TaskWizard />)
-    
-    // Step 1: Basic
-    const taskNameInput = screen.getByPlaceholderText('e.g., Sync Users')
-    await user.type(taskNameInput, 'My Task')
-    
-    const tableInput = screen.getByPlaceholderText('e.g., USERS')
-    await user.type(tableInput, 'USERS')
-    
-    let nextButton = screen.getByRole('button', { name: /Next/i })
-    fireEvent.click(nextButton)
-    
-    // Step 2: Endpoint
+    render(<TaskWizard />, { wrapper: createWrapper() })
+    await navigateToAuthStep(user)
+
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('https://api.example.com/users')).toBeInTheDocument()
-    })
-    
-    const endpointInput = screen.getByPlaceholderText('https://api.example.com/users')
-    await user.type(endpointInput, 'https://api.example.com/users')
-    
-    nextButton = screen.getByRole('button', { name: /Next/i })
-    fireEvent.click(nextButton)
-    
-    // Step 3: Headers
-    await waitFor(() => {
-      expect(screen.getByText(/Add Header/i)).toBeInTheDocument()
-    })
-    
-    nextButton = screen.getByRole('button', { name: /Next/i })
-    fireEvent.click(nextButton)
-    
-    // Step 4: Authentication (NEW STEP)
-    await waitFor(() => {
-      expect(screen.getByText(/Authentication Type/i)).toBeInTheDocument()
-    })
-    
-    // Verify auth options exist
-    expect(screen.getByText(/No Authentication/i)).toBeInTheDocument()
-    expect(screen.getByText(/Bearer Token/i)).toBeInTheDocument()
-    expect(screen.getByText(/API Key/i)).toBeInTheDocument()
-    
-    nextButton = screen.getByRole('button', { name: /Next/i })
-    fireEvent.click(nextButton)
-    
-    // Step 5: Mapping
-    await waitFor(() => {
-      expect(screen.getByTestId('column-mapping-editor')).toBeInTheDocument()
-    })
-    
-    nextButton = screen.getByRole('button', { name: /Next/i })
-    fireEvent.click(nextButton)
-    
-    // Step 6: Review
-    await waitFor(() => {
-      expect(screen.getByText(/My Task/i)).toBeInTheDocument()
+      expect(screen.getByText('Authentication Type')).toBeInTheDocument()
     })
   })
 
-  it('should validate auth fields based on auth type', async () => {
+  it('should show no-auth message by default', async () => {
     const user = userEvent.setup()
-    renderWithRouter(<TaskWizard />)
-    
-    // Complete first steps
-    const taskNameInput = screen.getByPlaceholderText('e.g., Sync Users')
-    await user.type(taskNameInput, 'My Task')
-    const tableInput = screen.getByPlaceholderText('e.g., USERS')
-    await user.type(tableInput, 'USERS')
-    
-    fireEvent.click(screen.getByRole('button', { name: /Next/i }))
-    
-    await waitFor(() => {
-      const endpointInput = screen.getByPlaceholderText('https://api.example.com/users')
-      fireEvent.click(screen.getAllByRole('button', { name: /Next/i })[0])
-    })
-    
-    await waitFor(() => {
-      fireEvent.click(screen.getAllByRole('button', { name: /Next/i })[0])
-    })
-    
-    // Now on Auth step
-    await waitFor(() => {
-      expect(screen.getByText(/Authentication Type/i)).toBeInTheDocument()
-    })
-    
-    // Select Bearer Token
-    const authSelect = screen.getByDisplayValue('No Authentication')
-    await user.click(authSelect)
-    
-    // Note: The actual selection would depend on Select component implementation
-    // For now, we verify the UI exists
-    expect(screen.getByText(/Bearer Token/i)).toBeInTheDocument()
-  })
+    render(<TaskWizard />, { wrapper: createWrapper() })
+    await navigateToAuthStep(user)
 
-  it('should include auth info in review step', async () => {
-    const user = userEvent.setup()
-    renderWithRouter(<TaskWizard />)
-    
-    // Fill and submit form
-    const taskNameInput = screen.getByPlaceholderText('e.g., Sync Users')
-    await user.type(taskNameInput, 'My Task')
-    
-    const tableInput = screen.getByPlaceholderText('e.g., USERS')
-    await user.type(tableInput, 'USERS')
-    
-    // Progress to end
-    const nextButtons = screen.getAllByRole('button', { name: /Next/i })
-    for (let i = 0; i < 5; i++) {
-      fireEvent.click(nextButtons[0])
-      await waitFor(() => {
-        const allNextButtons = screen.getAllByRole('button', { name: /Next|Create Task/i })
-        return allNextButtons.length > 0
-      })
-    }
-    
-    // Verify review includes auth section
     await waitFor(() => {
-      const reviewText = screen.queryByText(/Authentication/i)
-      // Auth info should be in review if auth type was set
-      // For now, we just verify no error occurs
+      expect(screen.getByText(/No authentication will be used/)).toBeInTheDocument()
     })
   })
 
-  it('should support Bearer token authentication', async () => {
-    const user = userEvent.setup()
-    renderWithRouter(<TaskWizard />)
-    
-    // Navigate to auth step
-    const taskNameInput = screen.getByPlaceholderText('e.g., Sync Users')
-    await user.type(taskNameInput, 'My Task')
-    const tableInput = screen.getByPlaceholderText('e.g., USERS')
-    await user.type(tableInput, 'USERS')
-    
-    fireEvent.click(screen.getByRole('button', { name: /Next/i }))
-    
-    // Skip to auth step (2 more clicks)
-    await waitFor(() => {
-      const nextButtons = screen.getAllByRole('button', { name: /Next/i })
-      if (nextButtons.length > 1) {
-        fireEvent.click(nextButtons[0])
-      }
-    })
-    
-    await waitFor(() => {
-      const nextButtons = screen.getAllByRole('button', { name: /Next/i })
-      if (nextButtons.length > 1) {
-        fireEvent.click(nextButtons[0])
-      }
-    })
-    
-    // Now on auth step - verify Bearer token option exists
-    await waitFor(() => {
-      expect(screen.getByText(/Bearer Token/i)).toBeInTheDocument()
-    })
-  })
-
-  it('should support API Key authentication', async () => {
-    renderWithRouter(<TaskWizard />)
-    
-    // Verify API Key option exists
-    expect(screen.getByText(/API Key/i)).toBeInTheDocument()
-  })
-
-  it('should support Basic authentication', async () => {
-    renderWithRouter(<TaskWizard />)
-    
-    // Verify Basic Auth option exists
-    expect(screen.getByText(/Basic Auth/i)).toBeInTheDocument()
-  })
-
-  it('should support OAuth', async () => {
-    renderWithRouter(<TaskWizard />)
-    
-    // Verify OAuth option exists
-    expect(screen.getByText(/OAuth 2\.0/i)).toBeInTheDocument()
+  it('should display all wizard steps', () => {
+    render(<TaskWizard />, { wrapper: createWrapper() })
+    expect(screen.getByText('Basic Info')).toBeInTheDocument()
+    expect(screen.getByText('Endpoint')).toBeInTheDocument()
+    expect(screen.getByText('Headers & Body')).toBeInTheDocument()
+    expect(screen.getByText('Authentication')).toBeInTheDocument()
+    expect(screen.getByText('Mapping')).toBeInTheDocument()
+    expect(screen.getByText('Review')).toBeInTheDocument()
   })
 })

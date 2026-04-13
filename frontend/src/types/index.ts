@@ -42,7 +42,7 @@ export interface TaskCreateAuth {
   oauth_config?: Record<string, any>
 }
 
-export interface TaskCreate extends Omit<Task, 'id'>, TaskCreateAuth {}
+export interface TaskCreate extends Omit<Task, 'id' | 'auth_type' | 'username'>, TaskCreateAuth {}
 export interface TaskUpdate extends Partial<Omit<Task, 'id'>> {}
 
 // Column Mapping types
