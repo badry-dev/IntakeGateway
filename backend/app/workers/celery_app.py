@@ -2,7 +2,7 @@
 from celery import Celery
 from app.core.config import settings
 
-celery_app = Celery("importer",
+celery_app = Celery("intakegateway",
                     broker=settings.celery_broker,
                     backend=settings.celery_backend,
                     include=["app.workers.tasks"])

@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 from pydantic import field_validator
 
 class Settings(BaseSettings):
-    APP_NAME: str = "api-to-db-importer"
+    APP_NAME: str = "intake-gateway"
     APP_ENV: str = "dev"
     APP_LOG_LEVEL: str = "INFO"
     APP_TIMEZONE: str = "Asia/Riyadh"

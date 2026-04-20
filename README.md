@@ -1,4 +1,4 @@
-# API→DB Importer: Full-Stack Application
+# IntakeGateway: Full-Stack Application
 
 **Status**: ✅ Phase 8 Complete (Upsert/Skip) | ✅ Phase 9 Complete (Ant Design Migration) | Production Ready
 
@@ -17,7 +17,7 @@ A modern web application for importing data from external APIs into Oracle datab
 
 ## Project Overview
 
-**API2DB-Importer** enables users to:
+**IntakeGateway** enables users to:
 - Create and manage API data import tasks
 - Configure API endpoints with authentication (Bearer, API Key, Basic, OAuth)
 - Map API response fields to database columns with transform suggestions
@@ -114,7 +114,7 @@ pytest tests/ -v
 ## Project Structure
 
 ```
-API2DB-Importer/
+IntakeGateway/
 ├── backend/                    # FastAPI application
 │   ├── app/
 │   │   ├── api/v1/routes/     # REST endpoints (tasks, runs, schedules, connections, mappings)

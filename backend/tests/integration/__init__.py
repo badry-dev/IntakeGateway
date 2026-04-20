@@ -1,1 +1,1 @@
-"""Integration tests for API2DB Importer"""
+"""Integration tests for IntakeGateway"""

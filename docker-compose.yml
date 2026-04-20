@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: importer_api
+    container_name: intakegateway_api
     env_file:
       - .env
     ports:
@@ -20,7 +20,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: importer_worker
+    container_name: intakegateway_worker
     env_file:
       - .env
     depends_on:
@@ -34,7 +34,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: importer_scheduler
+    container_name: intakegateway_scheduler
     env_file:
       - .env
     depends_on:
@@ -46,6 +46,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: importer_redis
+    container_name: intakegateway_redis
     ports:
       - "6379:6379"

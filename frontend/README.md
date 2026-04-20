@@ -1,6 +1,6 @@
-# API→DB Importer Frontend
+# IntakeGateway Frontend
 
-React 18 + TypeScript + **Ant Design 5** dashboard for the API→DB Importer.
+React 18 + TypeScript + **Ant Design 5** dashboard for IntakeGateway.
 
 ## Setup
 
