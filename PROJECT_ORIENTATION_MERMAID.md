@@ -191,7 +191,7 @@ flowchart LR
 1. **Clone Repository**
 ```bash
 git clone https://github.com/Badry-Kudu/API2DB-Importer.git
-cd IntakeGateway
+cd API2DB-Importer
 ```
 
 2. **Copy Environment File**
