@@ -407,7 +407,7 @@ For detailed context, see:
 - ✅ Added tests for Settings page (241 lines, 12+ test cases)
 
 **Key Features**:
-- Encrypted file storage at `/etc/intakegateway/connections.enc` (configurable)
+- Encrypted file storage defaults to `connections.enc` and can be configured via `CONNECTIONS_FILE_PATH` (for production deployments, `/etc/intakegateway/connections.enc` is a recommended path when set explicitly)
 - Fernet symmetric encryption for passwords at rest
 - Test connection validates credentials before saving
 - Active connection selection with environment fallback
