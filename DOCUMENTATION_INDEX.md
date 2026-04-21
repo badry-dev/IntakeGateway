@@ -67,13 +67,19 @@
 - Fixed `TaskCreate` interface type conflict
 - Zero TypeScript errors
 
+### Architecture Update: Local App State + Destination Separation
+- App-owned tables now live in a local SQLite database by default via `APP_DATABASE_URL`
+- Destination connectivity is isolated so the backend and UI still work when Oracle or another target DB is unavailable
+- Tasks can optionally target a specific saved `connection_id`, while the active connection remains the fallback
+- `connections.enc` is recreated on first save and missing or unreadable files degrade to an empty connection list
+
 ---
 
 ## Technology Stack
 
 ### Backend
 - Python 3.11 + FastAPI 0.104
-- SQLAlchemy 2.0 + Oracle Database
+- SQLAlchemy 2.0 + SQLite app DB + Oracle destination ingestion
 - Celery 5.4 + Redis
 - APScheduler 3.10
 - Pydantic 2.4

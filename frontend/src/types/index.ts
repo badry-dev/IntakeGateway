@@ -21,6 +21,7 @@ export interface Task extends TaskAuth, UpsertConfig {
   id: number
   name: string
   description?: string
+  connection_id?: string
   http_method: string
   endpoint_path: string
   query_params_json?: Record<string, any>
@@ -197,6 +198,7 @@ export interface ApiListResponse<T> {
 export interface TaskFormData {
   name: string
   description?: string
+  connection_id?: string
   http_method: 'GET' | 'POST' | 'PUT' | 'PATCH'
   endpoint_path: string
   query_params_json?: Record<string, any>

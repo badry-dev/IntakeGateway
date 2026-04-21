@@ -49,8 +49,9 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
   const [isFetching, setIsFetching] = useState(false)
   const [fetchedFields, setFetchedFields] = useState<FieldPreview[]>([])
 
-  const tableName = wizardMode ? taskFormData?.dest_table || '' : ''
-  const { data: fetchedOracleColumnsData, isLoading: isLoadingColumns, error: columnsError } = useOracleColumns(tableName)
+  const tableName = taskFormData?.dest_table || ''
+  const connectionId = taskFormData?.connection_id
+  const { data: fetchedOracleColumnsData, isLoading: isLoadingColumns, error: columnsError } = useOracleColumns(tableName, connectionId)
   const fetchedOracleColumns = fetchedOracleColumnsData?.columns || []
   const activeOracleColumns = fetchedOracleColumns.length > 0 ? fetchedOracleColumns : oracleColumns
 
@@ -229,7 +230,7 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
         {sampleError && <Alert message={sampleError} type="error" showIcon style={{ marginTop: 8 }} />}
         {successMessage && <Alert message={successMessage} type="success" showIcon style={{ marginTop: 8 }} />}
 
-        {wizardMode && (
+        {taskFormData && (
           <div style={{ marginTop: 8, fontSize: 12, color: '#8c8c8c' }}>
             Table: <strong>{tableName || '(not set)'}</strong> | Columns: {isLoadingColumns ? 'Loading...' : `${activeOracleColumns.length} found`}
             {columnsError && <span style={{ color: '#ff4d4f' }}> | Column auto-load not available</span>}

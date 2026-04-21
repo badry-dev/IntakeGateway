@@ -179,8 +179,13 @@ class ApiClient {
   }
 
   // Get Oracle table columns metadata
-  async getOracleColumns(tableName: string): Promise<OracleColumnsResponse> {
-    const response = await this.client.get(`/oracle/tables/${tableName}/columns`)
+  async getOracleColumns(tableName: string, connectionId?: string): Promise<OracleColumnsResponse> {
+    const params = new URLSearchParams()
+    if (connectionId) {
+      params.append('connection_id', connectionId)
+    }
+    const query = params.toString()
+    const response = await this.client.get(`/oracle/tables/${tableName}/columns${query ? `?${query}` : ''}`)
     return response.data
   }
 

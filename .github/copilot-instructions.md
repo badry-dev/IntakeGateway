@@ -1,6 +1,6 @@
 # IntakeGateway: AI Coding Agent Instructions
 
-**Last Updated**: February 4, 2026 | **Status**: Production Ready | Phase 8 Feature 1 Complete ✅
+**Last Updated**: April 21, 2026 | **Status**: Production Ready | Phase 9 Complete ✅
 
 Quick reference for AI agents developing or extending this full-stack application.
 
@@ -21,12 +21,17 @@ Quick reference for AI agents developing or extending this full-stack applicatio
 
 ### Backend Data Flow Pattern
 ```
-User Request → FastAPI Route → Service Layer → SQLAlchemy ORM → Oracle DB
+User Request → FastAPI Route → Service Layer → SQLAlchemy ORM → Local App DB
                                     ↓
                             Celery Queue
                                     ↓
-                            Worker Process → API Connector → External API → Mapper → DB
+                            Worker Process → API Connector → External API → Mapper → Destination DB
 ```
+
+**Architecture Update**:
+- App-owned data now lives in a local database, defaulting to SQLite via `APP_DATABASE_URL`.
+- Destination DB access is isolated behind `connection_pool.py` and task-level or active connection selection.
+- Missing or unreadable `connections.enc` files are treated as an empty connection list so the app still boots cleanly.
 
 **Key Services** (in `backend/app/services/`):
 - `api_connector.py` - Calls external APIs with configured headers/auth; fetches sample responses
@@ -47,7 +52,7 @@ User Request → FastAPI Route → Service Layer → SQLAlchemy ORM → Oracle D
 - `ColumnMapping` - Field mappings with transform rules (stored as JSON)
 - `TaskLog`, `TaskRunLog` - Audit trail for debugging
 
-**Critical Detail**: `Task` uses `JSONEncodedDict` TypeDecorator for Oracle compatibility—stores complex objects as JSON strings.
+**Critical Detail**: app models now use `JSONText` for complex JSON fields so app state works cleanly across SQLite and other SQLAlchemy-supported backends.
 
 ### Frontend Architecture
 - **Pages** (7): Dashboard, TaskList, TaskDetail, TaskWizard, RunsList, RunDetail, Settings (NEW)
@@ -139,12 +144,12 @@ def run_import_task(task_id: int, run_id: int):
     # Pattern: Minimal parameters (IDs), fetch from DB inside task
     # Exception handling: Update run.status = "failed", log details
 ```
-- Tasks take only IDs (reduce serialization issues with Oracle connections)
+- Tasks take only IDs (avoid serializing DB sessions or destination connection objects)
 - Fetch full objects inside the task
 - Always update `run.status` and `run.error_message` for UI feedback
 
-**4. JSON in Oracle** (`app/db/models/task.py`)
-- Use `JSONEncodedDict` TypeDecorator for complex fields (headers, body_json, column mappings)
+**4. JSON Storage Across App DBs** (`app/db/models/task.py`)
+- Use `JSONText` for complex fields (headers, body_json, column mappings)
 - Automatically handles serialization/deserialization
 
 ### Frontend Patterns
@@ -172,8 +177,8 @@ export function useGetTasks() {
 - Convert header array to object before API submission
 
 **4. Component Reusability** (`src/components/`)
-- Radix UI primitives (button, card, dialog, select)
-- Tailwind for styling (no CSS files, config-driven)
+- Ant Design 5 is the primary UI library
+- Shared workflow components are reused across TaskWizard, TaskDetail, and Settings
 
 ---
 
@@ -211,7 +216,7 @@ export function useGetTasks() {
 |---------|----------|
 | Celery worker won't pick up tasks | Ensure `celery_broker` and `celery_backend` env vars are set; restart worker; check Redis is running |
 | "Task with this name already exists" on update | Update endpoint checks for name conflicts; only skip check if name unchanged |
-| JSON serialization errors in Oracle fields | Use `JSONEncodedDict` TypeDecorator; don't store raw Python objects |
+| JSON serialization errors in app DB fields | Use `JSONText`; don't store raw Python objects |
 | Frontend stuck on stale data | Check React Query cache invalidation on mutations (configured in `useCreateTask`, `useUpdateTask`) |
 | TaskWizard validation passes but submission fails | Validate step-by-step (check frontend console + backend logs at `/docs`) |
 | Oracle connection pooling issues | Verify `oracle_pool.py` connection string; pool size settings; max retries |
@@ -236,7 +241,8 @@ export function useGetTasks() {
 - `app/services/api_connector.py` - API calls + sample response fetching (Phase 6 enhanced)
 - `app/services/connection_storage.py` - Encrypted file storage for DB connections (Phase 8 NEW)
 - `app/services/connection_pool.py` - Dynamic connection pool manager (Phase 8 NEW)
-- `app/db/models/task.py` - Task ORM model with JSONEncodedDict
+- `app/db/types.py` - Cross-database ID/JSON helpers
+- `app/db/models/task.py` - Task ORM model with `JSONText`
 - `app/db/schemas/column_mapping.py` - Pydantic schemas for mappings (Phase 6 NEW)
 - `app/db/schemas/connection.py` - Pydantic schemas for connections (Phase 8 NEW)
 - `app/core/config.py` - Environment configuration
@@ -254,9 +260,9 @@ export function useGetTasks() {
 - `vite.config.ts` - Build configuration
 
 **Configuration**:
-- `.env` / `app/core/config.py` - Backend config (API_ENV, DATABASE_URL, CELERY_*)
+- `.env` / `app/core/config.py` - Backend config (`APP_DATABASE_URL`, Oracle fallback, `CONNECTIONS_FILE_PATH`, `ENCRYPTION_KEY`)
 - `frontend/.env` - Frontend config (VITE_API_URL)
-- `docker-compose.yml` - Local Oracle + Redis setup
+- `docker-compose.yml` - Local backend/worker/scheduler/redis setup
 
 ---
 
@@ -357,9 +363,9 @@ For detailed context, see:
 
 ---
 
-### Phase 8: Configuration UI, Real-time Updates & UX (In Progress)
+### Phase 8-9: Delivered Configuration, Upsert, and UI Updates
 
-**Current Status**: Feature 1 Complete - Database Connection Configuration UI
+**Current Status**: Connection configuration, upsert flow, Ant Design UI, and app/destination DB separation are all in place
 
 #### Feature 1: Database Connection Configuration UI ✅ COMPLETE
 
@@ -412,6 +418,7 @@ For detailed context, see:
 - Test connection validates credentials before saving
 - Active connection selection with environment fallback
 - Support for Oracle, PostgreSQL, and MySQL databases
+- Missing or unreadable connection files degrade to an empty list instead of breaking the app
 - File permissions: 600 (owner read/write only)
 - Directory permissions: 700
 

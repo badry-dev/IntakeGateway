@@ -1,6 +1,6 @@
 # IntakeGateway: Project Context & Development Guidelines
 
-**Last Updated**: April 13, 2026
+**Last Updated**: April 21, 2026
 **Project Status**: Phase 4 Complete | Phase 5 Complete | Phase 6 Complete | Phase 7 Complete | Phase 8 Complete | Phase 9 Complete (Ant Design Migration)
 **AI Assistant Guide**: Use this document to understand the project architecture, conventions, and development practices.
 
@@ -19,11 +19,17 @@
 
 **Backend**:
 - Python 3.11 with FastAPI
-- SQLAlchemy ORM with Oracle Database (11g+ compatible)
+- SQLAlchemy ORM with SQLite app state and a separate destination DB layer
 - Celery for async task execution
 - APScheduler for cron-based task scheduling
 - Pydantic for data validation
 - pytest for testing (13 test files: 7 unit + 6 integration)
+
+### Architecture Update (April 2026)
+
+- App state now lives in a local database, defaulting to SQLite via `APP_DATABASE_URL`.
+- Destination database access is isolated from the app database. Oracle is the current ingestion target, but broken destination connectivity should not break core app routes.
+- `connections.enc` is auto-created on first save and missing or unreadable files are treated as an empty connection store.
 
 **Frontend**:
 - React 18.2 with TypeScript 5.3
@@ -100,25 +106,25 @@
 │                       │                                        │
 └───────────────────────┼────────────────────────────────────────┘
                         ▼
-            ┌───────────────────────┐
-            │   Oracle Database     │
-            │  (Production Data)    │
-            └───────────────────────┘
+            ┌───────────────────────┐    ┌──────────────────────────┐
+            │   App Database        │    │   Destination Database   │
+            │   (SQLite default)    │    │   (Oracle currently)     │
+            └───────────────────────┘    └──────────────────────────┘
 ```
 
 ### Data Flow
 
 1. **User Creates Task**:
    - Frontend → POST /api/v1/tasks → Backend creates Task record
-   - Task stored in database with configuration
+   - Task stored in the local app DB with configuration
 
 2. **User Triggers Run**:
-   - Frontend → POST /api/v1/runs → Backend creates Run record
+   - Frontend → POST /api/v1/runs → Backend creates Run record in the local app DB
    - Celery worker picks up async task
    - Worker calls ApiConnector to fetch data
    - Data normalized and validated
    - Fields mapped according to configuration
-   - Results saved to database
+   - Run state and logs are saved locally; inserts and updates go to the selected destination DB
 
 3. **User Views Run Details**:
    - Frontend → GET /api/v1/runs/{run_id} → Backend retrieves Run with logs and errors
@@ -1201,7 +1207,7 @@ User creates schedule in UI → POST /tasks/{id}/schedule → Validate cron expr
 
 ---
 
-## 🎯 Phase 8: Configuration UI, Real-time Updates & UX Enhancements (Planned)
+## 🎯 Phase 8-9: Configuration, Upsert, and UI Delivery
 
 ### Overview
 
@@ -1266,6 +1272,8 @@ Benefits:
 - No database dependency for connection config
 - Easy backup/restore (copy encrypted file)
 - Works during initial setup (before DB is configured)
+- Auto-recreated when the first connection is saved after deletion
+- Missing or unreadable files degrade to an empty list instead of breaking the app
 
 Security Measures:
 - File permissions: 600 (owner read/write only)
@@ -1281,8 +1289,8 @@ backend/app/
 ├── api/v1/routes/
 │   └── connections.py          # Connection CRUD endpoints
 ├── services/
-│   ├── connection_manager.py   # Connection pool management
-│   └── connection_file.py      # Encrypted file read/write operations
+│   ├── connection_pool.py      # Destination connection pool management
+│   └── connection_storage.py   # Encrypted file read/write operations
 ├── db/
 │   └── schemas/
 │       └── connection.py       # Pydantic schemas (no password in response)
@@ -1292,13 +1300,13 @@ backend/app/
 
 **Connection File Service**:
 ```python
-# backend/app/services/connection_file.py
+# backend/app/services/connection_storage.py
 import os
 import json
 from pathlib import Path
 from app.core.encryption import encrypt_data, decrypt_data
 
-DEFAULT_CONFIG_PATH = os.getenv("DB_CONFIG_PATH", "/etc/intakegateway/connections.enc")
+DEFAULT_CONFIG_PATH = os.getenv("CONNECTIONS_FILE_PATH", "connections.enc")
 
 class ConnectionFileService:
     def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
@@ -1307,7 +1315,7 @@ class ConnectionFileService:
     def read_connections(self) -> dict:
         """Read and decrypt connections file."""
         if not self.config_path.exists():
-            return {"connections": [], "metadata": {"version": 1}}
+            return {"connections": [], "active_connection_id": None, "version": 1}
 
         encrypted_data = self.config_path.read_bytes()
         decrypted_json = decrypt_data(encrypted_data)
@@ -2086,12 +2094,13 @@ class TaskRun:
 - Oracle 11g compatibility
 - Timezone handling
 
-### Phase 8: Configuration UI, Real-time & UX ⏳ PLANNED
-- DB Connection Configuration UI (move from .env to admin page)
-- WebSocket real-time updates for run progress
-- Visual Cron Builder for schedule creation
-- Mobile-responsive UI (touch-friendly, card layouts)
+### Phase 8-9 Delivery Snapshot
+- DB connection configuration UI
 - Upsert logic for insert/update records
+- Ant Design migration
+- Local SQLite app state via `APP_DATABASE_URL`
+- Destination DB separation so broken Oracle connectivity does not break the app shell
+- Task-level destination connection selection with active-connection fallback
 
 ### Future Enhancements (Phase 9+)
 - E2E testing with Cypress/Playwright
@@ -2103,10 +2112,10 @@ class TaskRun:
 
 ## 📝 Last Updated
 
-- **Date**: February 3, 2026
-- **Version**: 1.0.0 (Production Release)
-- **Status**: Phase 4-7 Complete | Phase 8 Planned
-- **Next Phase**: Phase 8 - DB Config UI, WebSocket, Cron Builder, Mobile UI, Upsert
+- **Date**: April 21, 2026
+- **Version**: 1.1.0
+- **Status**: Phase 1-9 Complete | App DB / destination DB split documented
+- **Next Focus**: Additional destination adapters and UX refinement
 
 ---
 

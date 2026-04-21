@@ -6,6 +6,7 @@ from datetime import datetime
 class TaskCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    connection_id: Optional[str] = None
     http_method: str = Field(default="GET", pattern="^(GET|POST|PUT|PATCH)$")
     endpoint_path: str
     query_params_json: Optional[dict[str, Any]] = None
@@ -62,6 +63,7 @@ class TaskOut(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
+    connection_id: Optional[str] = None
     http_method: str
     endpoint_path: str
     query_params_json: Optional[dict[str, Any]] = None
@@ -96,7 +98,7 @@ class TaskLogOut(BaseModel):
     task_run_id: int
     step_name: str
     message: str
-    details: Optional[str] = None
+    details: Optional[Any] = None
     created_at: datetime
     
     class Config:
@@ -130,6 +132,7 @@ class TaskRunOut(BaseModel):
     rows_skipped: int = 0  # Phase 8: Skipped due to skip condition
     error_count: int
     warning_count: int = 0
+    error_message: Optional[str] = None
     started_at: datetime
     ended_at: Optional[datetime] = None
     execution_logs: list[TaskLogOut] = []

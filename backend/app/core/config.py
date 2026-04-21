@@ -4,6 +4,7 @@ from pydantic import field_validator
 
 class Settings(BaseSettings):
     APP_NAME: str = "intake-gateway"
+    APP_DATABASE_URL: str = "sqlite:///./intakegateway_app.db"
     APP_ENV: str = "dev"
     APP_LOG_LEVEL: str = "INFO"
     APP_TIMEZONE: str = "Asia/Riyadh"
@@ -26,7 +27,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     @property
-    def sqlalchemy_url(self) -> str:
+    def destination_sqlalchemy_url(self) -> str:
         # Using oracledb with thin mode
         # For older Oracle versions, Oracle Instant Client (thick mode) may be required
         
@@ -57,6 +58,11 @@ class Settings(BaseSettings):
             )
         
         return f"oracle+oracledb://{self.ORACLE_USER}:{self.ORACLE_PASSWORD}@{self.ORACLE_HOST}:{self.ORACLE_PORT}/?service_name={self.ORACLE_SERVICE_NAME}"
+
+    @property
+    def sqlalchemy_url(self) -> str:
+        """Backward-compatible alias for the destination DB URL."""
+        return self.destination_sqlalchemy_url
 
     @property
     def celery_broker(self) -> str:

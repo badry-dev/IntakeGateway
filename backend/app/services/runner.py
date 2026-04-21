@@ -14,6 +14,7 @@ from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task_log import TaskLog
 from app.db.models.task_run_log import TaskRunLog
 from app.services import api_connector, normalizer, mapper, validator
+from app.services.connection_pool import get_session as get_destination_session
 from app.core.logging import set_task_context, clear_task_context
 
 
@@ -33,7 +34,7 @@ class RowResult:
     message: str = ""
 
 
-async def run_import(task_id: int, db: Session = None) -> dict:
+async def run_import(task_id: int, db: Session = None, destination_db: Session = None) -> dict:
     """
     Execute complete data import pipeline for a task
     
@@ -45,7 +46,7 @@ async def run_import(task_id: int, db: Session = None) -> dict:
     5. Flatten nested structures
     6. Map source fields to destination columns
     7. Validate each row
-    8. Insert valid rows to Oracle in batches
+    8. Insert valid rows to the destination database in batches
     9. Log errors for invalid rows
     10. Update TaskRun with results
     
@@ -57,6 +58,8 @@ async def run_import(task_id: int, db: Session = None) -> dict:
         close_db = True
     else:
         close_db = False
+
+    close_destination_db = False
     
     task_run_id = None
     
@@ -164,16 +167,23 @@ async def run_import(task_id: int, db: Session = None) -> dict:
         task_run.error_count = len(invalid_rows)
         db.commit()
         
-        # Step 9: Insert/Upsert valid rows to Oracle
+        # Step 9: Insert/Upsert valid rows to the configured destination database
         if valid_rows:
+            log_step(db, task_run_id, "CONNECT_DESTINATION", "Opening destination database session")
+
+            if destination_db is None:
+                destination_db = get_destination_session(task.connection_id)
+                close_destination_db = True
+
             if task.upsert_enabled:
                 # Use upsert logic with skip conditions
                 log_step(db, task_run_id, "UPSERT_DB", f"Upserting {len(valid_rows)} rows to {task.dest_table}")
 
                 upsert_results = process_rows_with_upsert(
-                    db=db,
+                    db=destination_db,
                     task=task,
                     task_run_id=task_run_id,
+                    app_db=db,
                     rows=valid_rows
                 )
 
@@ -193,7 +203,7 @@ async def run_import(task_id: int, db: Session = None) -> dict:
                 log_step(db, task_run_id, "INSERT_DB", f"Inserting {len(valid_rows)} rows to {task.dest_table}")
 
                 rows_inserted = insert_batch(
-                    db=db,
+                    db=destination_db,
                     table_name=task.dest_table,
                     rows=valid_rows,
                     batch_size=task.batch_size
@@ -241,6 +251,7 @@ async def run_import(task_id: int, db: Session = None) -> dict:
             if task_run:
                 task_run.status = TaskStatus.FAILED.value
                 task_run.ended_at = datetime.now(timezone.utc)
+                task_run.error_message = str(e)
                 db.commit()
                 
                 log_step(db, task_run_id, "ERROR", f"Fatal error: {str(e)}")
@@ -250,6 +261,8 @@ async def run_import(task_id: int, db: Session = None) -> dict:
     finally:
         # Clear logging context
         clear_task_context()
+        if close_destination_db and destination_db is not None:
+            destination_db.close()
         if close_db:
             db.close()
 
@@ -261,7 +274,7 @@ def insert_batch(
     batch_size: int = 500
 ) -> int:
     """
-    Insert rows into Oracle table in batches with transaction handling
+    Insert rows into the destination table in batches with transaction handling
 
     Args:
         db: SQLAlchemy session
@@ -310,6 +323,7 @@ def process_rows_with_upsert(
     task: Task,
     task_run_id: int,
     rows: list[dict],
+    app_db: Session | None = None,
 ) -> dict:
     """
     Process rows with upsert logic and skip conditions.
@@ -334,6 +348,9 @@ def process_rows_with_upsert(
 
     if not rows:
         return results
+
+    if app_db is None:
+        app_db = db
 
     upsert_keys = task.upsert_keys or []
     table_name = task.dest_table
@@ -364,7 +381,7 @@ def process_rows_with_upsert(
                 })
                 # Log to TaskRunLog
                 log_row_error(
-                    db=db,
+                    db=app_db,
                     task_run_id=task_run_id,
                     row_number=idx,
                     column_name="_upsert",

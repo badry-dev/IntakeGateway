@@ -67,6 +67,19 @@ class TestConnectionStorage:
         assert result["id"] is not None
         assert result["is_default"] == True  # First connection is default
 
+    def test_corrupted_file_returns_empty_structure(self, temp_file):
+        """Unreadable encrypted data should not break the app."""
+        Path(temp_file).write_text("not-valid-encrypted-data", encoding="utf-8")
+
+        from app.services.connection_storage import ConnectionStorageService
+        service = ConnectionStorageService(file_path=temp_file)
+
+        result = service.list_connections()
+
+        assert result["connections"] == []
+        assert result["active_connection_id"] is None
+        assert result["version"] == 1
+
     def test_create_multiple_connections(self, storage_service):
         """Test creating multiple connections"""
         conn1 = storage_service.create_connection({

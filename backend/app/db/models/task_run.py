@@ -1,8 +1,8 @@
 
 from enum import Enum
-from sqlalchemy import BigInteger, Column, DateTime, Integer, String, Text
-from sqlalchemy.sql import func
+from sqlalchemy import Column, DateTime, Integer, String
 from app.db.session import Base
+from app.db.types import ID_TYPE
 
 
 class TaskStatus(str, Enum):
@@ -16,8 +16,8 @@ class TaskStatus(str, Enum):
 
 class TaskRun(Base):
     __tablename__ = "task_run"
-    id = Column(BigInteger, primary_key=True)
-    task_id = Column(BigInteger, nullable=False, index=True)
+    id = Column(ID_TYPE, primary_key=True, autoincrement=True)
+    task_id = Column(ID_TYPE, nullable=False, index=True)
     status = Column(String(30), nullable=False, default=TaskStatus.PENDING.value)
     started_at = Column(DateTime(timezone=True), nullable=True)
     ended_at = Column(DateTime(timezone=True), nullable=True)
@@ -27,3 +27,4 @@ class TaskRun(Base):
     rows_skipped = Column(Integer, default=0)  # Phase 8: Skipped due to skip condition
     error_count = Column(Integer, default=0)
     warning_count = Column(Integer, default=0)
+    error_message = Column(String(2000), nullable=True)

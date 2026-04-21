@@ -31,15 +31,19 @@ class ConnectionStorageService:
         self.file_path = Path(file_path)
         self._encryption = get_encryption_service()
 
+    @staticmethod
+    def _empty_data() -> dict:
+        return {
+            "version": 1,
+            "active_connection_id": None,
+            "connections": []
+        }
+
     def _read_file(self) -> dict:
         """Read and decrypt connections file"""
         if not self.file_path.exists():
             logger.debug(f"Connections file not found at {self.file_path}, returning empty structure")
-            return {
-                "version": 1,
-                "active_connection_id": None,
-                "connections": []
-            }
+            return self._empty_data()
 
         try:
             encrypted_content = self.file_path.read_text(encoding='utf-8')
@@ -47,17 +51,16 @@ class ConnectionStorageService:
             # Handle empty file
             if not encrypted_content or encrypted_content.strip() == '':
                 logger.debug(f"Empty connections file at {self.file_path}, returning empty structure")
-                return {
-                    "version": 1,
-                    "active_connection_id": None,
-                    "connections": []
-                }
+                return self._empty_data()
             
             decrypted = self._encryption.decrypt(encrypted_content)
             return json.loads(decrypted)
         except Exception as e:
-            logger.error(f"Failed to read connections file: {e}")
-            raise ValueError(f"Failed to read connections file: {e}") from e
+            logger.error(
+                f"Failed to read connections file at {self.file_path}: {e}. "
+                "Treating destination connections as empty so the app remains usable."
+            )
+            return self._empty_data()
 
     def _write_file(self, data: dict) -> None:
         """Encrypt and write connections file"""

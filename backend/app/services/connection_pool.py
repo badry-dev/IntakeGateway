@@ -8,16 +8,35 @@ Supports Oracle, PostgreSQL, and MySQL databases.
 import time
 from typing import Optional
 from urllib.parse import quote_plus
+import oracledb
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.engine import Engine
 from loguru import logger
 from app.services.connection_storage import get_connection_storage
+from app.core.config import settings
 
 
 # Cache of engines by connection_id
 _engine_cache: dict[str, Engine] = {}
 _session_factories: dict[str, sessionmaker] = {}
+_oracle_client_attempted = False
+
+
+def _ensure_oracle_client_initialized() -> None:
+    """Try thick mode once, then quietly continue with thin mode."""
+    global _oracle_client_attempted
+
+    if _oracle_client_attempted:
+        return
+
+    _oracle_client_attempted = True
+
+    try:
+        oracledb.init_oracle_client(lib_dir=r"C:\oracle\instantclient_23_0")
+        logger.info("Oracle client initialized in THICK mode")
+    except Exception as exc:
+        logger.info(f"Oracle thick mode unavailable, using thin mode: {exc}")
 
 
 def build_connection_url(conn: dict, password: str) -> str:
@@ -43,6 +62,7 @@ def build_connection_url(conn: dict, password: str) -> str:
     encoded_password = quote_plus(password)
 
     if db_type == "oracle":
+        _ensure_oracle_client_initialized()
         service_name = conn.get("service_name", "ORCL")
         return (
             f"oracle+oracledb://{username}:{encoded_password}"
@@ -132,9 +152,15 @@ def _get_env_engine() -> Engine:
         SQLAlchemy Engine from default session configuration
     """
     if "env" not in _engine_cache:
-        from app.db.session import engine as default_engine
-        _engine_cache["env"] = default_engine
-        logger.debug("Using environment variable engine")
+        _ensure_oracle_client_initialized()
+        _engine_cache["env"] = create_engine(
+            settings.destination_sqlalchemy_url,
+            pool_size=5,
+            max_overflow=5,
+            pool_pre_ping=True,
+            future=True,
+        )
+        logger.debug("Using environment variable destination engine")
     return _engine_cache["env"]
 
 
@@ -198,6 +224,9 @@ def test_connection(config: dict) -> dict:
     test_config = {k: v for k, v in config.items() if k != "password"}
 
     try:
+        if test_config.get("db_type", "oracle") == "oracle":
+            _ensure_oracle_client_initialized()
+
         url = build_connection_url(test_config, password)
 
         # Create temporary engine with minimal pool

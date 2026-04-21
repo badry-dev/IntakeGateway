@@ -45,7 +45,8 @@ export const mappingKeys = {
   details: () => [...mappingKeys.all, 'detail'] as const,
   detail: (id: number) => [...mappingKeys.details(), id] as const,
   preview: (taskId: number) => [...mappingKeys.all, 'preview', taskId] as const,
-  columns: (tableName: string) => [...mappingKeys.all, 'columns', tableName] as const,
+  columns: (tableName: string, connectionId?: string) =>
+    [...mappingKeys.all, 'columns', { tableName, connectionId: connectionId || null }] as const,
   suggestions: (sourceType: string, destType: string) => 
     [...mappingKeys.all, 'suggestions', sourceType, destType] as const,
 }
@@ -257,10 +258,10 @@ export function usePreviewFieldsStandalone(params: {
  * Fetch Oracle column metadata for a table
  * Used to show available destination columns and their types
  */
-export function useOracleColumns(tableName: string) {
+export function useOracleColumns(tableName: string, connectionId?: string) {
   return useQuery({
-    queryKey: mappingKeys.columns(tableName),
-    queryFn: () => apiClient.getOracleColumns(tableName),
+    queryKey: mappingKeys.columns(tableName, connectionId),
+    queryFn: () => apiClient.getOracleColumns(tableName, connectionId),
     enabled: tableName.length > 0,
     staleTime: 60000, // 1 minute
   })

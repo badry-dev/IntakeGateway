@@ -26,6 +26,7 @@ from app.db.schemas.column_mapping import (
     FieldPreview,
 )
 from app.services.api_connector import fetch_sample_response, get_record_type_info
+from app.services.connection_pool import get_session as get_destination_session
 from app.services.oracle_metadata import get_table_columns
 from app.services.transform_suggester import suggest_transforms
 import json
@@ -333,7 +334,7 @@ async def preview_fields(
 @router.get("/oracle/tables/{table_name}/columns", response_model=OracleColumnsResponse)
 def get_columns(
     table_name: str,
-    db: Session = Depends(get_db)
+    connection_id: str | None = Query(None, description="Optional destination connection ID"),
 ):
     """
     Query Oracle database for table column information.
@@ -352,7 +353,13 @@ def get_columns(
         400: Permission denied or database error
     """
     try:
-        columns = get_table_columns(db, table_name)
+        destination_db = None
+        try:
+            destination_db = get_destination_session(connection_id)
+            columns = get_table_columns(destination_db, table_name)
+        finally:
+            if destination_db is not None:
+                destination_db.close()
         
         # If we get an empty list, return 404 with helpful message
         if not columns:

@@ -11,3 +11,8 @@ build/
 *.pyd
 .DS_Store
 project progress/
+backend/.codex-run/
+frontend/.codex-run/
+backend/intakegateway_app.db
+connections.enc
+backend/connections.enc

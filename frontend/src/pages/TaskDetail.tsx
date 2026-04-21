@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   useTask,
+  useConnections,
   useUpdateTask,
   useDeleteTask,
   useColumnMappings,
@@ -30,6 +31,7 @@ export function TaskDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { data: task, isLoading, error } = useTask(Number(id) || 0)
+  const { data: connectionsData } = useConnections()
   const updateTaskMutation = useUpdateTask()
   const deleteTaskMutation = useDeleteTask()
   const { data: mappings } = useColumnMappings(Number(id) || 0)
@@ -41,8 +43,15 @@ export function TaskDetail() {
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [formData, setFormData] = useState<TaskFormData>({
     name: '', description: '', endpoint_path: '', http_method: 'GET',
-    dest_table: '', headers_json: {}, body_json: {}, batch_size: 500, is_active: true,
+    dest_table: '', headers_json: {}, body_json: {}, batch_size: 500, is_active: true, connection_id: undefined,
   })
+
+  const activeConnection = connectionsData?.connections.find(
+    (connection) => connection.id === connectionsData.active_connection_id
+  )
+  const selectedConnection = connectionsData?.connections.find(
+    (connection) => connection.id === task?.connection_id
+  )
 
   React.useEffect(() => {
     if (task) {
@@ -50,7 +59,7 @@ export function TaskDetail() {
         name: task.name, description: task.description || '', endpoint_path: task.endpoint_path,
         http_method: task.http_method as any, dest_table: task.dest_table,
         headers_json: task.headers_json || {}, body_json: task.body_json || {},
-        batch_size: task.batch_size, is_active: task.is_active,
+        batch_size: task.batch_size, is_active: task.is_active, connection_id: task.connection_id,
       })
     }
   }, [task])
@@ -129,6 +138,9 @@ export function TaskDetail() {
             </Descriptions.Item>
             <Descriptions.Item label="HTTP Method"><Text code>{task.http_method}</Text></Descriptions.Item>
             <Descriptions.Item label="Destination Table"><Text code>{task.dest_table}</Text></Descriptions.Item>
+            <Descriptions.Item label="Destination Connection">
+              {selectedConnection?.name || activeConnection?.name || 'Active/default connection'}
+            </Descriptions.Item>
             <Descriptions.Item label="Endpoint URL" span={2}>
               <Space>
                 <Text code copyable style={{ wordBreak: 'break-all' }}>{task.endpoint_path}</Text>
@@ -189,7 +201,7 @@ export function TaskDetail() {
       ),
       children: (
         <Card title="Column Mapping Configuration" extra={<Text type="secondary">Map API response fields to database columns</Text>}>
-          <ColumnMappingEditor taskId={Number(id)} />
+          <ColumnMappingEditor taskId={Number(id)} taskFormData={formData} />
         </Card>
       ),
     },
@@ -243,6 +255,20 @@ export function TaskDetail() {
               <Text strong>Table Name *</Text>
               <Input value={formData.dest_table} onChange={(e) => setFormData({ ...formData, dest_table: e.target.value })} />
             </div>
+          </div>
+          <div>
+            <Text strong>Destination Connection</Text>
+            <Select
+              allowClear
+              placeholder={activeConnection ? `Use active connection (${activeConnection.name})` : 'Use active/default connection'}
+              value={formData.connection_id}
+              onChange={(value) => setFormData({ ...formData, connection_id: value })}
+              options={(connectionsData?.connections || []).map((connection) => ({
+                value: connection.id,
+                label: `${connection.name} (${connection.db_type})`,
+              }))}
+              style={{ width: '100%' }}
+            />
           </div>
         </Space>
       </Modal>

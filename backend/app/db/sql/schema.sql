@@ -1,5 +1,7 @@
 
--- Minimal app schema for MVP (Oracle SQL - Compatible with Oracle 11g+)
+-- Legacy reference schema for historical Oracle-backed app state.
+-- Current app state now lives in the local APP_DATABASE_URL database.
+-- Destination ingestion still targets external databases such as Oracle.
 
 -- Create sequences for auto-increment
 CREATE SEQUENCE task_seq START WITH 1 INCREMENT BY 1;

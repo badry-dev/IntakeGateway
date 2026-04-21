@@ -1,7 +1,7 @@
 # IntakeGateway: Project Orientation Document
 
-**Document Version:** 1.0
-**Date:** February 4, 2026
+**Document Version:** 1.1
+**Date:** April 21, 2026
 **Project Codename:** IntakeGateway
 
 ---
@@ -10,13 +10,19 @@
 
 ### Product Purpose
 
-**IntakeGateway** is an enterprise-grade data integration platform that automates the extraction of data from REST APIs and imports it into Oracle databases. It eliminates manual data entry by providing:
+**IntakeGateway** is an enterprise-grade data integration platform that automates the extraction of data from REST APIs and imports it into destination databases. It eliminates manual data entry by providing:
 
 - **Automated API Data Fetching** - Connect to any REST API with configurable authentication
-- **Intelligent Field Mapping** - Map JSON response fields to Oracle table columns with transformation suggestions
+- **Intelligent Field Mapping** - Map JSON response fields to destination table columns with transformation suggestions
 - **Scheduled Execution** - Cron-based scheduling for recurring imports
 - **Audit Trail** - Complete logging of all import operations with row-level error tracking
 - **Upsert Support** - Insert or update records with skip logic for processed rows
+
+### Architecture Update (April 2026)
+
+- App-owned data (`tasks`, `task_runs`, `task_logs`, `task_run_logs`, `task_schedules`, and `column_mappings`) now lives in a local app database, defaulting to SQLite via `APP_DATABASE_URL`.
+- Destination database access is isolated behind connection selection and fallback settings. Oracle is the current ingestion target, but app startup, task browsing, and scheduling no longer depend on Oracle connectivity.
+- `connections.enc` is created automatically when the first destination connection is saved. Missing or unreadable files are treated as an empty connection store so the UI remains usable.
 
 ### Users and Roles
 
@@ -33,17 +39,17 @@
 1. **Task Creation Flow**
    - User creates task with API endpoint configuration
    - User configures authentication (Bearer, API Key, Basic, OAuth)
-   - User maps source JSON fields to Oracle columns
+   - User maps source JSON fields to destination columns
    - User optionally configures upsert/skip logic
-   - Task saved to database
+   - Task saved to the local app database
 
 2. **Task Execution Flow**
    - User triggers task manually OR scheduler triggers via cron
    - System fetches data from external API
    - System normalizes/flattens JSON response
-   - System validates data against Oracle schema
-   - System inserts/updates records in Oracle
-   - System logs results (rows inserted, updated, skipped, errors)
+   - System validates data against the selected destination schema
+   - System inserts/updates records in the destination database
+   - System logs results (rows inserted, updated, skipped, errors) in the local app database
 
 3. **Schedule Management Flow**
    - User creates cron schedule for a task
@@ -129,18 +135,16 @@
 │  └─────────────────────────────────────────────────────────────────┘   │
 │                                      │                                  │
 │                                      ▼                                  │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │               Oracle Database (11g+ / 19c+)                     │   │
-│  │  ┌──────────────────────────────────────────────────────────┐  │   │
-│  │  │  Application Tables      │  Destination Tables (User)    │  │   │
-│  │  │  - TASKS                 │  - <user-defined tables>      │  │   │
-│  │  │  - TASK_RUNS             │                               │  │   │
-│  │  │  - TASK_LOGS             │                               │  │   │
-│  │  │  - TASK_RUN_LOGS         │                               │  │   │
-│  │  │  - TASK_SCHEDULES        │                               │  │   │
-│  │  │  - COLUMN_MAPPINGS       │                               │  │   │
-│  │  └──────────────────────────────────────────────────────────┘  │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
+│  ┌───────────────────────┐    ┌───────────────────────────────────┐   │
+│  │   App Database        │    │   Destination Database           │   │
+│  │   (SQLite default)    │    │   (Oracle currently)             │   │
+│  │  - TASKS              │    │  - <user-defined tables>         │   │
+│  │  - TASK_RUNS          │    │  - schema metadata queried       │   │
+│  │  - TASK_LOGS          │    │    during mapping/validation     │   │
+│  │  - TASK_RUN_LOGS      │    │  - written only during ingestion │   │
+│  │  - TASK_SCHEDULES     │    │                                   │   │
+│  │  - COLUMN_MAPPINGS    │    │                                   │   │
+│  └───────────────────────┘    └───────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -148,11 +152,11 @@
 
 | Flow | Entry Point | Critical Path | Side Effects |
 |------|-------------|---------------|--------------|
-| Create Task | POST /api/v1/tasks | Route → Pydantic → SQLAlchemy → Oracle | None |
-| Execute Task | POST /api/v1/tasks/{id}/run | Route → Celery → Runner Pipeline → Oracle | External API call, DB writes, Logging |
+| Create Task | POST /api/v1/tasks | Route → Pydantic → SQLAlchemy → Local app DB | None |
+| Execute Task | POST /api/v1/tasks/{id}/run | Route → Celery → Runner Pipeline → Local app DB + destination DB | External API call, destination DB writes, logging |
 | View Runs | GET /api/v1/runs | Route → SQLAlchemy → Response | None |
-| Create Schedule | POST /api/v1/schedules/{task_id} | Route → APScheduler Registration → Oracle | Cron job registered |
-| Map Columns | POST /api/v1/tasks/{id}/mappings | Route → OracleMetadata → SQLAlchemy | None |
+| Create Schedule | POST /api/v1/schedules/{task_id} | Route → APScheduler Registration → Local app DB | Cron job registered |
+| Map Columns | POST /api/v1/tasks/{id}/mappings | Route → Destination metadata → SQLAlchemy | None |
 
 ---
 
@@ -168,14 +172,14 @@
 | Node.js | 18+ | Frontend runtime |
 | Docker | 24+ | Container orchestration |
 | Docker Compose | 2.20+ | Multi-container setup |
-| Oracle Database | 11g+ / 19c+ | Target database |
+| Oracle Database | 11g+ / 19c+ | Optional destination database for ingestion tests |
 
 #### Environment Setup
 
 1. **Clone Repository**
 ```bash
-git clone https://github.com/Badry-Kudu/API2DB-Importer.git
-cd API2DB-Importer
+git clone https://github.com/Badry-Kudu/IntakeGateway.git
+cd IntakeGateway
 ```
 
 2. **Copy Environment File**
@@ -185,18 +189,22 @@ cp .env.example .env
 
 3. **Configure Environment Variables**
 ```bash
-# Edit .env with your Oracle connection details
-# Required variables:
+# Edit .env with your app DB and destination settings
+# App database (default local SQLite)
+APP_DATABASE_URL=sqlite:///./intakegateway_app.db
+
+# Optional destination fallback variables:
 ORACLE_USER=your_oracle_user
 ORACLE_PASSWORD=your_oracle_password
 ORACLE_HOST=your_oracle_host
 ORACLE_PORT=1521
 ORACLE_SERVICE_NAME=ORCLPDB1
 
-# Required for encryption (change in production!)
-SECRET_KEY=your-secret-key-change-me-in-production
+# Required for encrypted destination connections
+ENCRYPTION_KEY=your-base64-fernet-key
 
 # Optional
+CONNECTIONS_FILE_PATH=connections.enc
 APP_TIMEZONE=Asia/Riyadh
 APP_LOG_LEVEL=INFO
 ```
@@ -206,13 +214,14 @@ APP_LOG_LEVEL=INFO
 **Option A: Docker Compose (Recommended)**
 ```bash
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # Services started:
 # - api (FastAPI): http://localhost:8000
 # - worker (Celery): background processing
 # - scheduler (APScheduler): cron jobs
 # - redis: message broker on port 6379
+# Frontend is started separately with: cd frontend && npm run dev
 ```
 
 **Option B: Manual Start (Development)**
@@ -252,7 +261,8 @@ npm run dev
 |-------|---------------|-----------------|
 | Frontend loads | Visit http://localhost:5173 | Dashboard displays |
 | Backend responds | Visit http://localhost:8000/docs | Swagger UI loads |
-| Database connected | Check backend logs | "Connected to Oracle" |
+| App database initialized | Check backend logs or `backend/intakegateway_app.db` | App routes return 200 without Oracle |
+| Destination connection (optional) | Create/test a connection in Settings | Connection test succeeds when target DB is reachable |
 | Redis connected | Check Celery worker logs | "Connected to redis://..." |
 
 #### Complete User Flow Test
@@ -262,7 +272,7 @@ npm run dev
 3. Enter task name: "Test Task"
 4. Enter API endpoint: https://jsonplaceholder.typicode.com/users
 5. Select Auth: None
-6. Select destination table (from your Oracle schema)
+6. Select destination table (from the chosen destination schema)
 7. Map fields: name → NAME_COLUMN, email → EMAIL_COLUMN
 8. Save task
 9. Click "Run Now"
@@ -464,7 +474,7 @@ TABLE: column_mappings
 | Task Configuration | `tasks` table | - | - |
 | Run History | `task_runs` table | - | - |
 | Task Statistics | Aggregated | `task_runs` | Computed on-demand |
-| Oracle Table Schema | Oracle DB | - | Not cached |
+| Destination Table Schema | Destination DB | - | Not cached |
 | Next Run Date | Calculated | cron_expression | `task_schedules.next_run_date` |
 
 ### Write Operation Trace: Task Execution
@@ -499,7 +509,7 @@ Request: POST /api/v1/tasks/{id}/run
        └── Apply column mappings (no DB write)
 
    4e. VALIDATE DATA (validator.py)
-       └── Check against Oracle schema (no DB write)
+       └── Check against destination schema (no DB write)
 
    4f. PROCESS ROWS (runner.py:process_rows_with_upsert())
        FOR EACH ROW:
@@ -793,6 +803,9 @@ Tests:
 
 ```bash
 # Required
+APP_DATABASE_URL=sqlite:///./intakegateway_app.db
+
+# Optional destination fallback
 ORACLE_USER=           # Oracle database username
 ORACLE_PASSWORD=       # Oracle database password
 ORACLE_HOST=           # Oracle host (IP or hostname)
@@ -800,9 +813,10 @@ ORACLE_PORT=1521       # Oracle port (default: 1521)
 ORACLE_SERVICE_NAME=   # Oracle service name
 
 # Required (Security)
-SECRET_KEY=            # Encryption key (min 32 chars for production)
+ENCRYPTION_KEY=        # Base64 Fernet key for encrypted connection storage
 
 # Optional
+CONNECTIONS_FILE_PATH=connections.enc
 APP_NAME=intake-gateway
 APP_ENV=dev            # dev, staging, production
 APP_LOG_LEVEL=INFO     # DEBUG, INFO, WARNING, ERROR

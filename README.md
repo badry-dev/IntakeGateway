@@ -2,7 +2,7 @@
 
 **Status**: ✅ Phase 8 Complete (Upsert/Skip) | ✅ Phase 9 Complete (Ant Design Migration) | Production Ready
 
-A modern web application for importing data from external APIs into Oracle databases. Features a comprehensive React frontend with Ant Design UI, a robust Python FastAPI backend with async task processing, and full test coverage.
+A modern web application for importing data from external APIs into destination databases. The app keeps its own operational data in a local SQLite database while using Oracle as the current ingestion target, so broken destination connectivity does not prevent the UI or API from working.
 
 ---
 
@@ -20,12 +20,18 @@ A modern web application for importing data from external APIs into Oracle datab
 **IntakeGateway** enables users to:
 - Create and manage API data import tasks
 - Configure API endpoints with authentication (Bearer, API Key, Basic, OAuth)
-- Map API response fields to database columns with transform suggestions
+- Map API response fields to destination database columns with transform suggestions
 - Schedule recurring imports with cron expressions
 - Trigger task executions with real-time monitoring
 - Configure upsert logic with skip conditions
 - View detailed logs, statistics, and error reports
-- Manage multiple database connections with encrypted credentials
+- Manage destination database connections with encrypted credentials
+
+## Architecture Update
+
+- App state (`tasks`, `task_runs`, `task_schedules`, `column_mappings`, and logs) is stored locally via `APP_DATABASE_URL`, which defaults to SQLite.
+- Destination database access is isolated from the app database. Oracle is the current ingestion target, but the backend can start and serve the UI even when no destination connection is available.
+- `backend/connections.enc` is created automatically the first time a destination connection is saved. Missing or unreadable files now fall back to an empty connection list instead of breaking the app.
 
 ---
 
@@ -44,12 +50,13 @@ A modern web application for importing data from external APIs into Oracle datab
 ### Backend
 - **Python 3.11** with **FastAPI 0.104**
 - **SQLAlchemy 2.0** ORM for database operations
+- **SQLite** for local app state via `APP_DATABASE_URL`
 - **Celery 5.4** with Redis for async task execution
 - **APScheduler 3.10** for cron-based scheduling
 - **Pydantic 2.4** for data validation
 - **cryptography** for encrypted credential storage
 - **pytest** for testing (110+ test cases)
-- **Oracle Database** (11g+ compatible)
+- **Oracle Database** as the current ingestion destination
 
 ---
 
@@ -71,8 +78,8 @@ A modern web application for importing data from external APIs into Oracle datab
 ### Prerequisites
 - Node.js 18+ (for frontend)
 - Python 3.11+ (for backend)
-- Oracle Database (production) or test Oracle instance
 - Redis (for Celery)
+- Optional: Oracle access if you want to test destination metadata lookups or ingestion end-to-end
 
 ### Setup Frontend
 
@@ -87,6 +94,7 @@ Frontend available at: **http://localhost:5173**
 
 ```bash
 cd backend
+# Copy .env.example to .env before first run
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -94,6 +102,8 @@ python -m uvicorn app.main:app --reload --port 8000
 ```
 Backend API available at: **http://localhost:8000**
 API Docs available at: **http://localhost:8000/docs**
+
+By default the backend creates `backend/intakegateway_app.db` and uses it for tasks, runs, schedules, mappings, and logs. Oracle settings are only required when you want to read destination metadata or run ingestion into a destination database.
 
 ### Run Tests
 
@@ -119,7 +129,7 @@ IntakeGateway/
 │   ├── app/
 │   │   ├── api/v1/routes/     # REST endpoints (tasks, runs, schedules, connections, mappings)
 │   │   ├── services/          # Business logic (runner, api_connector, mapper, validator, etc.)
-│   │   ├── db/                # Database models & schemas (SQLAlchemy)
+│   │   ├── db/                # App DB models, schemas, and cross-database types
 │   │   ├── workers/           # Celery task queue configuration
 │   │   └── core/              # Config, encryption, logging
 │   └── tests/                 # Unit + integration tests (110+ cases)
@@ -221,15 +231,16 @@ POST   /api/v1/connections/{id}/activate  # Set active connection
 - **Runner** - Main execution pipeline (fetch → normalize → validate → map → insert)
 - **ApiConnector** - External API communication with auth support
 - **Mapper** - Field value mapping and transformation
-- **Validator** - Data validation against Oracle schema
+- **Validator** - Data validation against the selected destination schema
 - **Normalizer** - JSON flattening and data normalization
-- **ConnectionService** - Multi-database connection management
+- **Connection Services** - Encrypted destination connection storage and pooling
 - **Scheduler** - APScheduler integration for cron jobs
 - **TransformSuggester** - Type-based transform recommendations
 
 ### Infrastructure
-- Oracle connection pooling (thin mode)
-- Encrypted credential storage
+- Local SQLite app database (`APP_DATABASE_URL`)
+- Destination DB connection pooling and metadata lookup
+- Encrypted credential storage with graceful empty-state fallback
 - Async task processing with Celery + Redis
 - Comprehensive error handling and logging (loguru)
 - Request validation with Pydantic v2
@@ -257,10 +268,11 @@ docker compose up --build
 
 This starts:
 - FastAPI backend (port 8000)
-- React frontend (port 5173)
 - Redis (port 6379)
 - Celery worker (background)
 - Scheduler (background)
+
+Run the frontend separately with `cd frontend && npm run dev`.
 
 ---
 
@@ -268,14 +280,23 @@ This starts:
 
 ```env
 # Backend
+APP_DATABASE_URL=sqlite:///./intakegateway_app.db
+
+# Destination database fallback (optional at startup)
 ORACLE_USER=your_oracle_user
 ORACLE_PASSWORD=your_oracle_password
 ORACLE_HOST=localhost
 ORACLE_PORT=1521
 ORACLE_SERVICE_NAME=your_service
+
+# Redis / Celery
 REDIS_URL=redis://localhost:6379
 CELERY_BROKER_URL=redis://localhost:6379/0
-SECRET_KEY=your_secret_key
+
+# Encrypted destination connections
+ENCRYPTION_KEY=generated_fernet_key
+CONNECTIONS_FILE_PATH=connections.enc
+FRONTEND_URL=http://localhost:5173
 ```
 
 ---

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.routes import tasks, runs, column_mappings, schedules, connections
 from app.core.config import settings
+from app.db.session import init_app_database
 
 app = FastAPI(title="IntakeGateway", version="0.1.0")
 
@@ -30,6 +31,11 @@ app.include_router(connections.router, tags=["connections"])
 # Also include oracle metadata routes without /tasks prefix
 from app.api.v1.routes.column_mappings import router as oracle_router
 app.include_router(oracle_router, prefix="/api/v1", tags=["oracle"])
+
+
+@app.on_event("startup")
+def startup_event():
+    init_app_database()
 
 @app.get("/health")
 def health():

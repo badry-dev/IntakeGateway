@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useCreateTask, useCreateMappings, useOracleColumns } from '@/hooks/api'
+import { useConnections, useCreateTask, useCreateMappings } from '@/hooks/api'
 import { Card, Button, Input, Steps, Select, Space, Typography, Alert, message } from 'antd'
 import { ArrowLeftOutlined } from '@ant-design/icons'
 import { TaskFormData, ColumnMappingCreate, AuthType } from '@/types'
@@ -20,6 +20,7 @@ const STEPS = [
 
 export function TaskWizard() {
   const navigate = useNavigate()
+  const { data: connectionsData } = useConnections()
   const createTaskMutation = useCreateTask()
   const createMappingsMutation = useCreateMappings()
   const [currentStep, setCurrentStep] = useState(0)
@@ -50,7 +51,9 @@ export function TaskWizard() {
   const [mappings, setMappings] = useState<ColumnMappingCreate[]>([])
   const [skipMappings, setSkipMappings] = useState(false)
 
-  useOracleColumns(formData.dest_table || '')
+  const activeConnection = connectionsData?.connections.find(
+    (connection) => connection.id === connectionsData.active_connection_id
+  )
 
   const goNext = () => {
     if (currentStep === 2) {
@@ -160,6 +163,23 @@ export function TaskWizard() {
                 value={formData.dest_table}
                 onChange={(e) => setFormData({ ...formData, dest_table: e.target.value })}
               />
+            </div>
+            <div>
+              <Text strong>Destination Connection</Text>
+              <Select
+                allowClear
+                placeholder={activeConnection ? `Use active connection (${activeConnection.name})` : 'Use active/default connection'}
+                value={formData.connection_id}
+                onChange={(value) => setFormData({ ...formData, connection_id: value })}
+                options={(connectionsData?.connections || []).map((connection) => ({
+                  value: connection.id,
+                  label: `${connection.name} (${connection.db_type})`,
+                }))}
+                style={{ width: '100%' }}
+              />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Leave this unset to use the current active destination connection.
+              </Text>
             </div>
           </Space>
         )}
@@ -372,6 +392,9 @@ export function TaskWizard() {
             <Card size="small" type="inner" title="Description"><Text>{formData.description || '(None)'}</Text></Card>
             <Card size="small" type="inner" title="Endpoint"><Text code>{formData.http_method} {formData.endpoint_path}</Text></Card>
             <Card size="small" type="inner" title="Table"><Text code>{formData.dest_table}</Text></Card>
+            <Card size="small" type="inner" title="Destination Connection">
+              <Text>{connectionsData?.connections.find((connection) => connection.id === formData.connection_id)?.name || activeConnection?.name || 'Active/default connection'}</Text>
+            </Card>
             {formData.auth_type && formData.auth_type !== 'none' && (
               <Card size="small" type="inner" title="Authentication">
                 <Text>Type: <Text code>{formData.auth_type}</Text></Text>
