@@ -38,8 +38,8 @@ def health():
 @app.get("/")
 def root():
     return {
-        "name": "IntakeGateway",
-        "version": "0.1.1",
+        "name": app.title,
+        "version": app.version,
         "docs": "/docs",
         "openapi": "/openapi.json"
     }
