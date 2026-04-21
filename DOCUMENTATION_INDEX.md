@@ -1,4 +1,4 @@
-# API2DB-Importer: Documentation Index
+# IntakeGateway: Documentation Index
 
 **Project Status**: All Phases Complete (1-9) | Production Ready
 **Last Updated**: April 2026
@@ -93,7 +93,7 @@
 ## Project Structure
 
 ```
-API2DB-Importer/
+IntakeGateway/
 ├── backend/                    # FastAPI application
 │   ├── app/
 │   │   ├── api/v1/routes/     # REST endpoints

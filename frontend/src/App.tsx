@@ -58,7 +58,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div style={{ padding: collapsed ? '16px 8px' : '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <DatabaseOutlined style={{ fontSize: 20, color: '#fff' }} />
-          {!collapsed && <Text strong style={{ color: '#fff', fontSize: 16 }}>API→DB</Text>}
+          {!collapsed && <Text strong style={{ color: '#fff', fontSize: 16 }}>IntakeGateway</Text>}
         </div>
         <Menu
           theme="dark"
@@ -75,7 +75,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
         }}>
           {!collapsed && (
             <>
-              <div>API→DB Importer v0.1.0</div>
+              <div>IntakeGateway v0.1.0</div>
               <div style={{ marginTop: 4 }}>Backend: <span style={{ color: '#52C41A' }}>Connected</span></div>
             </>
           )}

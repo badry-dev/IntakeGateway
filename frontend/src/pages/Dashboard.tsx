@@ -74,7 +74,7 @@ export function Dashboard() {
       <Row justify="space-between" align="middle">
         <Col>
           <Title level={2} style={{ margin: 0 }}>Dashboard</Title>
-          <Text type="secondary">Welcome to API→DB Importer</Text>
+          <Text type="secondary">Welcome to IntakeGateway</Text>
         </Col>
         <Col>
           <Link to="/tasks/new">

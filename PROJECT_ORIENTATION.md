@@ -1,8 +1,8 @@
-# API2DB-Importer: Project Orientation Document
+# IntakeGateway: Project Orientation Document
 
 **Document Version:** 1.0
 **Date:** February 4, 2026
-**Project Codename:** API2DB-Importer
+**Project Codename:** IntakeGateway
 
 ---
 
@@ -10,7 +10,7 @@
 
 ### Product Purpose
 
-**API2DB-Importer** is an enterprise-grade data integration platform that automates the extraction of data from REST APIs and imports it into Oracle databases. It eliminates manual data entry by providing:
+**IntakeGateway** is an enterprise-grade data integration platform that automates the extraction of data from REST APIs and imports it into Oracle databases. It eliminates manual data entry by providing:
 
 - **Automated API Data Fetching** - Connect to any REST API with configurable authentication
 - **Intelligent Field Mapping** - Map JSON response fields to Oracle table columns with transformation suggestions
@@ -728,7 +728,7 @@ Dashboard.tsx:useTaskStats()
 ## Appendix A: File Path Quick Reference
 
 ```
-BACKEND ROOT: /home/user/API2DB-Importer/backend/
+BACKEND ROOT: /home/user/IntakeGateway/backend/
 
 Configuration:
 ├── app/core/config.py           # Settings management
@@ -766,7 +766,7 @@ Tests:
     ├── unit/                    # Unit tests (9 files)
     └── integration/             # Integration tests (4 files)
 
-FRONTEND ROOT: /home/user/API2DB-Importer/frontend/
+FRONTEND ROOT: /home/user/IntakeGateway/frontend/
 
 Source:
 └── src/
@@ -803,7 +803,7 @@ ORACLE_SERVICE_NAME=   # Oracle service name
 SECRET_KEY=            # Encryption key (min 32 chars for production)
 
 # Optional
-APP_NAME=api-to-db-importer
+APP_NAME=intake-gateway
 APP_ENV=dev            # dev, staging, production
 APP_LOG_LEVEL=INFO     # DEBUG, INFO, WARNING, ERROR
 APP_TIMEZONE=UTC       # Timezone for scheduling

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.routes import tasks, runs, column_mappings, schedules, connections
 from app.core.config import settings
 
-app = FastAPI(title="API→DB Importer", version="0.1.0")
+app = FastAPI(title="IntakeGateway", version="0.1.0")
 
 # Add CORS middleware for frontend integration
 app.add_middleware(
@@ -38,8 +38,8 @@ def health():
 @app.get("/")
 def root():
     return {
-        "name": "API→DB Importer",
-        "version": "0.1.1",
+        "name": app.title,
+        "version": app.version,
         "docs": "/docs",
         "openapi": "/openapi.json"
     }

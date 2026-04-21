@@ -1,6 +1,6 @@
-# API2DB Importer — Admin Dashboard UI Prompt (Ant Design)
+# IntakeGateway — Admin Dashboard UI Prompt (Ant Design)
 
-Design a high-quality, production-ready admin dashboard UI for the **API2DB Importer** application using the Ant Design (AntD) system in a React + TypeScript environment. The interface must be visually clean, data-dense, and optimized for usability, following Ant Design principles: clarity, efficiency, and consistency.
+Design a high-quality, production-ready admin dashboard UI for the **IntakeGateway** application using the Ant Design (AntD) system in a React + TypeScript environment. The interface must be visually clean, data-dense, and optimized for usability, following Ant Design principles: clarity, efficiency, and consistency.
 
 > **Migration context**: The frontend is currently built with Radix UI primitives, Tailwind CSS, and CVA (Class Variance Authority). This prompt defines the target Ant Design architecture to migrate toward.
 
@@ -70,7 +70,7 @@ Use Ant Design `Layout` components (`Layout`, `Layout.Sider`, `Layout.Header`, `
   - Width: 240px (expanded), 80px (collapsed)
   - Dark theme (#001529)
   - Collapsible with trigger
-  - Logo section: Database icon + "API→DB" branding
+  - Logo section: Database icon + "IntakeGateway" branding
   - Footer: version info (v0.1.0) + backend connection status indicator
 
 - **Header**:

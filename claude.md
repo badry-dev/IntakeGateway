@@ -1,4 +1,4 @@
-# API2DB-Importer: Project Context & Development Guidelines
+# IntakeGateway: Project Context & Development Guidelines
 
 **Last Updated**: April 13, 2026
 **Project Status**: Phase 4 Complete | Phase 5 Complete | Phase 6 Complete | Phase 7 Complete | Phase 8 Complete | Phase 9 Complete (Ant Design Migration)
@@ -8,7 +8,7 @@
 
 ## 📋 Project Overview
 
-**API2DB-Importer** is a full-stack web application that enables users to:
+**IntakeGateway** is a full-stack web application that enables users to:
 - Create data import tasks that fetch from external APIs
 - Configure API endpoints with headers, authentication, and request bodies
 - Map API response fields to database columns
@@ -1232,9 +1232,11 @@ Phase 8 focuses on production-readiness and user experience improvements:
 ┌─────────────────────────────────────────────────────────────────┐
 │  Encrypted File Storage (Recommended)                            │
 ├─────────────────────────────────────────────────────────────────┤
-│  Location: /etc/api2db/connections.enc (configurable via env)   │
-│  Encryption: Fernet symmetric encryption                         │
-│  Master Key: ENCRYPTION_KEY environment variable                 │
+│  Default Location: connections.enc                              │
+│  Override: CONNECTIONS_FILE_PATH                                │
+│  Recommended Production Value: /etc/intakegateway/connections.enc │
+│  Encryption: Fernet symmetric encryption                        │
+│  Master Key: ENCRYPTION_KEY environment variable                │
 └─────────────────────────────────────────────────────────────────┘
 
 File Structure (JSON, encrypted at rest):
@@ -1246,7 +1248,7 @@ File Structure (JSON, encrypted at rest):
       "host": "db.example.com",
       "port": 1521,
       "service": "ORCL",
-      "username": "api2db_user",
+      "username": "intakegateway_user",
       "password": "encrypted_password_here",
       "is_default": true,
       "created_at": "2026-02-03T10:00:00Z",
@@ -1296,7 +1298,7 @@ import json
 from pathlib import Path
 from app.core.encryption import encrypt_data, decrypt_data
 
-DEFAULT_CONFIG_PATH = os.getenv("DB_CONFIG_PATH", "/etc/api2db/connections.enc")
+DEFAULT_CONFIG_PATH = os.getenv("DB_CONFIG_PATH", "/etc/intakegateway/connections.enc")
 
 class ConnectionFileService:
     def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
@@ -1591,7 +1593,7 @@ xl: 1280px  /* Large desktop */
 ```
 Desktop (lg+):           Mobile (< lg):
 ┌────┬──────────────┐    ┌──────────────────┐
-│ ☰  │              │    │ ☰ API2DB     [≡] │  <- Hamburger menu
+│ ☰  │              │    │ ☰ IntakeGateway     [≡] │  <- Hamburger menu
 │    │              │    ├──────────────────┤
 │ 📊 │   Content    │    │                  │
 │ 📋 │              │    │     Content      │
