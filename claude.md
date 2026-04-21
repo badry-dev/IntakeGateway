@@ -1232,9 +1232,11 @@ Phase 8 focuses on production-readiness and user experience improvements:
 ┌─────────────────────────────────────────────────────────────────┐
 │  Encrypted File Storage (Recommended)                            │
 ├─────────────────────────────────────────────────────────────────┤
-│  Location: /etc/intakegateway/connections.enc (configurable via env)   │
-│  Encryption: Fernet symmetric encryption                         │
-│  Master Key: ENCRYPTION_KEY environment variable                 │
+│  Default Location: connections.enc                              │
+│  Override: CONNECTIONS_FILE_PATH                                │
+│  Recommended Production Value: /etc/intakegateway/connections.enc │
+│  Encryption: Fernet symmetric encryption                        │
+│  Master Key: ENCRYPTION_KEY environment variable                │
 └─────────────────────────────────────────────────────────────────┘
 
 File Structure (JSON, encrypted at rest):
