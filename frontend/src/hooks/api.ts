@@ -45,8 +45,8 @@ export const mappingKeys = {
   details: () => [...mappingKeys.all, 'detail'] as const,
   detail: (id: number) => [...mappingKeys.details(), id] as const,
   preview: (taskId: number) => [...mappingKeys.all, 'preview', taskId] as const,
-  columns: (tableName: string, connectionId?: string) =>
-    [...mappingKeys.all, 'columns', { tableName, connectionId: connectionId || null }] as const,
+  columns: (tableName: string, connectionId: string) =>
+    [...mappingKeys.all, 'columns', { tableName, connectionId }] as const,
   suggestions: (sourceType: string, destType: string) => 
     [...mappingKeys.all, 'suggestions', sourceType, destType] as const,
 }
@@ -260,9 +260,9 @@ export function usePreviewFieldsStandalone(params: {
  */
 export function useOracleColumns(tableName: string, connectionId?: string) {
   return useQuery({
-    queryKey: mappingKeys.columns(tableName, connectionId),
-    queryFn: () => apiClient.getOracleColumns(tableName, connectionId),
-    enabled: tableName.length > 0,
+    queryKey: mappingKeys.columns(tableName, connectionId || ''),
+    queryFn: () => apiClient.getOracleColumns(tableName, connectionId as string),
+    enabled: tableName.length > 0 && !!connectionId,
     staleTime: 60000, // 1 minute
   })
 }
@@ -443,17 +443,6 @@ export function useDeleteConnection(onSuccess?: () => void) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiClient.deleteConnection(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: connectionKeys.lists() })
-      onSuccess?.()
-    },
-  })
-}
-
-export function useActivateConnection(onSuccess?: () => void) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => apiClient.activateConnection(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: connectionKeys.lists() })
       onSuccess?.()

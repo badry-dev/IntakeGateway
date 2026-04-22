@@ -43,12 +43,10 @@ export function TaskDetail() {
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [formData, setFormData] = useState<TaskFormData>({
     name: '', description: '', endpoint_path: '', http_method: 'GET',
-    dest_table: '', headers_json: {}, body_json: {}, batch_size: 500, is_active: true, connection_id: undefined,
+    dest_table: '', headers_json: {}, body_json: {}, batch_size: 500, is_active: true, connection_id: '',
   })
 
-  const activeConnection = connectionsData?.connections.find(
-    (connection) => connection.id === connectionsData.active_connection_id
-  )
+  const connections = connectionsData?.connections || []
   const selectedConnection = connectionsData?.connections.find(
     (connection) => connection.id === task?.connection_id
   )
@@ -59,7 +57,7 @@ export function TaskDetail() {
         name: task.name, description: task.description || '', endpoint_path: task.endpoint_path,
         http_method: task.http_method as any, dest_table: task.dest_table,
         headers_json: task.headers_json || {}, body_json: task.body_json || {},
-        batch_size: task.batch_size, is_active: task.is_active, connection_id: task.connection_id,
+        batch_size: task.batch_size, is_active: task.is_active, connection_id: task.connection_id || '',
       })
     }
   }, [task])
@@ -83,6 +81,11 @@ export function TaskDetail() {
   }
 
   const handleSaveEdit = async () => {
+    if (!formData.connection_id) {
+      message.error('Destination connection is required')
+      return
+    }
+
     try {
       await updateTaskMutation.mutateAsync({ id: task.id, data: formData })
       setIsEditOpen(false)
@@ -139,7 +142,7 @@ export function TaskDetail() {
             <Descriptions.Item label="HTTP Method"><Text code>{task.http_method}</Text></Descriptions.Item>
             <Descriptions.Item label="Destination Table"><Text code>{task.dest_table}</Text></Descriptions.Item>
             <Descriptions.Item label="Destination Connection">
-              {selectedConnection?.name || activeConnection?.name || 'Active/default connection'}
+              {selectedConnection?.name || 'Not configured'}
             </Descriptions.Item>
             <Descriptions.Item label="Endpoint URL" span={2}>
               <Space>
@@ -257,19 +260,22 @@ export function TaskDetail() {
             </div>
           </div>
           <div>
-            <Text strong>Destination Connection</Text>
+            <Text strong>Destination Connection *</Text>
             <Select
-              allowClear
-              placeholder={activeConnection ? `Use active connection (${activeConnection.name})` : 'Use active/default connection'}
+              placeholder={connections.length > 0 ? 'Select destination connection' : 'Create a connection in Settings first'}
               value={formData.connection_id}
               onChange={(value) => setFormData({ ...formData, connection_id: value })}
-              options={(connectionsData?.connections || []).map((connection) => ({
+              options={connections.map((connection) => ({
                 value: connection.id,
                 label: `${connection.name} (${connection.db_type})`,
               }))}
               style={{ width: '100%' }}
+              disabled={connections.length === 0}
             />
           </div>
+          {connections.length === 0 && (
+            <Text type="warning">Create a connection in Settings before saving this task.</Text>
+          )}
         </Space>
       </Modal>
     </Space>

@@ -27,6 +27,7 @@ export function TaskWizard() {
   const [formData, setFormData] = useState<TaskFormData>({
     name: '',
     description: '',
+    connection_id: '',
     endpoint_path: '',
     http_method: 'GET',
     dest_table: '',
@@ -51,9 +52,8 @@ export function TaskWizard() {
   const [mappings, setMappings] = useState<ColumnMappingCreate[]>([])
   const [skipMappings, setSkipMappings] = useState(false)
 
-  const activeConnection = connectionsData?.connections.find(
-    (connection) => connection.id === connectionsData.active_connection_id
-  )
+  const connections = connectionsData?.connections || []
+  const selectedConnection = connections.find((connection) => connection.id === formData.connection_id)
 
   const goNext = () => {
     if (currentStep === 2) {
@@ -94,6 +94,7 @@ export function TaskWizard() {
     if (!finalData.name.trim()) { message.warning('Task name is required'); return }
     if (!finalData.endpoint_path.trim()) { message.warning('Endpoint URL is required'); return }
     if (!finalData.dest_table.trim()) { message.warning('Table name is required'); return }
+    if (!finalData.connection_id) { message.warning('Destination connection is required'); return }
 
     try {
       const createdTask = await createTaskMutation.mutateAsync(finalData as any)
@@ -113,7 +114,7 @@ export function TaskWizard() {
 
   const canProceed = () => {
     switch (currentStep) {
-      case 0: return !!(formData.name.trim() && formData.dest_table.trim())
+      case 0: return !!(formData.name.trim() && formData.dest_table.trim() && formData.connection_id)
       case 1: return !!formData.endpoint_path.trim()
       case 2: return true
       case 3:
@@ -165,22 +166,30 @@ export function TaskWizard() {
               />
             </div>
             <div>
-              <Text strong>Destination Connection</Text>
+              <Text strong>Destination Connection *</Text>
               <Select
-                allowClear
-                placeholder={activeConnection ? `Use active connection (${activeConnection.name})` : 'Use active/default connection'}
+                placeholder={connections.length > 0 ? 'Select destination connection' : 'Create a connection in Settings first'}
                 value={formData.connection_id}
                 onChange={(value) => setFormData({ ...formData, connection_id: value })}
-                options={(connectionsData?.connections || []).map((connection) => ({
+                options={connections.map((connection) => ({
                   value: connection.id,
                   label: `${connection.name} (${connection.db_type})`,
                 }))}
                 style={{ width: '100%' }}
+                disabled={connections.length === 0}
               />
               <Text type="secondary" style={{ fontSize: 12 }}>
-                Leave this unset to use the current active destination connection.
+                Every task must target one saved destination connection.
               </Text>
             </div>
+            {connections.length === 0 && (
+              <Alert
+                message="Connection required"
+                description="Create a connection in Settings before creating tasks. This flow no longer uses a default or fallback database."
+                type="warning"
+                showIcon
+              />
+            )}
           </Space>
         )}
 
@@ -393,7 +402,7 @@ export function TaskWizard() {
             <Card size="small" type="inner" title="Endpoint"><Text code>{formData.http_method} {formData.endpoint_path}</Text></Card>
             <Card size="small" type="inner" title="Table"><Text code>{formData.dest_table}</Text></Card>
             <Card size="small" type="inner" title="Destination Connection">
-              <Text>{connectionsData?.connections.find((connection) => connection.id === formData.connection_id)?.name || activeConnection?.name || 'Active/default connection'}</Text>
+              <Text>{selectedConnection?.name || '(not selected)'}</Text>
             </Card>
             {formData.auth_type && formData.auth_type !== 'none' && (
               <Card size="small" type="inner" title="Authentication">

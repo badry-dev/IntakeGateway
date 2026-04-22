@@ -35,8 +35,29 @@ class ConnectionStorageService:
     def _empty_data() -> dict:
         return {
             "version": 1,
-            "active_connection_id": None,
             "connections": []
+        }
+
+    @classmethod
+    def _normalize_data(cls, data: dict) -> dict:
+        """Normalize persisted data and strip legacy default/active fields."""
+        if not isinstance(data, dict):
+            return cls._empty_data()
+
+        connections = []
+        for conn in data.get("connections", []):
+            if not isinstance(conn, dict):
+                continue
+            normalized_conn = {k: v for k, v in conn.items() if k != "is_default"}
+            connections.append(normalized_conn)
+
+        version = data.get("version", 1)
+        if not isinstance(version, int):
+            version = 1
+
+        return {
+            "version": version,
+            "connections": connections,
         }
 
     def _read_file(self) -> dict:
@@ -54,7 +75,7 @@ class ConnectionStorageService:
                 return self._empty_data()
             
             decrypted = self._encryption.decrypt(encrypted_content)
-            return json.loads(decrypted)
+            return self._normalize_data(json.loads(decrypted))
         except Exception as e:
             logger.error(
                 f"Failed to read connections file at {self.file_path}: {e}. "
@@ -89,7 +110,7 @@ class ConnectionStorageService:
         List all connections with passwords masked.
 
         Returns:
-            Dict with connections list, active_connection_id, and version
+            Dict with connections list and version
         """
         data = self._read_file()
 
@@ -102,7 +123,6 @@ class ConnectionStorageService:
 
         return {
             "version": data.get("version", 1),
-            "active_connection_id": data.get("active_connection_id"),
             "connections": masked_connections
         }
 
@@ -153,17 +173,11 @@ class ConnectionStorageService:
             "service_name": connection_data.get("service_name"),
             "database": connection_data.get("database"),
             "connection_options": connection_data.get("connection_options"),
-            "is_default": len(data.get("connections", [])) == 0,
             "created_at": now,
             "updated_at": now
         }
 
         data["connections"].append(new_conn)
-
-        # Set as active if first connection
-        if len(data["connections"]) == 1:
-            data["active_connection_id"] = new_conn["id"]
-            logger.info(f"First connection created, setting as active: {new_conn['name']}")
 
         self._write_file(data)
         logger.info(f"Created connection: {new_conn['name']} ({new_conn['id']})")
@@ -226,57 +240,11 @@ class ConnectionStorageService:
         ]
 
         if len(data["connections"]) < initial_count:
-            # Update active if deleted was active
-            if data.get("active_connection_id") == connection_id:
-                data["active_connection_id"] = (
-                    data["connections"][0]["id"] if data["connections"] else None
-                )
-                logger.info(f"Active connection deleted, new active: {data['active_connection_id']}")
-
             self._write_file(data)
             logger.info(f"Deleted connection: {connection_id}")
             return True
 
         return False
-
-    def activate_connection(self, connection_id: str) -> bool:
-        """
-        Set a connection as the active default.
-
-        Args:
-            connection_id: ID of connection to activate
-
-        Returns:
-            True if activated, False if connection not found
-        """
-        data = self._read_file()
-
-        # Verify connection exists
-        if not any(c.get("id") == connection_id for c in data.get("connections", [])):
-            return False
-
-        data["active_connection_id"] = connection_id
-        self._write_file(data)
-        logger.info(f"Activated connection: {connection_id}")
-        return True
-
-    def get_active_connection(self, include_password: bool = False) -> Optional[dict]:
-        """
-        Get the currently active connection.
-
-        Args:
-            include_password: If True, include encrypted password
-
-        Returns:
-            Active connection dict or None
-        """
-        data = self._read_file()
-        active_id = data.get("active_connection_id")
-
-        if not active_id:
-            return None
-
-        return self.get_connection(active_id, include_password=include_password)
 
     def get_decrypted_password(self, connection_id: str) -> Optional[str]:
         """

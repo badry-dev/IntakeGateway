@@ -43,7 +43,9 @@ export interface TaskCreateAuth {
   oauth_config?: Record<string, any>
 }
 
-export interface TaskCreate extends Omit<Task, 'id' | 'auth_type' | 'username'>, TaskCreateAuth {}
+export interface TaskCreate extends Omit<Task, 'id' | 'auth_type' | 'username' | 'connection_id'>, TaskCreateAuth {
+  connection_id: string
+}
 export interface TaskUpdate extends Partial<Omit<Task, 'id'>> {}
 
 // Column Mapping types
@@ -198,7 +200,7 @@ export interface ApiListResponse<T> {
 export interface TaskFormData {
   name: string
   description?: string
-  connection_id?: string
+  connection_id: string
   http_method: 'GET' | 'POST' | 'PUT' | 'PATCH'
   endpoint_path: string
   query_params_json?: Record<string, any>
@@ -265,7 +267,6 @@ export interface Connection {
   service_name?: string   // Oracle
   database?: string       // PostgreSQL/MySQL
   connection_options?: Record<string, any>
-  is_default: boolean
   created_at: string
   updated_at: string
 }
@@ -305,6 +306,5 @@ export interface ConnectionTestResult {
 
 export interface ConnectionListResponse {
   connections: Connection[]
-  active_connection_id: string | null
   total_count: number
 }

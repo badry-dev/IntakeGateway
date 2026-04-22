@@ -3,7 +3,6 @@ import { Card, Table, Tag, Button, Tabs, Modal, Space, Typography, Empty, Spin, 
 import {
   DatabaseOutlined,
   PlusOutlined,
-  CheckCircleOutlined,
   SettingOutlined,
   EditOutlined,
   LoadingOutlined,
@@ -15,7 +14,6 @@ import {
   useCreateConnection,
   useUpdateConnection,
   useDeleteConnection,
-  useActivateConnection,
 } from '@/hooks/api'
 import { Connection, ConnectionCreate, ConnectionUpdate } from '@/types'
 import { format } from 'date-fns'
@@ -30,10 +28,8 @@ export function Settings() {
   const createConnection = useCreateConnection(() => { setShowCreateDialog(false); message.success('Connection created') })
   const updateConnection = useUpdateConnection(() => { setEditingConnection(null); message.success('Connection updated') })
   const deleteConnection = useDeleteConnection(() => { setEditingConnection(null); message.success('Connection deleted') })
-  const activateConnection = useActivateConnection()
 
   const connections = connectionsData?.connections || []
-  const activeConnectionId = connectionsData?.active_connection_id
 
   const columns = [
     { title: 'Name', dataIndex: 'name', key: 'name', render: (v: string) => <Text strong>{v}</Text> },
@@ -47,26 +43,6 @@ export function Settings() {
       title: 'Host',
       key: 'host',
       render: (_: unknown, record: Connection) => <Text code>{record.host}:{record.port}</Text>,
-    },
-    {
-      title: 'Status',
-      key: 'status',
-      render: (_: unknown, record: Connection) =>
-        record.id === activeConnectionId ? (
-          <Tag icon={<CheckCircleOutlined />} color="success">Active</Tag>
-        ) : (
-          <Button
-            size="small"
-            onClick={() => {
-              activateConnection.mutateAsync(record.id)
-                .then(() => message.success('Connection activated'))
-                .catch(() => message.error('Failed to activate connection'))
-            }}
-            loading={activateConnection.isPending}
-          >
-            Set Active
-          </Button>
-        ),
     },
     {
       title: 'Updated',
@@ -87,13 +63,13 @@ export function Settings() {
   const tabItems = [
     {
       key: 'connections',
-      label: <span><DatabaseOutlined /> Database Connections</span>,
+      label: <span><DatabaseOutlined /> Connections</span>,
       children: (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <Title level={4} style={{ margin: 0 }}>Database Connections</Title>
-              <Text type="secondary">Manage database connections for data import tasks</Text>
+              <Title level={4} style={{ margin: 0 }}>Connections</Title>
+              <Text type="secondary">Create and manage destination database connections for import tasks</Text>
             </div>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowCreateDialog(true)}>
               Add Connection
@@ -118,7 +94,7 @@ export function Settings() {
             <Card>
               <Empty
                 image={<DatabaseOutlined style={{ fontSize: 48, color: '#d9d9d9' }} />}
-                description={<><Text type="secondary">No database connections configured</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>The application is using environment variables for database connection.</Text></>}
+                description={<><Text type="secondary">No connections configured</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>Create a connection before creating tasks. Each task must select one explicitly.</Text></>}
               >
                 <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowCreateDialog(true)}>
                   Add Your First Connection
@@ -135,7 +111,7 @@ export function Settings() {
 
           <Alert
             message="Note"
-            description="If no connections are configured, the application will use environment variables (ORACLE_HOST, ORACLE_USER, etc.) as a fallback. The active connection is used by default for all tasks."
+            description="Each task must explicitly select one saved connection. There is no default connection and no environment-variable fallback for task execution."
             type="info"
             showIcon
           />

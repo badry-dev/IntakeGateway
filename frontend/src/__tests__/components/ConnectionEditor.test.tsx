@@ -52,7 +52,7 @@ describe('ConnectionEditor', () => {
   describe('Edit mode', () => {
     const mockConnection = {
       id: 'conn-1', name: 'Prod DB', db_type: 'oracle' as const, host: 'db.prod.com', port: 1521,
-      username: 'admin', service_name: 'ORCL', is_default: false,
+      username: 'admin', service_name: 'ORCL',
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }
 

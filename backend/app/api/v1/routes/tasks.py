@@ -13,8 +13,18 @@ from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import TaskCreate, TaskOut, TaskRunOut, TaskStatsOut, TaskLogOut, TaskRunLogOut
 from app.workers.tasks import enqueue_run
 from app.core.encryption import encrypt_value
+from app.services.connection_storage import get_connection_storage
 
 router = APIRouter()
+
+
+def _require_existing_connection(connection_id: str) -> None:
+    if not connection_id:
+        raise HTTPException(status_code=400, detail="connection_id is required")
+
+    storage = get_connection_storage()
+    if not storage.get_connection(connection_id):
+        raise HTTPException(status_code=400, detail=f"Connection {connection_id} not found")
 
 def get_db():
     db = SessionLocal()
@@ -34,6 +44,8 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
     exists = db.query(Task).filter(Task.name == payload.name).first()
     if exists:
         raise HTTPException(status_code=400, detail="Task with this name already exists")
+
+    _require_existing_connection(payload.connection_id)
     
     # Prepare task data and encrypt sensitive fields
     task_data = payload.model_dump()
@@ -94,6 +106,8 @@ def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)
         exists = db.query(Task).filter(Task.name == payload.name).first()
         if exists:
             raise HTTPException(status_code=400, detail="Task with this name already exists")
+
+    _require_existing_connection(payload.connection_id)
     
     # Prepare update data and encrypt sensitive fields
     update_data = payload.model_dump()
@@ -138,6 +152,19 @@ def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    if not task.connection_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Task requires a destination connection before it can run",
+        )
+
+    storage = get_connection_storage()
+    if not storage.get_connection(task.connection_id):
+        raise HTTPException(
+            status_code=400,
+            detail="The task's selected destination connection no longer exists",
+        )
     
     # Create TaskRun record in PENDING state
     task_run = TaskRun(

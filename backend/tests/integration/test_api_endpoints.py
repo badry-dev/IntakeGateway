@@ -5,6 +5,7 @@ Tests the HTTP API workflows for task management, run triggering, and result ret
 """
 
 import pytest
+from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -46,6 +47,16 @@ def test_db():
     engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def mock_connection_dependencies(monkeypatch):
+    storage = MagicMock()
+    storage.get_connection.side_effect = lambda connection_id, include_password=False: (
+        {"id": connection_id, "name": f"Connection {connection_id}"} if connection_id else None
+    )
+    monkeypatch.setattr("app.api.v1.routes.tasks.get_connection_storage", lambda: storage)
+    monkeypatch.setattr("app.api.v1.routes.tasks.enqueue_run", lambda task_id: MagicMock(id=f"task-{task_id}"))
+
+
 @pytest.fixture
 def client(test_db):
     """FastAPI test client"""
@@ -58,6 +69,7 @@ def sample_task(test_db) -> Task:
     task = Task(
         name="Test Import Task",
         description="Test data import",
+        connection_id="conn-1",
         endpoint_path="/api/v1/test-data",
         dest_table="test_data",
         is_active=True
@@ -79,6 +91,7 @@ def test_create_task(client: TestClient):
         json={
             "name": "New Task",
             "description": "Import user data",
+            "connection_id": "conn-1",
             "endpoint_path": "/api/users",
             "dest_table": "users",
             "http_method": "GET",
@@ -97,6 +110,7 @@ def test_create_duplicate_task(client: TestClient, sample_task):
         "/api/v1/tasks/",
         json={
             "name": sample_task.name,
+            "connection_id": "conn-1",
             "endpoint_path": "/api/different",
             "dest_table": "different_table"
         }
@@ -120,6 +134,7 @@ def test_list_tasks_with_pagination(client: TestClient, test_db):
     for i in range(3):
         task = Task(
             name=f"Task {i}",
+            connection_id="conn-1",
             endpoint_path=f"/api/data{i}",
             dest_table=f"table{i}"
         )
@@ -135,8 +150,8 @@ def test_list_tasks_with_pagination(client: TestClient, test_db):
 def test_list_tasks_with_filter(client: TestClient, test_db):
     """Test task list filtering by is_active"""
     # Create active and inactive tasks
-    task1 = Task(name="Active", endpoint_path="/api/active", dest_table="t1", is_active=True)
-    task2 = Task(name="Inactive", endpoint_path="/api/inactive", dest_table="t2", is_active=False)
+    task1 = Task(name="Active", connection_id="conn-1", endpoint_path="/api/active", dest_table="t1", is_active=True)
+    task2 = Task(name="Inactive", connection_id="conn-1", endpoint_path="/api/inactive", dest_table="t2", is_active=False)
     test_db.add_all([task1, task2])
     test_db.commit()
     
@@ -169,6 +184,7 @@ def test_update_task(client: TestClient, sample_task):
         json={
             "name": "Updated Task",
             "description": "Updated description",
+            "connection_id": "conn-2",
             "endpoint_path": "/api/updated",
             "dest_table": "updated_table",
             "is_active": False

@@ -51,6 +51,7 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
 
   const tableName = taskFormData?.dest_table || ''
   const connectionId = taskFormData?.connection_id
+  const hasSelectedConnection = !!connectionId
   const { data: fetchedOracleColumnsData, isLoading: isLoadingColumns, error: columnsError } = useOracleColumns(tableName, connectionId)
   const fetchedOracleColumns = fetchedOracleColumnsData?.columns || []
   const activeOracleColumns = fetchedOracleColumns.length > 0 ? fetchedOracleColumns : oracleColumns
@@ -232,9 +233,18 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
 
         {taskFormData && (
           <div style={{ marginTop: 8, fontSize: 12, color: '#8c8c8c' }}>
-            Table: <strong>{tableName || '(not set)'}</strong> | Columns: {isLoadingColumns ? 'Loading...' : `${activeOracleColumns.length} found`}
+            Connection: <strong>{connectionId || '(not selected)'}</strong> | Table: <strong>{tableName || '(not set)'}</strong> | Columns: {isLoadingColumns ? 'Loading...' : `${activeOracleColumns.length} found`}
             {columnsError && <span style={{ color: '#ff4d4f' }}> | Column auto-load not available</span>}
           </div>
+        )}
+        {taskFormData && !hasSelectedConnection && (
+          <Alert
+            message="Destination connection required"
+            description="Select a destination connection first so column metadata can be loaded for mappings."
+            type="warning"
+            showIcon
+            style={{ marginTop: 8 }}
+          />
         )}
       </Card>
 

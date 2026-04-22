@@ -74,6 +74,9 @@ async def run_import(task_id: int, db: Session = None, destination_db: Session =
         
         if not task.is_active:
             raise ValueError(f"Task {task_id} is not active")
+
+        if not task.connection_id:
+            raise ValueError(f"Task {task_id} requires a destination connection")
         
         # Step 2: Create TaskRun record
         task_run = TaskRun(

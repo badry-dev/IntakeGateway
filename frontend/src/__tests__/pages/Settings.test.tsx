@@ -8,14 +8,13 @@ vi.mock('@/hooks/api', () => ({
   useCreateConnection: vi.fn(),
   useUpdateConnection: vi.fn(),
   useDeleteConnection: vi.fn(),
-  useActivateConnection: vi.fn(),
 }))
 
 vi.mock('@/components/ConnectionEditor', () => ({
   ConnectionEditor: () => <div data-testid="connection-editor">ConnectionEditor</div>,
 }))
 
-import { useConnections, useCreateConnection, useUpdateConnection, useDeleteConnection, useActivateConnection } from '@/hooks/api'
+import { useConnections, useCreateConnection, useUpdateConnection, useDeleteConnection } from '@/hooks/api'
 
 const createWrapper = () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -30,32 +29,31 @@ describe('Settings', () => {
     vi.mocked(useCreateConnection).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as any)
     vi.mocked(useUpdateConnection).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as any)
     vi.mocked(useDeleteConnection).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as any)
-    vi.mocked(useActivateConnection).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as any)
   })
 
   it('should render settings heading', () => {
-    vi.mocked(useConnections).mockReturnValue({ data: { connections: [], active_connection_id: null, total_count: 0 }, isLoading: false, isError: false } as any)
+    vi.mocked(useConnections).mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false } as any)
     render(<Settings />, { wrapper: createWrapper() })
     expect(screen.getByText('Settings')).toBeInTheDocument()
   })
 
-  it('should show Database Connections tab', () => {
-    vi.mocked(useConnections).mockReturnValue({ data: { connections: [], active_connection_id: null, total_count: 0 }, isLoading: false, isError: false } as any)
+  it('should show Connections tab', () => {
+    vi.mocked(useConnections).mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false } as any)
     render(<Settings />, { wrapper: createWrapper() })
-    expect(screen.getByText('Database Connections')).toBeInTheDocument()
+    expect(screen.getByText('Connections')).toBeInTheDocument()
   })
 
   it('should show empty state when no connections', async () => {
-    vi.mocked(useConnections).mockReturnValue({ data: { connections: [], active_connection_id: null, total_count: 0 }, isLoading: false, isError: false } as any)
+    vi.mocked(useConnections).mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false } as any)
     render(<Settings />, { wrapper: createWrapper() })
     await waitFor(() => {
-      expect(screen.getByText('No database connections configured')).toBeInTheDocument()
+      expect(screen.getByText('No connections configured')).toBeInTheDocument()
       expect(screen.getByText('Add Your First Connection')).toBeInTheDocument()
     })
   })
 
   it('should show Add Connection button', () => {
-    vi.mocked(useConnections).mockReturnValue({ data: { connections: [], active_connection_id: null, total_count: 0 }, isLoading: false, isError: false } as any)
+    vi.mocked(useConnections).mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false } as any)
     render(<Settings />, { wrapper: createWrapper() })
     expect(screen.getByText('Add Connection')).toBeInTheDocument()
   })
@@ -64,9 +62,8 @@ describe('Settings', () => {
     vi.mocked(useConnections).mockReturnValue({
       data: {
         connections: [
-          { id: 'conn-1', name: 'Production DB', db_type: 'oracle', host: 'db.example.com', port: 1521, username: 'admin', is_default: false, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+          { id: 'conn-1', name: 'Production DB', db_type: 'oracle', host: 'db.example.com', port: 1521, username: 'admin', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
         ],
-        active_connection_id: null,
         total_count: 1,
       },
       isLoading: false,
@@ -80,9 +77,9 @@ describe('Settings', () => {
     })
   })
 
-  it('should show info alert about env variables', () => {
-    vi.mocked(useConnections).mockReturnValue({ data: { connections: [], active_connection_id: null, total_count: 0 }, isLoading: false, isError: false } as any)
+  it('should show info alert about explicit task selection', () => {
+    vi.mocked(useConnections).mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false } as any)
     render(<Settings />, { wrapper: createWrapper() })
-    expect(screen.getByText(/environment variables/i)).toBeInTheDocument()
+    expect(screen.getByText(/must explicitly select/i)).toBeInTheDocument()
   })
 })

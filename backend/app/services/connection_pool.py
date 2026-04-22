@@ -6,7 +6,6 @@ Pools are created on-demand and cached for performance.
 Supports Oracle, PostgreSQL, and MySQL databases.
 """
 import time
-from typing import Optional
 from urllib.parse import quote_plus
 import oracledb
 from sqlalchemy import create_engine, text
@@ -14,7 +13,6 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.engine import Engine
 from loguru import logger
 from app.services.connection_storage import get_connection_storage
-from app.core.config import settings
 
 
 # Cache of engines by connection_id
@@ -84,49 +82,38 @@ def build_connection_url(conn: dict, password: str) -> str:
         raise ValueError(f"Unsupported database type: {db_type}")
 
 
-def get_engine(connection_id: Optional[str] = None) -> Engine:
+def get_engine(connection_id: str) -> Engine:
     """
     Get SQLAlchemy engine for a connection.
 
-    Engines are cached for performance. If no connection_id is provided,
-    returns engine for the active connection. If no connections are configured,
-    falls back to environment variable configuration.
+    Engines are cached for performance.
 
     Args:
-        connection_id: Specific connection ID, or None for active/default
+        connection_id: Specific connection ID for the task
 
     Returns:
         SQLAlchemy Engine
 
     Raises:
-        ValueError: If specified connection not found
+        ValueError: If connection_id is missing or the specified connection is not found
     """
+    if not connection_id:
+        raise ValueError("connection_id is required")
+
     storage = get_connection_storage()
-
-    # Determine which connection to use
-    if connection_id:
-        conn = storage.get_connection(connection_id, include_password=True)
-        if not conn:
-            raise ValueError(f"Connection {connection_id} not found")
-    else:
-        # Try active connection first
-        conn = storage.get_active_connection(include_password=True)
-        if not conn:
-            # Fall back to environment variables
-            logger.info("No active connection configured, using environment variables")
-            return _get_env_engine()
-
-    conn_id = conn["id"]
+    conn = storage.get_connection(connection_id, include_password=True)
+    if not conn:
+        raise ValueError(f"Connection {connection_id} not found")
 
     # Return cached engine if available
-    if conn_id in _engine_cache:
-        logger.debug(f"Returning cached engine for connection {conn_id}")
-        return _engine_cache[conn_id]
+    if connection_id in _engine_cache:
+        logger.debug(f"Returning cached engine for connection {connection_id}")
+        return _engine_cache[connection_id]
 
     # Create new engine
-    password = storage.get_decrypted_password(conn_id)
+    password = storage.get_decrypted_password(connection_id)
     if not password:
-        raise ValueError(f"Failed to decrypt password for connection {conn_id}")
+        raise ValueError(f"Failed to decrypt password for connection {connection_id}")
 
     url = build_connection_url(conn, password)
 
@@ -138,38 +125,18 @@ def get_engine(connection_id: Optional[str] = None) -> Engine:
         future=True
     )
 
-    _engine_cache[conn_id] = engine
-    logger.info(f"Created connection pool for {conn['name']} ({conn_id})")
+    _engine_cache[connection_id] = engine
+    logger.info(f"Created connection pool for {conn['name']} ({connection_id})")
 
     return engine
 
 
-def _get_env_engine() -> Engine:
-    """
-    Create engine from environment variables (fallback).
-
-    Returns:
-        SQLAlchemy Engine from default session configuration
-    """
-    if "env" not in _engine_cache:
-        _ensure_oracle_client_initialized()
-        _engine_cache["env"] = create_engine(
-            settings.destination_sqlalchemy_url,
-            pool_size=5,
-            max_overflow=5,
-            pool_pre_ping=True,
-            future=True,
-        )
-        logger.debug("Using environment variable destination engine")
-    return _engine_cache["env"]
-
-
-def get_session(connection_id: Optional[str] = None) -> Session:
+def get_session(connection_id: str) -> Session:
     """
     Get a database session for a connection.
 
     Args:
-        connection_id: Specific connection ID, or None for active/default
+        connection_id: Specific connection ID
 
     Returns:
         SQLAlchemy Session instance
@@ -177,16 +144,15 @@ def get_session(connection_id: Optional[str] = None) -> Session:
     engine = get_engine(connection_id)
 
     # Cache session factory
-    key = connection_id or "env"
-    if key not in _session_factories:
-        _session_factories[key] = sessionmaker(
+    if connection_id not in _session_factories:
+        _session_factories[connection_id] = sessionmaker(
             autocommit=False,
             autoflush=False,
             bind=engine,
             expire_on_commit=False
         )
 
-    return _session_factories[key]()
+    return _session_factories[connection_id]()
 
 
 def invalidate_pool(connection_id: str) -> None:

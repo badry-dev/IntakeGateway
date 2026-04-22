@@ -44,7 +44,6 @@ def _connection_to_out(conn: dict) -> ConnectionOut:
         service_name=conn.get("service_name"),
         database=conn.get("database"),
         connection_options=conn.get("connection_options"),
-        is_default=conn.get("is_default", False),
         created_at=_parse_datetime(conn["created_at"]),
         updated_at=_parse_datetime(conn["updated_at"])
     )
@@ -56,7 +55,7 @@ def list_connections():
     List all configured database connections.
 
     Passwords are masked in the response for security.
-    Returns the active connection ID and total count.
+    Returns the saved connections and total count.
     """
     storage = get_connection_storage()
     data = storage.list_connections()
@@ -65,7 +64,6 @@ def list_connections():
 
     return ConnectionListOut(
         connections=connections,
-        active_connection_id=data.get("active_connection_id"),
         total_count=len(connections)
     )
 
@@ -103,8 +101,6 @@ def create_connection(payload: ConnectionCreate):
 
     The connection is tested before saving. If the test fails,
     a 400 error is returned with the failure message.
-
-    The first connection created becomes the active default.
 
     Args:
         payload: Connection configuration including password
@@ -213,9 +209,6 @@ def delete_connection(connection_id: str):
     """
     Delete a connection.
 
-    If the deleted connection was active, the next available
-    connection becomes active. The cached connection pool is invalidated.
-
     Args:
         connection_id: UUID of the connection to delete
 
@@ -232,35 +225,6 @@ def delete_connection(connection_id: str):
 
     invalidate_pool(connection_id)
     logger.info(f"Deleted connection: {connection_id}")
-
-
-@router.post("/{connection_id}/activate", status_code=200)
-def activate_connection(connection_id: str):
-    """
-    Set a connection as the active default.
-
-    The active connection is used when no specific connection
-    is specified for a task.
-
-    Args:
-        connection_id: UUID of the connection to activate
-
-    Returns:
-        Success message
-
-    Raises:
-        404: Connection not found
-    """
-    storage = get_connection_storage()
-
-    if not storage.activate_connection(connection_id):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Connection {connection_id} not found"
-        )
-
-    logger.info(f"Activated connection: {connection_id}")
-    return {"message": f"Connection {connection_id} is now active"}
 
 
 @router.post("/test", response_model=ConnectionTestResult)

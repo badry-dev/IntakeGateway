@@ -6,7 +6,7 @@ from datetime import datetime
 class TaskCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    connection_id: Optional[str] = None
+    connection_id: str = Field(..., min_length=1)
     http_method: str = Field(default="GET", pattern="^(GET|POST|PUT|PATCH)$")
     endpoint_path: str
     query_params_json: Optional[dict[str, Any]] = None

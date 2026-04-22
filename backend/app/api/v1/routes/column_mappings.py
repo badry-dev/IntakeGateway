@@ -334,7 +334,7 @@ async def preview_fields(
 @router.get("/oracle/tables/{table_name}/columns", response_model=OracleColumnsResponse)
 def get_columns(
     table_name: str,
-    connection_id: str | None = Query(None, description="Optional destination connection ID"),
+    connection_id: str = Query(..., min_length=1, description="Required destination connection ID"),
 ):
     """
     Query Oracle database for table column information.

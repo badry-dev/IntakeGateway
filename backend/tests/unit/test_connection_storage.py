@@ -44,8 +44,8 @@ class TestConnectionStorage:
         result = service.list_connections()
 
         assert result["connections"] == []
-        assert result["active_connection_id"] is None
         assert result["version"] == 1
+        assert "active_connection_id" not in result
 
     def test_create_connection_encrypts_password(self, storage_service):
         """Test that password is encrypted when creating connection"""
@@ -65,7 +65,7 @@ class TestConnectionStorage:
         assert result["password"] == "********"
         assert result["name"] == "Test DB"
         assert result["id"] is not None
-        assert result["is_default"] == True  # First connection is default
+        assert "is_default" not in result
 
     def test_corrupted_file_returns_empty_structure(self, temp_file):
         """Unreadable encrypted data should not break the app."""
@@ -77,8 +77,8 @@ class TestConnectionStorage:
         result = service.list_connections()
 
         assert result["connections"] == []
-        assert result["active_connection_id"] is None
         assert result["version"] == 1
+        assert "active_connection_id" not in result
 
     def test_create_multiple_connections(self, storage_service):
         """Test creating multiple connections"""
@@ -98,14 +98,13 @@ class TestConnectionStorage:
             "service_name": "ORCL2",
         })
 
-        # First connection should be default
-        assert conn1["is_default"] == True
-        assert conn2["is_default"] == False
+        assert "is_default" not in conn1
+        assert "is_default" not in conn2
 
         # List should have both
         result = storage_service.list_connections()
         assert len(result["connections"]) == 2
-        assert result["active_connection_id"] == conn1["id"]
+        assert "active_connection_id" not in result
 
     def test_list_connections_masks_passwords(self, storage_service):
         """Test that list_connections masks all passwords"""
@@ -202,8 +201,8 @@ class TestConnectionStorage:
         result = storage_service.delete_connection("non-existent-id")
         assert result == False
 
-    def test_delete_active_connection_updates_active(self, storage_service):
-        """Test that deleting active connection updates to next available"""
+    def test_delete_one_connection_keeps_the_rest(self, storage_service):
+        """Deleting one connection should keep the others intact."""
         conn1 = storage_service.create_connection({
             "name": "DB 1",
             "host": "host1",
@@ -220,62 +219,12 @@ class TestConnectionStorage:
             "service_name": "ORCL2",
         })
 
-        # Delete active connection
         storage_service.delete_connection(conn1["id"])
 
-        # conn2 should now be active
         result = storage_service.list_connections()
-        assert result["active_connection_id"] == conn2["id"]
-
-    def test_activate_connection(self, storage_service):
-        """Test activating a specific connection"""
-        conn1 = storage_service.create_connection({
-            "name": "DB 1",
-            "host": "host1",
-            "username": "user1",
-            "password": "pass1",
-            "service_name": "ORCL1",
-        })
-
-        conn2 = storage_service.create_connection({
-            "name": "DB 2",
-            "host": "host2",
-            "username": "user2",
-            "password": "pass2",
-            "service_name": "ORCL2",
-        })
-
-        # Activate conn2
-        result = storage_service.activate_connection(conn2["id"])
-
-        assert result == True
-        assert storage_service.list_connections()["active_connection_id"] == conn2["id"]
-
-    def test_activate_nonexistent_connection(self, storage_service):
-        """Test activating non-existent connection returns False"""
-        result = storage_service.activate_connection("non-existent-id")
-        assert result == False
-
-    def test_get_active_connection(self, storage_service):
-        """Test getting the active connection"""
-        created = storage_service.create_connection({
-            "name": "Test DB",
-            "host": "localhost",
-            "username": "user",
-            "password": "secret",
-            "service_name": "ORCL",
-        })
-
-        active = storage_service.get_active_connection()
-
-        assert active is not None
-        assert active["id"] == created["id"]
-        assert active["password"] == "********"
-
-    def test_get_active_connection_none_configured(self, storage_service):
-        """Test getting active when no connections exist"""
-        active = storage_service.get_active_connection()
-        assert active is None
+        assert len(result["connections"]) == 1
+        assert result["connections"][0]["id"] == conn2["id"]
+        assert "active_connection_id" not in result
 
     def test_get_decrypted_password(self, storage_service):
         """Test decrypting password for internal use"""

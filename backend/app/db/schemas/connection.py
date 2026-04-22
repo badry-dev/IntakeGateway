@@ -71,7 +71,6 @@ class ConnectionOut(BaseModel):
     service_name: Optional[str] = None
     database: Optional[str] = None
     connection_options: Optional[dict] = None
-    is_default: bool
     created_at: datetime
     updated_at: datetime
 
@@ -80,9 +79,8 @@ class ConnectionOut(BaseModel):
 
 
 class ConnectionListOut(BaseModel):
-    """List of connections with active indicator"""
+    """List of saved connections"""
     connections: list[ConnectionOut]
-    active_connection_id: Optional[str]
     total_count: int
 
 

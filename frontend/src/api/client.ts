@@ -179,13 +179,9 @@ class ApiClient {
   }
 
   // Get Oracle table columns metadata
-  async getOracleColumns(tableName: string, connectionId?: string): Promise<OracleColumnsResponse> {
-    const params = new URLSearchParams()
-    if (connectionId) {
-      params.append('connection_id', connectionId)
-    }
-    const query = params.toString()
-    const response = await this.client.get(`/oracle/tables/${tableName}/columns${query ? `?${query}` : ''}`)
+  async getOracleColumns(tableName: string, connectionId: string): Promise<OracleColumnsResponse> {
+    const params = new URLSearchParams({ connection_id: connectionId })
+    const response = await this.client.get(`/oracle/tables/${tableName}/columns?${params}`)
     return response.data
   }
 
@@ -265,11 +261,6 @@ class ApiClient {
 
   async deleteConnection(id: string): Promise<void> {
     await this.client.delete(`/connections/${id}`)
-  }
-
-  async activateConnection(id: string): Promise<{ message: string }> {
-    const response = await this.client.post(`/connections/${id}/activate`)
-    return response.data
   }
 
   async testConnection(data: ConnectionTestRequest): Promise<ConnectionTestResult> {

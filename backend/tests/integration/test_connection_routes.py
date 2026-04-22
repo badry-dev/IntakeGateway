@@ -72,7 +72,6 @@ class TestConnectionRoutes:
         assert response.status_code == 200
         data = response.json()
         assert data["connections"] == []
-        assert data["active_connection_id"] is None
         assert data["total_count"] == 0
 
     def test_create_connection_fails_without_valid_db(self, client):
@@ -128,13 +127,6 @@ class TestConnectionRoutes:
 
         assert response.status_code == 404
 
-    def test_activate_connection_not_found(self, client):
-        """Test activating non-existent connection returns 404"""
-        response = client.post("/api/v1/connections/non-existent-id/activate")
-
-        assert response.status_code == 404
-
-
 class TestConnectionRoutesWithMockedDB:
     """Tests with mocked successful database connection"""
 
@@ -168,7 +160,7 @@ class TestConnectionRoutesWithMockedDB:
         assert data["host"] == "localhost"
         assert data["db_type"] == "oracle"
         assert "id" in data
-        assert data["is_default"] == True
+        assert "is_default" not in data
         # Password should NOT be in response
         assert "password" not in data or data.get("password") != "testpass"
         
@@ -205,9 +197,6 @@ class TestConnectionRoutesWithMockedDB:
         data = list_resp.json()
         assert data["total_count"] == 2
         assert len(data["connections"]) == 2
-
-        # First connection should be active
-        assert data["active_connection_id"] == resp1.json()["id"]
 
     def test_update_connection(self, client, mock_test_connection, temp_connections_file):
         """Test updating a connection"""
@@ -248,45 +237,6 @@ class TestConnectionRoutesWithMockedDB:
         # Verify deleted
         get_resp = client.get(f"/api/v1/connections/{conn_id}")
         assert get_resp.status_code == 404
-
-    def test_activate_connection(self, client, mock_test_connection, temp_connections_file):
-        """Test activating a different connection"""
-        # Check for leftover connections and clean them up
-        list_resp = client.get("/api/v1/connections/")
-        existing = list_resp.json()["connections"]
-        for conn in existing:
-            client.delete(f"/api/v1/connections/{conn['id']}")
-        
-        # Create two connections
-        resp1 = client.post("/api/v1/connections/", json={
-            "name": "DB 1",
-            "host": "host1",
-            "username": "user1",
-            "password": "pass1",
-            "service_name": "ORCL1",
-        })
-        conn1_id = resp1.json()["id"]
-
-        resp2 = client.post("/api/v1/connections/", json={
-            "name": "DB 2",
-            "host": "host2",
-            "username": "user2",
-            "password": "pass2",
-            "service_name": "ORCL2",
-        })
-        conn2_id = resp2.json()["id"]
-
-        # First should be active
-        list_resp = client.get("/api/v1/connections/")
-        assert list_resp.json()["active_connection_id"] == conn1_id
-
-        # Activate second
-        activate_resp = client.post(f"/api/v1/connections/{conn2_id}/activate")
-        assert activate_resp.status_code == 200
-
-        # Second should now be active
-        list_resp = client.get("/api/v1/connections/")
-        assert list_resp.json()["active_connection_id"] == conn2_id
 
     def test_get_single_connection(self, client, mock_test_connection, temp_connections_file):
         """Test getting a single connection by ID"""

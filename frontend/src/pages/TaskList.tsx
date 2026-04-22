@@ -130,6 +130,7 @@ export function TaskList() {
               icon={<PlayCircleOutlined />}
               onClick={() => handleRun(task.id)}
               loading={triggerRunMutation.isPending}
+              disabled={!task.connection_id}
             >
               Run
             </Button>
