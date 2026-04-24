@@ -1,37 +1,46 @@
-# IntakeGateway: Full-Stack Application
+# IntakeGateway
 
-**Status**: ✅ Phase 8 Complete (Upsert/Skip) | ✅ Phase 9 Complete (Ant Design Migration) | Production Ready
+> Import data from any HTTP API into your database — with scheduling, transforms, upsert logic, and full observability.
 
-A modern web application for importing data from external APIs into destination databases. The app keeps its own operational data in a local SQLite database while using Oracle as the current ingestion target, so broken destination connectivity does not prevent the UI or API from working.
+**Version**: 1.0.0 | **Status**: Production Ready
 
----
-
-## Quick Links
-
-- **[Project Context & Guidelines](claude.md)** - AI development reference
-- **[Project Orientation](PROJECT_ORIENTATION.md)** - Architecture overview
-- **[Frontend UI Prompt](frontend/PROMPT.md)** - Ant Design UI specification
-- **[Documentation Index](DOCUMENTATION_INDEX.md)** - All guides
+IntakeGateway is a full-stack web application that lets you define, schedule, and monitor data import tasks. It fetches records from external REST APIs, maps fields to destination database columns, and loads them with configurable insert/upsert/skip logic. The app stores its own state in a local SQLite database, so the UI and API remain fully operational even when no destination database is configured.
 
 ---
 
-## Project Overview
+## Features
 
-**IntakeGateway** enables users to:
-- Create and manage API data import tasks
-- Configure API endpoints with authentication (Bearer, API Key, Basic, OAuth)
-- Map API response fields to destination database columns with transform suggestions
-- Schedule recurring imports with cron expressions
-- Trigger task executions with real-time monitoring
-- Configure upsert logic with skip conditions
-- View detailed logs, statistics, and error reports
-- Manage destination database connections with encrypted credentials
+- **Task Management** — Create and manage API import tasks with a 6-step wizard
+- **Flexible Authentication** — Bearer token, API Key, HTTP Basic, or OAuth for external APIs
+- **Column Mapping** — Map API response fields (including nested JSON) to destination columns with transform suggestions
+- **Scheduling** — Cron-based recurring imports with auto-pause on consecutive failures
+- **Upsert & Skip Logic** — Insert-or-update with configurable unique keys and skip conditions for already-processed rows
+- **Connection Management** — Save, test, and activate destination DB connections (Oracle, PostgreSQL, MySQL) with encrypted credentials
+- **Monitoring** — Run history, row-level error breakdown, logs, and dashboard statistics
 
-## Architecture Update
+---
 
-- App state (`tasks`, `task_runs`, `task_schedules`, `column_mappings`, and logs) is stored locally via `APP_DATABASE_URL`, which defaults to SQLite.
-- Destination database access is isolated from the app database. Oracle is the current ingestion target, but the backend can start and serve the UI even when no destination connection is available.
-- `backend/connections.enc` is created automatically the first time a destination connection is saved. Missing or unreadable files now fall back to an empty connection list instead of breaking the app.
+## Architecture
+
+```
+User Browser
+    │
+    ▼
+React Frontend (port 5173)
+    │  HTTP
+    ▼
+FastAPI Backend (port 8000)
+    │                    │
+    ▼                    ▼
+Local SQLite DB      Celery + Redis
+(app state)          (async execution)
+                         │
+                         ▼
+                  Destination Database
+                  (Oracle / PostgreSQL / MySQL)
+```
+
+App-owned state (tasks, runs, schedules, mappings, logs) lives in a local SQLite database by default. Destination DB access is isolated — the backend and UI work fully even when no destination connection is configured. Destination connections are stored in an encrypted file (`connections.enc`) and can be managed at runtime through the Settings page.
 
 ---
 
@@ -76,47 +85,68 @@ A modern web application for importing data from external APIs into destination 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 18+ (for frontend)
-- Python 3.11+ (for backend)
-- Redis (for Celery)
-- Optional: Oracle access if you want to test destination metadata lookups or ingestion end-to-end
+- Node.js 18+
+- Python 3.11+
+- Redis
+- Optional: Oracle / PostgreSQL / MySQL access for destination ingestion
 
-### Setup Frontend
+### 1. Copy environment config
+
+```bash
+cp .env.example .env
+# Edit .env and set ENCRYPTION_KEY to a valid Fernet key:
+# python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+### 2. Start the backend
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+- API: **http://localhost:8000**
+- Interactive docs: **http://localhost:8000/docs**
+
+The backend automatically creates `intakegateway_app.db` for app state. Destination database settings are optional at startup.
+
+### 3. Start the frontend
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Frontend available at: **http://localhost:5173**
 
-### Setup Backend
+UI available at: **http://localhost:5173**
+
+### 4. Start the Celery worker (for task execution)
 
 ```bash
 cd backend
-# Copy .env.example to .env before first run
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --port 8000
+celery -A app.workers.celery_app.celery_app worker --loglevel=INFO
 ```
-Backend API available at: **http://localhost:8000**
-API Docs available at: **http://localhost:8000/docs**
 
-By default the backend creates `backend/intakegateway_app.db` and uses it for tasks, runs, schedules, mappings, and logs. Oracle settings are only required when you want to read destination metadata or run ingestion into a destination database.
+### Docker (alternative)
+
+```bash
+cp .env.example .env  # configure .env first
+docker compose up --build
+```
+
+Starts the backend API (port 8000), Celery worker, scheduler, and Redis. Run the frontend separately with `npm run dev`.
 
 ### Run Tests
 
-**Frontend**:
 ```bash
-cd frontend
-npm run test
-```
+# Backend
+cd backend && pytest tests/ -v
 
-**Backend**:
-```bash
-cd backend
-pytest tests/ -v
+# Frontend
+cd frontend && npm test
 ```
 
 ---
@@ -144,13 +174,10 @@ IntakeGateway/
 │   │   ├── __tests__/        # 14 test files
 │   │   ├── theme.ts          # Ant Design theme configuration
 │   │   └── App.tsx           # Routing + AntD Layout
-│   ├── PROMPT.md             # Ant Design UI specification
 │   └── package.json
 │
 ├── docker-compose.yml         # Multi-container setup
 ├── Makefile                   # Convenience commands
-├── claude.md                  # AI development guide
-├── PROJECT_ORIENTATION.md     # Architecture overview
 ├── DOCUMENTATION_INDEX.md     # Documentation index
 └── README.md                  # This file
 ```
@@ -247,72 +274,40 @@ POST   /api/v1/connections/{id}/activate  # Set active connection
 
 ---
 
-## Development Phases
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| Phase 1-4 | ✅ Complete | Backend API, services, database models |
-| Phase 5 | ✅ Complete | React frontend with Radix UI + Tailwind |
-| Phase 6 | ✅ Complete | Column mapping editor, field preview |
-| Phase 7 | ✅ Complete | Encrypted connections, multi-DB support |
-| Phase 8 | ✅ Complete | Upsert logic, skip conditions, continue-on-error |
-| Phase 9 | ✅ Complete | **Ant Design UI migration** (from Radix UI + Tailwind) |
-
----
-
-## Docker Setup
-
-```bash
-docker compose up --build
-```
-
-This starts:
-- FastAPI backend (port 8000)
-- Redis (port 6379)
-- Celery worker (background)
-- Scheduler (background)
-
-Run the frontend separately with `cd frontend && npm run dev`.
-
----
-
 ## Environment Variables
 
-```env
-# Backend
-APP_DATABASE_URL=sqlite:///./intakegateway_app.db
+See `.env.example` for the full reference. Key variables:
 
-# Destination database fallback (optional at startup)
-ORACLE_USER=your_oracle_user
-ORACLE_PASSWORD=your_oracle_password
-ORACLE_HOST=localhost
-ORACLE_PORT=1521
-ORACLE_SERVICE_NAME=your_service
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `APP_DATABASE_URL` | `sqlite:///./intakegateway_app.db` | Local app state database |
+| `ENCRYPTION_KEY` | — | Fernet key for credential encryption (required) |
+| `CONNECTIONS_FILE_PATH` | `connections.enc` | Encrypted destination connections file |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis URL for Celery |
+| `FRONTEND_URL` | `http://localhost:5173` | CORS allow-origin for the UI |
+| `ORACLE_USER` / `ORACLE_HOST` / … | — | Oracle fallback (optional; used only when no active saved connection exists) |
 
-# Redis / Celery
-REDIS_URL=redis://localhost:6379
-CELERY_BROKER_URL=redis://localhost:6379/0
-
-# Encrypted destination connections
-ENCRYPTION_KEY=generated_fernet_key
-CONNECTIONS_FILE_PATH=connections.enc
-FRONTEND_URL=http://localhost:5173
+Generate a valid `ENCRYPTION_KEY`:
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 ---
 
 ## Contributing
 
-1. Read [claude.md](claude.md) for development guidelines
-2. Follow coding conventions (TypeScript strict, type hints, testing)
-3. Ensure all tests pass: `tsc -b` + `vite build` + `npm test`
-4. Update documentation for major changes
-5. Keep commits atomic and well-described
+1. Follow coding conventions — TypeScript strict mode, Python type hints, tests for new functionality
+2. Ensure all tests pass before opening a PR: `pytest tests/ -v` and `npm test`
+3. Update documentation for any API or behaviour changes
+4. Keep commits atomic and descriptive
 
 ---
 
-**Last Updated**: April 2026
-**Version**: 2.0.0
-**Status**: Production Ready
+## License
 
-For detailed project context, see [claude.md](claude.md)
+MIT
+
+---
+
+**Version**: 1.0.0 | **Status**: Production Ready
+
