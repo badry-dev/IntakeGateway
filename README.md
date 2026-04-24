@@ -2,7 +2,7 @@
 
 > Import data from any HTTP API into your database — with scheduling, transforms, upsert logic, and full observability.
 
-**Version**: 1.0.0 | **Status**: Production Ready
+**Version**: 0.1.0 | **Status**: Production Ready
 
 IntakeGateway is a full-stack web application that lets you define, schedule, and monitor data import tasks. It fetches records from external REST APIs, maps fields to destination database columns, and loads them with configurable insert/upsert/skip logic. The app stores its own state in a local SQLite database, so the UI and API remain fully operational even when no destination database is configured.
 
