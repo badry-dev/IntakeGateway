@@ -47,7 +47,7 @@ IntakeGateway/
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18 + TypeScript, Ant Design 5, React Query 5, Vite |
+| Frontend | React 18 + TypeScript, Ant Design, React Query 5, Vite |
 | Backend | Python 3.11, FastAPI 0.104, SQLAlchemy 2.0, Pydantic 2.4 |
 | Queue | Celery 5.4 + Redis |
 | Scheduler | APScheduler 3.10 |
