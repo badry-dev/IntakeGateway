@@ -1,4 +1,4 @@
-# IntakeGateway
+i# IntakeGateway
 
 > Import data from any HTTP API into your database — with scheduling, transforms, upsert logic, and full observability.
 
@@ -305,9 +305,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ## License
 
-MIT
+GPLv3
 
 ---
 
-**Version**: 1.0.0 | **Status**: Production Ready
+**Version**: 0.1.0 | **Status**: Production Ready
 
