@@ -23,7 +23,7 @@ The interactive API documentation is available at **http://localhost:8000/docs**
 | Schedules | `/api/v1/schedules` |
 | Column Mappings | `/api/v1/tasks/{id}/mappings` |
 | Database Connections | `/api/v1/connections` |
-| Statistics | `/api/v1/stats` |
+| Statistics | `/api/v1/tasks/{task_id}/stats` |
 
 ## Architecture
 
