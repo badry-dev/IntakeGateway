@@ -90,13 +90,3 @@ npm run build    # TypeScript check + Vite production build
 npm run test     # Run Vitest test suite
 npm run lint     # ESLint check
 ```
-
-## Recent Changes (Phase 9)
-
-**Ant Design Migration** - Complete UI library replacement:
-- Removed: Radix UI, Tailwind CSS, CVA, lucide-react, react-hook-form
-- Added: antd, @ant-design/icons, dayjs
-- Rewritten: All 8 pages, 4 editor components, App layout
-- Deleted: 11 Radix UI wrapper components (`components/ui/`), Tailwind config, PostCSS config
-- Created: `theme.ts` (Ant Design ConfigProvider), `__tests__/setup.ts` (jest-dom)
-- Result: Zero TypeScript errors, successful Vite build
