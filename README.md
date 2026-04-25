@@ -1,4 +1,4 @@
-i# IntakeGateway
+# IntakeGateway
 
 > Import data from any HTTP API into your database — with scheduling, transforms, upsert logic, and full observability.
 
