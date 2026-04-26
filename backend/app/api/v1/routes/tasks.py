@@ -291,7 +291,20 @@ def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depen
 
             start_dt = _parse_iso_cursor(payload.cursor_start)
             end_dt = _parse_iso_cursor(payload.cursor_end)
-            window_days = (end_dt - start_dt).days
+            # Subtracting a tz-aware and a tz-naive datetime raises TypeError;
+            # surface that as a 400 instead of a 500. Same for any other
+            # arithmetic mismatch — the caller passed valid-looking ISO that
+            # we just can't compare safely.
+            try:
+                window_days = (end_dt - start_dt).days
+            except TypeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "cursor_start and cursor_end must both be timezone-aware "
+                        "or both be naive (mixed offsets cannot be compared)"
+                    ),
+                )
             if window_days > _settings.BACKFILL_MAX_WINDOW_DAYS:
                 raise HTTPException(
                     status_code=400,

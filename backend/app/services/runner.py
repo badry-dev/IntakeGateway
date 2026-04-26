@@ -197,11 +197,36 @@ async def run_import(
         logger.info(f"Extracted {len(records)} records from API response")
         
         if not records:
+            # Empty fetch is still a successful run for cursor purposes.
+            # We MUST persist cursor_end (and is_backfill / is_replay) here, or
+            # backfill / replay history loses its requested upper bound — and
+            # a later replay of this run reads prior.cursor_end as None,
+            # silently dropping the fixed-window semantics. Match the metadata
+            # shape returned by the non-empty success path.
             task_run.status = TaskStatus.SUCCESS.value
+            task_run.cursor_end = cursor_override_end
             task_run.ended_at = datetime.now(timezone.utc)
+            # Watermark advancement on empty windows: skip. With zero rows we
+            # have no observed source-side max, and silently advancing to
+            # cursor_override_end would create off-by-one drift between what
+            # the upstream actually emitted and what we record.
             db.commit()
             log_step(db, task_run_id, "COMPLETE", "No records to process")
-            return {"task_id": task_id, "run_id": task_run_id, "inserted": 0, "errors": 0}
+            return {
+                "task_id": task_id,
+                "run_id": task_run_id,
+                "status": task_run.status,
+                "rows_fetched": 0,
+                "rows_inserted": 0,
+                "rows_updated": 0,
+                "rows_skipped": 0,
+                "error_count": 0,
+                "cursor_start": task_run.cursor_start,
+                "cursor_end": task_run.cursor_end,
+                "is_backfill": task_run.is_backfill,
+                "is_replay": task_run.is_replay,
+                "replay_of_run_id": task_run.replay_of_run_id,
+            }
         
         # Step 5: Flatten nested structures
         log_step(db, task_run_id, "FLATTEN", "Flattening nested JSON structures")

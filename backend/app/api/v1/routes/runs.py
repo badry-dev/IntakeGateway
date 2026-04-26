@@ -9,6 +9,7 @@ from app.db.models.task_log import TaskLog
 from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import TaskRunOut, TaskLogOut, TaskRunLogOut, ReplayRequest
 from app.workers.tasks import enqueue_replay
+from app.services.connection_storage import get_connection_storage
 
 router = APIRouter()
 
@@ -106,6 +107,21 @@ def replay_run(run_id: int, payload: ReplayRequest, db: Session = Depends(get_db
     task = db.query(Task).filter(Task.id == prior.task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task for this run no longer exists")
+
+    # Mirror trigger_task_run / trigger_backfill: fail fast if the destination
+    # connection has been deleted, instead of silently 202-ing and burning
+    # Celery retries on a run that can never succeed.
+    if not task.connection_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Task requires a destination connection before it can run",
+        )
+    storage = get_connection_storage()
+    if not storage.get_connection(task.connection_id):
+        raise HTTPException(
+            status_code=400,
+            detail="The task's selected destination connection no longer exists",
+        )
 
     if not task.upsert_enabled and not payload.force:
         raise HTTPException(
