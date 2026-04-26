@@ -1,6 +1,10 @@
 // Authentication types
 export type AuthType = 'none' | 'bearer' | 'api_key' | 'basic' | 'oauth'
 
+// HTTP methods accepted by the task fetch pipeline (mirrors backend regex
+// "^(GET|POST|PUT|PATCH)$").
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH'
+
 export interface TaskAuth {
   auth_type: AuthType
   username?: string
@@ -96,6 +100,33 @@ export interface ReplayRequest {
   force?: boolean
 }
 
+// 202 response shapes from the backend backfill / replay endpoints.
+// Mirror BackfillResponse / ReplayResponse in backend/app/db/schemas/task.py.
+export interface BackfillResponse {
+  status: string
+  task_id: number
+  is_backfill: boolean
+  cursor_start: string
+  cursor_end?: string | null
+  celery_task_id?: string | null
+}
+
+export interface ReplayResponse {
+  status: string
+  task_id: number
+  replay_of_run_id: number
+  cursor_start?: string | null
+  cursor_end?: string | null
+  force: boolean
+  celery_task_id?: string | null
+}
+
+// Narrow shape used by axios error handling — keeps catch blocks typed
+// without depending on the full AxiosError surface.
+export interface ApiErrorLike {
+  response?: { data?: { detail?: string } }
+}
+
 // Explicit writable task payload shape. Do NOT derive from Task — Task includes
 // response-only / server-managed fields (id, created_at, updated_at,
 // oauth_token_expires_at, cursor_last_value, etc.) that the backend rejects
@@ -106,7 +137,7 @@ export interface TaskInput extends TaskCreateAuth {
   name: string
   description?: string
   connection_id: string
-  http_method: string
+  http_method: HttpMethod
   endpoint_path: string
   query_params_json?: Record<string, any>
   headers_json?: Record<string, any>

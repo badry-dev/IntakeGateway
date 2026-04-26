@@ -1,4 +1,5 @@
 
+import hashlib
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -12,6 +13,19 @@ from loguru import logger
 
 # Cursor identifiers go directly into URL query params; whitelist them strictly.
 _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
+
+
+def _redact_cursor(value):
+    """Same redaction policy as workers.tasks._redact_cursor — see that
+    function for rationale. Duplicated here to avoid a circular import
+    (runner imported by worker)."""
+    if value is None:
+        return "<none>"
+    s = str(value)
+    if not s:
+        return "<empty>"
+    digest = hashlib.sha256(s.encode("utf-8", errors="replace")).hexdigest()[:8]
+    return f"<len={len(s)} sha256={digest}>"
 
 from app.db.session import SessionLocal
 from app.db.models.task import Task
@@ -151,7 +165,8 @@ async def run_import(
         logger.info(
             f"Starting import for task {task_id}, run {task_run_id} "
             f"(backfill={is_backfill}, replay={is_replay}, "
-            f"cursor_start={cursor_start_value!r}, cursor_end={cursor_override_end!r})"
+            f"cursor_start={_redact_cursor(cursor_start_value)}, "
+            f"cursor_end={_redact_cursor(cursor_override_end)})"
         )
 
         # Inject cursor bounds into query params if configured. We copy
@@ -332,50 +347,65 @@ async def run_import(
             task_run.status = TaskStatus.SUCCESS.value
 
         # Cursor advancement (P0-C):
-        # - Compute cursor_end as max(record[cursor_field]) — preferring
-        #   pre-mapping records since cursor_field refers to the API/normalized
-        #   field name, which typically does NOT survive destination column
-        #   mapping (mapped_records use destination column names). Reading from
-        #   valid_rows alone would silently fail to advance the watermark for
-        #   any task that has column mappings configured.
-        # - Persist cursor_end on the TaskRun for audit / replay.
-        # - Advance task.cursor_last_value ONLY for non-backfill, non-replay runs
-        #   that succeeded (or partially succeeded). Backfills and replays must
-        #   never move the high-water mark forward, or a backfill of historical
-        #   data could rewind production state.
-        cursor_end_value = cursor_override_end
-        if cursor_field:
+        # Cursor bookkeeping splits into two distinct values with different
+        # safety requirements:
+        #
+        #   task_run.cursor_end          — the upper bound of THIS run's window,
+        #                                  used by replay to reconstruct the
+        #                                  same fetch. Must reflect what the
+        #                                  upstream actually returned, including
+        #                                  rows that later failed validation or
+        #                                  DB write — replay needs to see those
+        #                                  again.
+        #
+        #   task.cursor_last_value       — the high-water mark used to compute
+        #                                  the NEXT incremental run's start.
+        #                                  Advancing past a row that did NOT
+        #                                  land would skip it forever, so we
+        #                                  only advance on full SUCCESS (zero
+        #                                  errors at any pipeline stage).
+        #                                  PARTIAL_SUCCESS persists cursor_end
+        #                                  on the run row but holds the
+        #                                  watermark steady.
+        #
+        # We prefer pre-mapping source records (flattened_records) when reading
+        # cursor_field because column mapping renames keys to destination
+        # columns and the field name typically won't survive.
+
+        def _max_cursor(rows: list) -> Optional[str]:
             try:
-                observed: list = []
-                # Prefer pre-mapping source records.
-                if flattened_records:
-                    observed = [
-                        r.get(cursor_field)
-                        for r in flattened_records
-                        if isinstance(r, dict) and r.get(cursor_field) is not None
-                    ]
-                # Fallback for tasks without mappings or where the field is preserved.
-                if not observed and valid_rows:
-                    observed = [
-                        r.get(cursor_field)
-                        for r in valid_rows
-                        if isinstance(r, dict) and r.get(cursor_field) is not None
-                    ]
-                if observed:
-                    cursor_end_value = str(max(observed))
+                observed = [
+                    r.get(cursor_field)
+                    for r in rows
+                    if isinstance(r, dict) and r.get(cursor_field) is not None
+                ]
+                return str(max(observed)) if observed else None
             except (TypeError, ValueError) as exc:
                 logger.warning(
-                    f"Could not compute cursor_end for field={cursor_field!r}: {exc}"
+                    f"Could not compute cursor max for field={cursor_field!r}: {exc}"
                 )
+                return None
+
+        cursor_end_value = cursor_override_end
+        if cursor_field:
+            run_cursor = _max_cursor(flattened_records)
+            if run_cursor is None:
+                run_cursor = _max_cursor(valid_rows)
+            if run_cursor is not None:
+                cursor_end_value = run_cursor
 
         task_run.cursor_end = cursor_end_value
         task_run.ended_at = datetime.now(timezone.utc)
 
+        # Watermark advancement: ONLY on full SUCCESS. PARTIAL_SUCCESS leaves
+        # the watermark where it was so any failed row gets re-fetched on the
+        # next incremental run instead of being silently skipped forever
+        # (CodeRabbit-flagged correctness bug). Backfill / replay never advance.
         if (
             cursor_end_value is not None
             and not is_backfill
             and not is_replay
-            and task_run.status in (TaskStatus.SUCCESS.value, TaskStatus.PARTIAL_SUCCESS.value)
+            and task_run.status == TaskStatus.SUCCESS.value
         ):
             task.cursor_last_value = cursor_end_value
             db.add(task)

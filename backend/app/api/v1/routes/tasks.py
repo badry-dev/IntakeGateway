@@ -18,6 +18,7 @@ from app.db.schemas.task import (
     TaskLogOut,
     TaskRunLogOut,
     BackfillRequest,
+    BackfillResponse,
 )
 from app.workers.tasks import enqueue_run, enqueue_backfill
 from app.core.encryption import encrypt_value
@@ -61,13 +62,19 @@ def _flatten_p0_submodels(task_data: dict, task_name: str) -> dict:
         task_data["oauth_client_id"] = oauth.get("client_id")
         task_data["oauth_scope"] = oauth.get("scope")
         task_data["oauth_audience"] = oauth.get("audience")
-        if oauth.get("client_secret"):
-            task_data["oauth_client_secret"] = encrypt_value(oauth["client_secret"])
-            logger.debug(f"Encrypted oauth_client_secret for task '{task_name}'")
-        if oauth.get("access_token"):
-            task_data["oauth_access_token"] = encrypt_value(oauth["access_token"])
-        if oauth.get("refresh_token"):
-            task_data["oauth_refresh_token"] = encrypt_value(oauth["refresh_token"])
+        # Key presence (not truthiness) drives whether the column is touched.
+        # PUT with explicit null/"" must be able to clear stored credentials —
+        # truthiness-only checks left revoked secrets in place forever.
+        for src, dst in (
+            ("client_secret", "oauth_client_secret"),
+            ("access_token", "oauth_access_token"),
+            ("refresh_token", "oauth_refresh_token"),
+        ):
+            if src in oauth:
+                value = oauth[src]
+                task_data[dst] = encrypt_value(value) if value else None
+                if value and src == "client_secret":
+                    logger.debug(f"Encrypted oauth_client_secret for task '{task_name}'")
 
     rl = task_data.pop("rate_limit", None)
     if isinstance(rl, dict):
@@ -244,7 +251,7 @@ def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to enqueue task: {str(e)}")
 
 
-@router.post("/{task_id}/backfill", status_code=202)
+@router.post("/{task_id}/backfill", status_code=202, response_model=BackfillResponse)
 def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depends(get_db)):
     """
     Enqueue a backfill run for a fixed cursor window.
@@ -277,7 +284,7 @@ def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depen
     # We only enforce when both endpoints parse — opaque tokens are passed through.
     if payload.cursor_end:
         try:
-            from datetime import datetime as _dt
+            from datetime import datetime as _dt, timedelta
             from app.core.config import settings as _settings
 
             def _parse_iso_cursor(value: str) -> _dt:
@@ -291,32 +298,35 @@ def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depen
 
             start_dt = _parse_iso_cursor(payload.cursor_start)
             end_dt = _parse_iso_cursor(payload.cursor_end)
-            # Subtracting a tz-aware and a tz-naive datetime raises TypeError;
-            # surface that as a 400 instead of a 500. Same for any other
-            # arithmetic mismatch — the caller passed valid-looking ISO that
-            # we just can't compare safely.
-            try:
-                window_days = (end_dt - start_dt).days
-            except TypeError:
+
+            # Reject mixed-awareness inputs explicitly with a 400 instead of
+            # letting the subtraction surface as a 500 TypeError. Both ends
+            # must agree on whether they carry an offset.
+            if (start_dt.tzinfo is None) != (end_dt.tzinfo is None):
                 raise HTTPException(
                     status_code=400,
                     detail=(
                         "cursor_start and cursor_end must both be timezone-aware "
-                        "or both be naive (mixed offsets cannot be compared)"
+                        "or both be naive"
                     ),
                 )
-            if window_days > _settings.BACKFILL_MAX_WINDOW_DAYS:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Backfill window {window_days}d exceeds "
-                        f"BACKFILL_MAX_WINDOW_DAYS={_settings.BACKFILL_MAX_WINDOW_DAYS}"
-                    ),
-                )
-            if window_days < 0:
+
+            # Compare full timedeltas, not `.days`. `.days` floors partial days
+            # so a window of `N + 23h59m` would slip past a max-N-days check.
+            delta = end_dt - start_dt
+            if delta.total_seconds() < 0:
                 raise HTTPException(
                     status_code=400,
                     detail="cursor_end must be greater than or equal to cursor_start",
+                )
+            max_delta = timedelta(days=_settings.BACKFILL_MAX_WINDOW_DAYS)
+            if delta > max_delta:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Backfill window {delta} exceeds "
+                        f"BACKFILL_MAX_WINDOW_DAYS={_settings.BACKFILL_MAX_WINDOW_DAYS}"
+                    ),
                 )
         except ValueError:
             # Non-ISO cursors: skip the window check.
@@ -329,7 +339,10 @@ def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depen
             cursor_end=payload.cursor_end,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to enqueue backfill: {e}")
+        # `from e` preserves the original Celery / broker traceback so
+        # operators can diagnose enqueue failures (broker down, AMQP error, etc.)
+        # instead of seeing only the wrapped HTTPException.
+        raise HTTPException(status_code=500, detail=f"Failed to enqueue backfill: {e}") from e
 
     return {
         "status": "enqueued",

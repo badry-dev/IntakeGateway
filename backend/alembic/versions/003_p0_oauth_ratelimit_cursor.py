@@ -27,11 +27,13 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column('oauth_grant_type', sa.String(30), nullable=True))
         batch_op.add_column(sa.Column('oauth_token_url', sa.String(1000), nullable=True))
         batch_op.add_column(sa.Column('oauth_client_id', sa.String(500), nullable=True))
-        batch_op.add_column(sa.Column('oauth_client_secret', sa.String(2000), nullable=True))
+        # Text — Fernet ciphertext can exceed 2000 chars for large client_secrets.
+        batch_op.add_column(sa.Column('oauth_client_secret', sa.Text(), nullable=True))
         batch_op.add_column(sa.Column('oauth_scope', sa.String(500), nullable=True))
         batch_op.add_column(sa.Column('oauth_audience', sa.String(500), nullable=True))
-        batch_op.add_column(sa.Column('oauth_access_token', sa.String(2000), nullable=True))
-        batch_op.add_column(sa.Column('oauth_refresh_token', sa.String(2000), nullable=True))
+        # Text — encrypted OAuth tokens routinely exceed 2000 chars in the wild.
+        batch_op.add_column(sa.Column('oauth_access_token', sa.Text(), nullable=True))
+        batch_op.add_column(sa.Column('oauth_refresh_token', sa.Text(), nullable=True))
         batch_op.add_column(sa.Column('oauth_token_expires_at', sa.DateTime(timezone=True), nullable=True))
 
         # Rate-limit tuning (overrides for global defaults)

@@ -7,7 +7,9 @@ from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task import Task
 from app.db.models.task_log import TaskLog
 from app.db.models.task_run_log import TaskRunLog
-from app.db.schemas.task import TaskRunOut, TaskLogOut, TaskRunLogOut, ReplayRequest
+from app.db.schemas.task import (
+    TaskRunOut, TaskLogOut, TaskRunLogOut, ReplayRequest, ReplayResponse,
+)
 from app.workers.tasks import enqueue_replay
 from app.services.connection_storage import get_connection_storage
 
@@ -91,7 +93,7 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
         ]
     }
 
-@router.post("/{run_id}/replay", status_code=202)
+@router.post("/{run_id}/replay", status_code=202, response_model=ReplayResponse)
 def replay_run(run_id: int, payload: ReplayRequest, db: Session = Depends(get_db)):
     """
     Re-run a prior run with the same cursor window.
@@ -141,7 +143,8 @@ def replay_run(run_id: int, payload: ReplayRequest, db: Session = Depends(get_db
             force=payload.force,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to enqueue replay: {e}")
+        # `from e` preserves the original Celery / broker traceback for diagnostics.
+        raise HTTPException(status_code=500, detail=f"Failed to enqueue replay: {e}") from e
 
     return {
         "status": "enqueued",

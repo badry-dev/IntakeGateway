@@ -1,6 +1,6 @@
 
 import re
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Any, Optional, Literal
 from datetime import datetime
 
@@ -20,6 +20,45 @@ class OAuthConfigIn(BaseModel):
     # Static-token migration path (back-compat with legacy oauth_config['access_token'])
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_grant_requirements(self):
+        """Reject incomplete OAuth configs at request time so the worker
+        doesn't fail later with a useless error. Each grant has different
+        required fields per RFC 6749."""
+        if self.grant_type == "client_credentials":
+            missing = [
+                f for f, v in (
+                    ("token_url", self.token_url),
+                    ("client_id", self.client_id),
+                    ("client_secret", self.client_secret),
+                ) if not v
+            ]
+            if missing:
+                raise ValueError(
+                    f"grant_type=client_credentials requires: {', '.join(missing)}"
+                )
+        elif self.grant_type == "refresh_token":
+            missing = [
+                f for f, v in (
+                    ("token_url", self.token_url),
+                    ("refresh_token", self.refresh_token),
+                ) if not v
+            ]
+            if missing:
+                raise ValueError(
+                    f"grant_type=refresh_token requires: {', '.join(missing)}"
+                )
+        elif self.grant_type == "static":
+            # Static needs an access_token via this submodel OR via the legacy
+            # oauth_config dict. We only enforce when the submodel is provided
+            # standalone — the legacy path is checked at runtime.
+            if self.access_token is None and self.refresh_token is None:
+                # Empty static block is permitted (back-compat with legacy
+                # oauth_config). Skip the check rather than 422 a request that
+                # will be resolved by the legacy path.
+                pass
+        return self
 
 
 class RateLimitConfigIn(BaseModel):
@@ -45,6 +84,23 @@ class CursorConfigIn(BaseModel):
             )
         return v
 
+    @model_validator(mode="after")
+    def validate_consistency(self):
+        """Both `field` (response key to read) and `param_name` (request query
+        param to inject) are required together — supplying only one silently
+        disables half of the cursor flow at runtime, which is far worse than
+        a 422 at config time."""
+        if bool(self.field) != bool(self.param_name):
+            raise ValueError(
+                "cursor.field and cursor.param_name must be provided together "
+                "(or both omitted to disable cursor support)"
+            )
+        if self.initial_value is not None and not self.field:
+            raise ValueError(
+                "cursor.initial_value requires cursor.field and cursor.param_name"
+            )
+        return self
+
 
 class BackfillRequest(BaseModel):
     """Request body for POST /tasks/{id}/backfill."""
@@ -55,6 +111,27 @@ class BackfillRequest(BaseModel):
 class ReplayRequest(BaseModel):
     """Request body for POST /runs/{run_id}/replay."""
     force: bool = False
+
+
+class BackfillResponse(BaseModel):
+    """202 response shape for POST /tasks/{id}/backfill."""
+    status: str
+    task_id: int
+    is_backfill: bool = True
+    cursor_start: str
+    cursor_end: Optional[str] = None
+    celery_task_id: Optional[str] = None
+
+
+class ReplayResponse(BaseModel):
+    """202 response shape for POST /runs/{run_id}/replay."""
+    status: str
+    task_id: int
+    replay_of_run_id: int
+    cursor_start: Optional[str] = None
+    cursor_end: Optional[str] = None
+    force: bool = False
+    celery_task_id: Optional[str] = None
 
 
 class TaskCreate(BaseModel):

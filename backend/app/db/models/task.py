@@ -1,5 +1,5 @@
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text  # noqa: F401
 from sqlalchemy.sql import func
 from app.db.session import Base
 from app.db.types import ID_TYPE, JSONText
@@ -31,11 +31,15 @@ class Task(Base):
     oauth_grant_type = Column(String(30), nullable=True)  # 'static' | 'client_credentials' | 'refresh_token'
     oauth_token_url = Column(String(1000), nullable=True)
     oauth_client_id = Column(String(500), nullable=True)
-    oauth_client_secret = Column(String(2000), nullable=True)  # Encrypted
+    # Text rather than String(N) — Fernet ciphertext expands plaintext by ~38%
+    # before base64, and real-world OAuth tokens (Microsoft, Google, AWS) can
+    # exceed 1500 chars plaintext, putting encrypted forms over a 2000 limit.
+    # Storing as Text avoids silent truncation that would corrupt the token.
+    oauth_client_secret = Column(Text, nullable=True)  # Encrypted
     oauth_scope = Column(String(500), nullable=True)
     oauth_audience = Column(String(500), nullable=True)
-    oauth_access_token = Column(String(2000), nullable=True)  # Encrypted server-managed cache
-    oauth_refresh_token = Column(String(2000), nullable=True)  # Encrypted
+    oauth_access_token = Column(Text, nullable=True)  # Encrypted server-managed cache
+    oauth_refresh_token = Column(Text, nullable=True)  # Encrypted
     oauth_token_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     # Rate-limit / 429 handling (P0-B). NULL means use Settings defaults.

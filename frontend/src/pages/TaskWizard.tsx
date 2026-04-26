@@ -180,6 +180,23 @@ export function TaskWizard() {
         if (authData.authType === 'bearer') return !!authData.bearerToken.trim()
         if (authData.authType === 'api_key') return !!(authData.apiKeyHeaderName.trim() && authData.apiKeyValue.trim())
         if (authData.authType === 'basic') return !!(authData.username.trim() && authData.password.trim())
+        if (authData.authType === 'oauth') {
+          // Per-grant required fields. Mirrors backend OAuthConfigIn validator.
+          if (authData.oauthGrantType === 'static') {
+            return !!authData.oauthAccessToken.trim()
+          }
+          const commonOauthOk =
+            !!authData.oauthTokenUrl.trim() &&
+            !!authData.oauthClientId.trim() &&
+            !!authData.oauthClientSecret.trim()
+          if (authData.oauthGrantType === 'client_credentials') {
+            return commonOauthOk
+          }
+          if (authData.oauthGrantType === 'refresh_token') {
+            return commonOauthOk && !!authData.oauthRefreshToken.trim()
+          }
+          return false
+        }
         return true
       case 4: return mappings.length > 0 || skipMappings
       case 5: return true

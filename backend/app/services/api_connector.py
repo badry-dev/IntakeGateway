@@ -432,7 +432,15 @@ async def fetch_sample_response(
         # through to fetch_json with task.oauth_config alone would miss the
         # per-column oauth_grant_type / oauth_client_secret / token_url path
         # and silently fail for any task configured via the new structured fields.
-        if task is not None and db is not None and (auth_type or "none") == "oauth":
+        # Resolve auth_type as caller-arg first, then task.auth_type, so a
+        # populated task with auth_type=oauth still routes through fetch_with_auth
+        # even if the caller forgot to forward the explicit auth_type kwarg.
+        effective_auth_type = (
+            auth_type
+            or (getattr(task, "auth_type", None) if task is not None else None)
+            or "none"
+        )
+        if task is not None and db is not None and effective_auth_type == "oauth":
             response_data = await fetch_with_auth(
                 task=task,
                 db=db,

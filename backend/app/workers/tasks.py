@@ -1,7 +1,26 @@
 
 import asyncio
+import hashlib
 from datetime import datetime, timezone
 from loguru import logger
+
+
+def _redact_cursor(value: str | None) -> str:
+    """Return a log-safe summary of a cursor value.
+
+    Cursors can be ISO timestamps (safe to log) but can equally be opaque
+    provider-issued pagination tokens (Stripe `pi_...`, GitHub `cursor:...`,
+    etc.) that may carry session-bound capability or be sensitive. Treat them
+    uniformly as opaque and emit only length + an 8-char SHA256 prefix so
+    operators can correlate a log line with a known cursor without the raw
+    value ever hitting log storage.
+    """
+    if value is None:
+        return "<none>"
+    if not value:
+        return "<empty>"
+    digest = hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:8]
+    return f"<len={len(value)} sha256={digest}>"
 
 from app.workers.celery_app import celery_app
 from app.services.runner import run_import
@@ -190,7 +209,8 @@ def enqueue_backfill(
     """Enqueue a backfill import for a fixed cursor window."""
     logger.info(
         f"Enqueueing backfill for task_id={task_id} "
-        f"cursor_start={cursor_start!r} cursor_end={cursor_end!r}"
+        f"cursor_start={_redact_cursor(cursor_start)} "
+        f"cursor_end={_redact_cursor(cursor_end)}"
     )
     return run_import_task_ext.delay(
         task_id=task_id,

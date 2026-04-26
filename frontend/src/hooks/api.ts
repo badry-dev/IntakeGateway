@@ -137,9 +137,11 @@ export function useBackfillTask() {
   return useMutation({
     mutationFn: (vars: { taskId: number; cursorStart: string; cursorEnd?: string }) =>
       apiClient.triggerBackfill(vars.taskId, vars.cursorStart, vars.cursorEnd),
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: runKeys.list(vars.taskId, 0, 20) })
-      queryClient.invalidateQueries({ queryKey: runKeys.recent(0, 20) })
+    onSuccess: () => {
+      // Invalidate the entire run-list namespace so paginated and filtered
+      // views all refresh, not just the first page that happens to match the
+      // hard-coded (skip, limit) keys. Mirrors useReplayRun.
+      queryClient.invalidateQueries({ queryKey: runKeys.lists() })
     },
   })
 }

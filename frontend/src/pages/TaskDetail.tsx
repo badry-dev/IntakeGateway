@@ -22,7 +22,17 @@ import {
   DatabaseOutlined,
   HistoryOutlined,
 } from '@ant-design/icons'
-import { TaskFormData, ScheduleCreate } from '@/types'
+import { TaskFormData, ScheduleCreate, ApiErrorLike } from '@/types'
+
+// Narrow an `unknown` error to ApiErrorLike before reading axios fields.
+function isApiErrorLike(e: unknown): e is ApiErrorLike {
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    'response' in e &&
+    typeof (e as { response?: unknown }).response === 'object'
+  )
+}
 import { ColumnMappingEditor } from '@/components/ColumnMappingEditor'
 import { ScheduleEditor } from '@/components/ScheduleEditor'
 import { Select } from 'antd'
@@ -151,8 +161,9 @@ export function TaskDetail() {
       setIsBackfillOpen(false)
       setBackfillStart('')
       setBackfillEnd('')
-    } catch (e: any) {
-      const detail = e?.response?.data?.detail || 'Failed to enqueue backfill'
+    } catch (e: unknown) {
+      const detail =
+        (isApiErrorLike(e) && e.response?.data?.detail) || 'Failed to enqueue backfill'
       message.error(detail)
     }
   }
