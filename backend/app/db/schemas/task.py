@@ -1,7 +1,61 @@
 
+import re
 from pydantic import BaseModel, Field, field_validator
 from typing import Any, Optional, Literal
 from datetime import datetime
+
+
+# Reusable regex for safe API parameter / column identifiers (cursor injection guard).
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
+
+
+class OAuthConfigIn(BaseModel):
+    """OAuth2 configuration for client_credentials / refresh_token grants."""
+    grant_type: Literal['static', 'client_credentials', 'refresh_token'] = 'static'
+    token_url: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None  # Encrypted before storage
+    scope: Optional[str] = None
+    audience: Optional[str] = None
+    # Static-token migration path (back-compat with legacy oauth_config['access_token'])
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+
+
+class RateLimitConfigIn(BaseModel):
+    """Per-task rate-limit / 429 retry tuning."""
+    max_retries: Optional[int] = Field(default=None, ge=0, le=20)
+    max_wait_seconds: Optional[int] = Field(default=None, ge=0, le=3600)
+    rps: Optional[int] = Field(default=None, ge=0, le=1000)
+
+
+class CursorConfigIn(BaseModel):
+    """Cursor / incremental fetch configuration."""
+    field: Optional[str] = None
+    param_name: Optional[str] = None
+    initial_value: Optional[str] = None
+
+    @field_validator('field', 'param_name')
+    @classmethod
+    def validate_identifier(cls, v: Optional[str]):
+        if v is not None and not _SAFE_IDENTIFIER_RE.match(v):
+            raise ValueError(
+                "must match ^[A-Za-z_][A-Za-z0-9_]{0,99}$ "
+                "(prevents URL/header injection via cursor params)"
+            )
+        return v
+
+
+class BackfillRequest(BaseModel):
+    """Request body for POST /tasks/{id}/backfill."""
+    cursor_start: str = Field(..., min_length=1, max_length=500)
+    cursor_end: Optional[str] = Field(default=None, max_length=500)
+
+
+class ReplayRequest(BaseModel):
+    """Request body for POST /runs/{run_id}/replay."""
+    force: bool = False
+
 
 class TaskCreate(BaseModel):
     name: str
@@ -16,13 +70,18 @@ class TaskCreate(BaseModel):
     dest_table: str
     batch_size: int = 500
     is_active: bool = True
-    
+
     # Authentication fields (Phase 7)
     auth_type: Literal['none', 'bearer', 'api_key', 'basic', 'oauth'] = 'none'
     api_key: Optional[str] = None  # Will be encrypted before storage
     username: Optional[str] = None  # For Basic auth
     password: Optional[str] = None  # Will be encrypted before storage
-    oauth_config: Optional[dict[str, Any]] = None  # OAuth settings
+    oauth_config: Optional[dict[str, Any]] = None  # Legacy free-form (deprecated)
+
+    # Structured OAuth / rate-limit / cursor config (P0)
+    oauth: Optional[OAuthConfigIn] = None
+    rate_limit: Optional[RateLimitConfigIn] = None
+    cursor: Optional[CursorConfigIn] = None
 
     # Upsert configuration (Phase 8)
     upsert_enabled: bool = False
@@ -78,6 +137,26 @@ class TaskOut(BaseModel):
     auth_type: str = 'none'
     username: Optional[str] = None  # Safe to expose
     # api_key and password are NOT included in response
+
+    # OAuth2 metadata (safe fields only — secrets never returned)
+    oauth_grant_type: Optional[str] = None
+    oauth_token_url: Optional[str] = None
+    oauth_client_id: Optional[str] = None
+    oauth_scope: Optional[str] = None
+    oauth_audience: Optional[str] = None
+    oauth_token_expires_at: Optional[datetime] = None
+    # oauth_client_secret / oauth_access_token / oauth_refresh_token are NEVER serialized
+
+    # Rate-limit / 429 tuning (safe to return)
+    rate_limit_max_retries: Optional[int] = None
+    rate_limit_max_wait_seconds: Optional[int] = None
+    rate_limit_rps: Optional[int] = None
+
+    # Cursor state (safe to return — last_value is a watermark, not a secret)
+    cursor_field: Optional[str] = None
+    cursor_param_name: Optional[str] = None
+    cursor_initial_value: Optional[str] = None
+    cursor_last_value: Optional[str] = None
 
     # Upsert configuration (Phase 8)
     upsert_enabled: bool = False
@@ -135,9 +214,15 @@ class TaskRunOut(BaseModel):
     error_message: Optional[str] = None
     started_at: datetime
     ended_at: Optional[datetime] = None
+    # Cursor / replay tracking (P0-C)
+    cursor_start: Optional[str] = None
+    cursor_end: Optional[str] = None
+    is_backfill: bool = False
+    is_replay: bool = False
+    replay_of_run_id: Optional[int] = None
     execution_logs: list[TaskLogOut] = []
     row_errors: list[TaskRunLogOut] = []
-    
+
     class Config:
         from_attributes = True
 

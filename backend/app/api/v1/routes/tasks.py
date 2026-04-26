@@ -10,8 +10,16 @@ from app.db.models.task import Task
 from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task_log import TaskLog
 from app.db.models.task_run_log import TaskRunLog
-from app.db.schemas.task import TaskCreate, TaskOut, TaskRunOut, TaskStatsOut, TaskLogOut, TaskRunLogOut
-from app.workers.tasks import enqueue_run
+from app.db.schemas.task import (
+    TaskCreate,
+    TaskOut,
+    TaskRunOut,
+    TaskStatsOut,
+    TaskLogOut,
+    TaskRunLogOut,
+    BackfillRequest,
+)
+from app.workers.tasks import enqueue_run, enqueue_backfill
 from app.core.encryption import encrypt_value
 from app.services.connection_storage import get_connection_storage
 
@@ -37,6 +45,45 @@ def get_db():
 # Task CRUD Endpoints
 # ============================================================================
 
+def _flatten_p0_submodels(task_data: dict, task_name: str) -> dict:
+    """
+    Lift structured submodels (oauth / rate_limit / cursor) onto flat Task columns
+    and encrypt sensitive OAuth fields. Drops the nested keys before ORM construction.
+    Mutates and returns the dict for convenience.
+    """
+    oauth = task_data.pop("oauth", None)
+    if isinstance(oauth, dict):
+        # Plaintext on the wire becomes encrypted at rest. The same field-by-field
+        # approach as api_key/password keeps the encryption surface explicit and
+        # auditable rather than hidden behind an ORM TypeDecorator.
+        task_data["oauth_grant_type"] = oauth.get("grant_type")
+        task_data["oauth_token_url"] = oauth.get("token_url")
+        task_data["oauth_client_id"] = oauth.get("client_id")
+        task_data["oauth_scope"] = oauth.get("scope")
+        task_data["oauth_audience"] = oauth.get("audience")
+        if oauth.get("client_secret"):
+            task_data["oauth_client_secret"] = encrypt_value(oauth["client_secret"])
+            logger.debug(f"Encrypted oauth_client_secret for task '{task_name}'")
+        if oauth.get("access_token"):
+            task_data["oauth_access_token"] = encrypt_value(oauth["access_token"])
+        if oauth.get("refresh_token"):
+            task_data["oauth_refresh_token"] = encrypt_value(oauth["refresh_token"])
+
+    rl = task_data.pop("rate_limit", None)
+    if isinstance(rl, dict):
+        task_data["rate_limit_max_retries"] = rl.get("max_retries")
+        task_data["rate_limit_max_wait_seconds"] = rl.get("max_wait_seconds")
+        task_data["rate_limit_rps"] = rl.get("rps")
+
+    cursor = task_data.pop("cursor", None)
+    if isinstance(cursor, dict):
+        task_data["cursor_field"] = cursor.get("field")
+        task_data["cursor_param_name"] = cursor.get("param_name")
+        task_data["cursor_initial_value"] = cursor.get("initial_value")
+
+    return task_data
+
+
 @router.post("/", response_model=TaskOut, status_code=201)
 def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
     """Create a new task"""
@@ -46,20 +93,22 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Task with this name already exists")
 
     _require_existing_connection(payload.connection_id)
-    
+
     # Prepare task data and encrypt sensitive fields
     task_data = payload.model_dump()
-    
+
     # Encrypt api_key if provided
     if task_data.get('api_key'):
         task_data['api_key'] = encrypt_value(task_data['api_key'])
         logger.debug(f"Encrypted api_key for task '{payload.name}'")
-    
+
     # Encrypt password if provided
     if task_data.get('password'):
         task_data['password'] = encrypt_value(task_data['password'])
         logger.debug(f"Encrypted password for task '{payload.name}'")
-    
+
+    _flatten_p0_submodels(task_data, payload.name)
+
     task = Task(**task_data)
     db.add(task)
     db.commit()
@@ -116,12 +165,14 @@ def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)
     if update_data.get('api_key'):
         update_data['api_key'] = encrypt_value(update_data['api_key'])
         logger.debug(f"Encrypted api_key for task '{payload.name}'")
-    
+
     # Encrypt password if provided
     if update_data.get('password'):
         update_data['password'] = encrypt_value(update_data['password'])
         logger.debug(f"Encrypted password for task '{payload.name}'")
-    
+
+    _flatten_p0_submodels(update_data, payload.name)
+
     # Update task with all fields from payload
     for key, value in update_data.items():
         setattr(task, key, value)
@@ -191,6 +242,81 @@ def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
         task_run.ended_at = datetime.now(timezone.utc)
         db.commit()
         raise HTTPException(status_code=500, detail=f"Failed to enqueue task: {str(e)}")
+
+
+@router.post("/{task_id}/backfill", status_code=202)
+def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depends(get_db)):
+    """
+    Enqueue a backfill run for a fixed cursor window.
+
+    The resulting run is tagged is_backfill=True and will NOT advance
+    `task.cursor_last_value` even on success — backfills are intentional
+    historical loads and must not rewind production state.
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not task.connection_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Task requires a destination connection before it can run",
+        )
+    storage = get_connection_storage()
+    if not storage.get_connection(task.connection_id):
+        raise HTTPException(
+            status_code=400,
+            detail="The task's selected destination connection no longer exists",
+        )
+    if not task.cursor_param_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Task has no cursor_param_name configured; backfill requires cursor support",
+        )
+
+    # Defensive window-size guard for ISO-date cursors (most common case).
+    # We only enforce when both endpoints parse — opaque tokens are passed through.
+    if payload.cursor_end:
+        try:
+            from datetime import datetime as _dt
+            start_dt = _dt.fromisoformat(payload.cursor_start)
+            end_dt = _dt.fromisoformat(payload.cursor_end)
+            from app.core.config import settings as _settings
+            window_days = (end_dt - start_dt).days
+            if window_days > _settings.BACKFILL_MAX_WINDOW_DAYS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Backfill window {window_days}d exceeds "
+                        f"BACKFILL_MAX_WINDOW_DAYS={_settings.BACKFILL_MAX_WINDOW_DAYS}"
+                    ),
+                )
+            if window_days < 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="cursor_end must be greater than or equal to cursor_start",
+                )
+        except ValueError:
+            # Non-ISO cursors: skip the window check.
+            pass
+
+    try:
+        celery_task = enqueue_backfill(
+            task_id=task_id,
+            cursor_start=payload.cursor_start,
+            cursor_end=payload.cursor_end,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to enqueue backfill: {e}")
+
+    return {
+        "status": "enqueued",
+        "task_id": task_id,
+        "is_backfill": True,
+        "cursor_start": payload.cursor_start,
+        "cursor_end": payload.cursor_end,
+        "celery_task_id": celery_task.id if celery_task else None,
+    }
+
 
 @router.get("/{task_id}/runs", response_model=list[dict])
 def list_task_runs(

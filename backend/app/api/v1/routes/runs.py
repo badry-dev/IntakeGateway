@@ -7,7 +7,8 @@ from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task import Task
 from app.db.models.task_log import TaskLog
 from app.db.models.task_run_log import TaskRunLog
-from app.db.schemas.task import TaskRunOut, TaskLogOut, TaskRunLogOut
+from app.db.schemas.task import TaskRunOut, TaskLogOut, TaskRunLogOut, ReplayRequest
+from app.workers.tasks import enqueue_replay
 
 router = APIRouter()
 
@@ -88,6 +89,54 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
             for error in row_errors
         ]
     }
+
+@router.post("/{run_id}/replay", status_code=202)
+def replay_run(run_id: int, payload: ReplayRequest, db: Session = Depends(get_db)):
+    """
+    Re-run a prior run with the same cursor window.
+
+    Tagged is_replay=True; will NOT advance task.cursor_last_value. Refused
+    when the task has upsert_enabled=False unless `force=true` is set, since
+    a non-upsert replay would re-insert duplicates.
+    """
+    prior = db.query(TaskRun).filter(TaskRun.id == run_id).first()
+    if not prior:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    task = db.query(Task).filter(Task.id == prior.task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task for this run no longer exists")
+
+    if not task.upsert_enabled and not payload.force:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Task has upsert_enabled=False; replay would re-insert duplicates. "
+                "Pass force=true to override."
+            ),
+        )
+
+    try:
+        celery_task = enqueue_replay(
+            task_id=task.id,
+            cursor_start=prior.cursor_start,
+            cursor_end=prior.cursor_end,
+            replay_of_run_id=prior.id,
+            force=payload.force,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to enqueue replay: {e}")
+
+    return {
+        "status": "enqueued",
+        "task_id": task.id,
+        "replay_of_run_id": prior.id,
+        "cursor_start": prior.cursor_start,
+        "cursor_end": prior.cursor_end,
+        "force": payload.force,
+        "celery_task_id": celery_task.id if celery_task else None,
+    }
+
 
 @router.get("", response_model=list[dict])
 def list_runs(

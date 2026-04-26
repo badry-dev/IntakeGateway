@@ -47,6 +47,26 @@ export function TaskWizard() {
     username: '',
     password: '',
     oauthConfig: '{}',
+    // Structured OAuth fields (P0-A). Server encrypts client_secret/access_token/refresh_token at rest.
+    oauthGrantType: 'static' as 'static' | 'client_credentials' | 'refresh_token',
+    oauthTokenUrl: '',
+    oauthClientId: '',
+    oauthClientSecret: '',
+    oauthScope: '',
+    oauthAudience: '',
+    oauthAccessToken: '',
+    oauthRefreshToken: '',
+  })
+  // Advanced settings (rate-limit + cursor) shown in step 1 collapsible.
+  const [rateLimit, setRateLimit] = useState({
+    maxRetries: '' as string,
+    maxWaitSeconds: '' as string,
+    rps: '' as string,
+  })
+  const [cursorCfg, setCursorCfg] = useState({
+    field: '',
+    paramName: '',
+    initialValue: '',
   })
   const [bodyJson, setBodyJson] = useState('{}')
   const [mappings, setMappings] = useState<ColumnMappingCreate[]>([])
@@ -69,6 +89,19 @@ export function TaskWizard() {
       }
     }
     if (currentStep === 3) {
+      const buildOAuth = () => {
+        if (authData.authType !== 'oauth') return undefined
+        return {
+          grant_type: authData.oauthGrantType,
+          token_url: authData.oauthTokenUrl || undefined,
+          client_id: authData.oauthClientId || undefined,
+          client_secret: authData.oauthClientSecret || undefined,
+          scope: authData.oauthScope || undefined,
+          audience: authData.oauthAudience || undefined,
+          access_token: authData.oauthAccessToken || undefined,
+          refresh_token: authData.oauthRefreshToken || undefined,
+        }
+      }
       setFormData(prev => ({
         ...prev,
         auth_type: authData.authType,
@@ -76,7 +109,7 @@ export function TaskWizard() {
                  authData.authType === 'api_key' ? authData.apiKeyValue : '',
         username: authData.authType === 'basic' ? authData.username : '',
         password: authData.authType === 'basic' ? authData.password : '',
-        oauth_config: authData.authType === 'oauth' ? (() => { try { return JSON.parse(authData.oauthConfig) } catch { return null } })() : null,
+        oauth: buildOAuth() as any,
       }))
     }
     setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1))
@@ -90,7 +123,33 @@ export function TaskWizard() {
     let bodyObj = {}
     try { bodyObj = bodyJson.trim() ? JSON.parse(bodyJson) : {} } catch { message.error('Invalid JSON'); return }
 
-    const finalData: TaskFormData = { ...formData, headers_json: headerObj, body_json: bodyObj }
+    const toIntOrUndef = (v: string) => {
+      if (!v.trim()) return undefined
+      const n = Number(v)
+      return Number.isFinite(n) ? n : undefined
+    }
+    const rateLimitPayload = (rateLimit.maxRetries || rateLimit.maxWaitSeconds || rateLimit.rps)
+      ? {
+          max_retries: toIntOrUndef(rateLimit.maxRetries),
+          max_wait_seconds: toIntOrUndef(rateLimit.maxWaitSeconds),
+          rps: toIntOrUndef(rateLimit.rps),
+        }
+      : undefined
+    const cursorPayload = (cursorCfg.field || cursorCfg.paramName || cursorCfg.initialValue)
+      ? {
+          field: cursorCfg.field || undefined,
+          param_name: cursorCfg.paramName || undefined,
+          initial_value: cursorCfg.initialValue || undefined,
+        }
+      : undefined
+
+    const finalData: TaskFormData = {
+      ...formData,
+      headers_json: headerObj,
+      body_json: bodyObj,
+      ...(rateLimitPayload ? { rate_limit: rateLimitPayload as any } : {}),
+      ...(cursorPayload ? { cursor: cursorPayload as any } : {}),
+    } as any
     if (!finalData.name.trim()) { message.warning('Task name is required'); return }
     if (!finalData.endpoint_path.trim()) { message.warning('Endpoint URL is required'); return }
     if (!finalData.dest_table.trim()) { message.warning('Table name is required'); return }
@@ -276,7 +335,23 @@ export function TaskWizard() {
               <Text strong>Authentication Type</Text>
               <Select
                 value={authData.authType}
-                onChange={(value) => setAuthData({ authType: value as AuthType, bearerToken: '', apiKeyHeaderName: 'X-API-Key', apiKeyValue: '', username: '', password: '', oauthConfig: '{}' })}
+                onChange={(value) => setAuthData({
+                  authType: value as AuthType,
+                  bearerToken: '',
+                  apiKeyHeaderName: 'X-API-Key',
+                  apiKeyValue: '',
+                  username: '',
+                  password: '',
+                  oauthConfig: '{}',
+                  oauthGrantType: 'static',
+                  oauthTokenUrl: '',
+                  oauthClientId: '',
+                  oauthClientSecret: '',
+                  oauthScope: '',
+                  oauthAudience: '',
+                  oauthAccessToken: '',
+                  oauthRefreshToken: '',
+                })}
                 options={[
                   { value: 'none', label: 'No Authentication' },
                   { value: 'bearer', label: 'Bearer Token' },
@@ -345,21 +420,161 @@ export function TaskWizard() {
             )}
 
             {authData.authType === 'oauth' && (
-              <div>
-                <Text strong>OAuth Configuration (JSON)</Text>
-                <TextArea
-                  value={authData.oauthConfig}
-                  onChange={(e) => setAuthData({ ...authData, oauthConfig: e.target.value })}
-                  placeholder='{"token_url": "https://...", "client_id": "...", "client_secret": "..."}'
-                  rows={4}
-                  style={{ fontFamily: 'monospace' }}
-                />
-              </div>
+              <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                <div>
+                  <Text strong>Grant Type</Text>
+                  <Select
+                    value={authData.oauthGrantType}
+                    onChange={(v) => setAuthData({ ...authData, oauthGrantType: v as any })}
+                    options={[
+                      { value: 'static', label: 'Static (pre-issued access token)' },
+                      { value: 'client_credentials', label: 'Client Credentials' },
+                      { value: 'refresh_token', label: 'Refresh Token' },
+                    ]}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                {authData.oauthGrantType !== 'static' && (
+                  <>
+                    <div>
+                      <Text strong>Token URL</Text>
+                      <Input
+                        placeholder="https://idp.example.com/oauth/token"
+                        value={authData.oauthTokenUrl}
+                        onChange={(e) => setAuthData({ ...authData, oauthTokenUrl: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Text strong>Client ID</Text>
+                      <Input
+                        value={authData.oauthClientId}
+                        onChange={(e) => setAuthData({ ...authData, oauthClientId: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Text strong>Client Secret</Text>
+                      <Input.Password
+                        value={authData.oauthClientSecret}
+                        onChange={(e) => setAuthData({ ...authData, oauthClientSecret: e.target.value })}
+                      />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        Stored encrypted (Fernet) on the server. Never returned in API responses.
+                      </Text>
+                    </div>
+                    <div>
+                      <Text strong>Scope (optional)</Text>
+                      <Input
+                        value={authData.oauthScope}
+                        onChange={(e) => setAuthData({ ...authData, oauthScope: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Text strong>Audience (optional)</Text>
+                      <Input
+                        value={authData.oauthAudience}
+                        onChange={(e) => setAuthData({ ...authData, oauthAudience: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
+                {authData.oauthGrantType === 'refresh_token' && (
+                  <div>
+                    <Text strong>Initial Refresh Token</Text>
+                    <Input.Password
+                      value={authData.oauthRefreshToken}
+                      onChange={(e) => setAuthData({ ...authData, oauthRefreshToken: e.target.value })}
+                    />
+                  </div>
+                )}
+                {authData.oauthGrantType === 'static' && (
+                  <div>
+                    <Text strong>Access Token</Text>
+                    <Input.Password
+                      value={authData.oauthAccessToken}
+                      onChange={(e) => setAuthData({ ...authData, oauthAccessToken: e.target.value })}
+                    />
+                  </div>
+                )}
+              </Space>
             )}
 
             {authData.authType === 'none' && (
               <Alert message="No authentication will be used for API requests" type="info" showIcon />
             )}
+
+            {/* Advanced (rate-limit + cursor) — optional, P0-B / P0-C */}
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ cursor: 'pointer' }}>
+                <Text strong>Advanced (rate-limit & cursor)</Text>
+              </summary>
+              <Space direction="vertical" size="small" style={{ width: '100%', marginTop: 12 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Rate limiting: leave blank to use server defaults
+                  (HTTP_RATE_LIMIT_DEFAULT_RETRIES, HTTP_RETRY_AFTER_MAX_SECONDS).
+                </Text>
+                <Space size="small" style={{ width: '100%' }}>
+                  <div>
+                    <Text>Max 429 retries</Text>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={rateLimit.maxRetries}
+                      onChange={(e) => setRateLimit({ ...rateLimit, maxRetries: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Text>Max wait (sec)</Text>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={3600}
+                      value={rateLimit.maxWaitSeconds}
+                      onChange={(e) => setRateLimit({ ...rateLimit, maxWaitSeconds: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Text>Target RPS</Text>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={1000}
+                      value={rateLimit.rps}
+                      onChange={(e) => setRateLimit({ ...rateLimit, rps: e.target.value })}
+                    />
+                  </div>
+                </Space>
+                <Text type="secondary" style={{ fontSize: 12, marginTop: 12 }}>
+                  Cursor (incremental fetch): the high-water mark from successful runs is
+                  stored on the task and passed as a query param on subsequent runs.
+                  Identifiers must match <code>^[A-Za-z_][A-Za-z0-9_]&#123;0,99&#125;$</code>.
+                </Text>
+                <div>
+                  <Text>Cursor field (in API response)</Text>
+                  <Input
+                    placeholder="e.g. updated_at"
+                    value={cursorCfg.field}
+                    onChange={(e) => setCursorCfg({ ...cursorCfg, field: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Text>Cursor query param name</Text>
+                  <Input
+                    placeholder="e.g. since"
+                    value={cursorCfg.paramName}
+                    onChange={(e) => setCursorCfg({ ...cursorCfg, paramName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Text>Initial cursor value (optional)</Text>
+                  <Input
+                    placeholder="e.g. 2024-01-01T00:00:00Z"
+                    value={cursorCfg.initialValue}
+                    onChange={(e) => setCursorCfg({ ...cursorCfg, initialValue: e.target.value })}
+                  />
+                </div>
+              </Space>
+            </details>
           </Space>
         )}
 

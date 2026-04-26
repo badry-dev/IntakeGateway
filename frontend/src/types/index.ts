@@ -31,6 +31,22 @@ export interface Task extends TaskAuth, UpsertConfig {
   dest_table: string
   batch_size: number
   is_active: boolean
+  // Safe-to-expose OAuth metadata (P0-A); secrets are NEVER returned
+  oauth_grant_type?: OAuthGrantType
+  oauth_token_url?: string
+  oauth_client_id?: string
+  oauth_scope?: string
+  oauth_audience?: string
+  oauth_token_expires_at?: string
+  // Rate-limit tuning (P0-B)
+  rate_limit_max_retries?: number
+  rate_limit_max_wait_seconds?: number
+  rate_limit_rps?: number
+  // Cursor watermark (P0-C); cursor_last_value is the high-water mark
+  cursor_field?: string
+  cursor_param_name?: string
+  cursor_initial_value?: string
+  cursor_last_value?: string
   created_at?: string
   updated_at?: string
 }
@@ -43,8 +59,48 @@ export interface TaskCreateAuth {
   oauth_config?: Record<string, any>
 }
 
+// OAuth2 structured config (P0-A). client_secret/access_token/refresh_token are
+// plaintext on the wire and are encrypted server-side; never returned in TaskOut.
+export type OAuthGrantType = 'static' | 'client_credentials' | 'refresh_token'
+export interface OAuthConfig {
+  grant_type?: OAuthGrantType
+  token_url?: string
+  client_id?: string
+  client_secret?: string
+  scope?: string
+  audience?: string
+  access_token?: string
+  refresh_token?: string
+}
+
+// Per-task rate-limit / 429 retry tuning (P0-B).
+export interface RateLimitConfig {
+  max_retries?: number
+  max_wait_seconds?: number
+  rps?: number
+}
+
+// Cursor / incremental fetch config (P0-C).
+export interface CursorConfig {
+  field?: string
+  param_name?: string
+  initial_value?: string
+}
+
+export interface BackfillRequest {
+  cursor_start: string
+  cursor_end?: string
+}
+
+export interface ReplayRequest {
+  force?: boolean
+}
+
 export interface TaskCreate extends Omit<Task, 'id' | 'auth_type' | 'username' | 'connection_id'>, TaskCreateAuth {
   connection_id: string
+  oauth?: OAuthConfig
+  rate_limit?: RateLimitConfig
+  cursor?: CursorConfig
 }
 export interface TaskUpdate extends Partial<Omit<Task, 'id'>> {}
 
@@ -140,6 +196,12 @@ export interface TaskRun {
   warning_count?: number
   started_at: string
   ended_at?: string
+  // Cursor / replay tracking (P0-C)
+  cursor_start?: string | null
+  cursor_end?: string | null
+  is_backfill?: boolean
+  is_replay?: boolean
+  replay_of_run_id?: number | null
   execution_logs?: TaskLog[]
   row_errors?: TaskRunLog[]
 }

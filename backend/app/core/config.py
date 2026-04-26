@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     HTTP_TIMEOUT_SECONDS: int = 30
     HTTP_MAX_RESPONSE_MB: int = 10
 
+    OAUTH_TOKEN_REFRESH_SKEW_SECONDS: int = 60
+    OAUTH_REFRESH_LOCK_TIMEOUT_SECONDS: int = 30
+    HTTP_RETRY_AFTER_MAX_SECONDS: int = 120
+    HTTP_RATE_LIMIT_DEFAULT_RETRIES: int = 5
+    BACKFILL_MAX_WINDOW_DAYS: int = 366
+
     SECRET_KEY: str = "dev-secret"
     FRONTEND_URL: str = "http://localhost:3000"
 

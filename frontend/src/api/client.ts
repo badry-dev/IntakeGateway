@@ -103,6 +103,24 @@ class ApiClient {
     return response.data
   }
 
+  // Backfill / replay (P0-C)
+  async triggerBackfill(
+    taskId: number,
+    cursorStart: string,
+    cursorEnd?: string,
+  ): Promise<{ status: string; task_id: number; cursor_start: string; cursor_end?: string }> {
+    const response = await this.client.post(`/tasks/${taskId}/backfill`, {
+      cursor_start: cursorStart,
+      cursor_end: cursorEnd,
+    })
+    return response.data
+  }
+
+  async replayRun(runId: number, force: boolean = false): Promise<{ status: string }> {
+    const response = await this.client.post(`/runs/${runId}/replay`, { force })
+    return response.data
+  }
+
   async getRecentRuns(skip: number = 0, limit: number = 20): Promise<TaskRun[]> {
     const params = new URLSearchParams({
       skip: skip.toString(),

@@ -1,10 +1,41 @@
 
 import asyncio
+import datetime as _dt
+import email.utils
 import httpx
 import base64
+from typing import Any
 from loguru import logger
 from app.core.config import settings
 from app.core.encryption import decrypt_value
+
+
+def _parse_retry_after(header_value: str | None) -> float | None:
+    """
+    Parse an HTTP `Retry-After` header per RFC 7231 §7.1.3.
+
+    Accepts either a non-negative delta-seconds integer or an HTTP-date.
+    Returns the wait in seconds, or None if the header is absent / unparseable
+    / in the past.
+    """
+    if not header_value:
+        return None
+    header_value = header_value.strip()
+    try:
+        seconds = float(header_value)
+        return max(seconds, 0.0)
+    except ValueError:
+        pass
+    try:
+        when = email.utils.parsedate_to_datetime(header_value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=_dt.timezone.utc)
+    delta = (when - _dt.datetime.now(_dt.timezone.utc)).total_seconds()
+    return max(delta, 0.0)
 
 
 def apply_authentication(
@@ -72,12 +103,16 @@ def apply_authentication(
         logger.debug(f"Applied Basic authentication for user: {username}")
     
     elif auth_type == 'oauth':
-        # OAuth token authentication (simplified - assumes token is already obtained)
+        # OAuth token authentication. Token may have been resolved by
+        # oauth_token_service.get_access_token() and passed in plaintext via
+        # `oauth_config['_already_decrypted']=True` — in that case skip decrypt.
         if not oauth_config or 'access_token' not in oauth_config:
             raise ValueError("OAuth auth requires oauth_config with access_token")
-        
-        # Decrypt the access token
-        access_token = decrypt_value(oauth_config['access_token'])
+
+        if oauth_config.get('_already_decrypted'):
+            access_token = oauth_config['access_token']
+        else:
+            access_token = decrypt_value(oauth_config['access_token'])
         headers['Authorization'] = f'Bearer {access_token}'
         logger.debug("Applied OAuth authentication")
     
@@ -99,7 +134,9 @@ async def fetch_json(
     api_key: str | None = None,
     username: str | None = None,
     password: str | None = None,
-    oauth_config: dict | None = None
+    oauth_config: dict | None = None,
+    max_retries_429: int | None = None,
+    max_wait_seconds: int | None = None,
 ) -> dict:
     """
     Fetch JSON data from API with exponential backoff retry logic and authentication
@@ -167,12 +204,30 @@ async def fetch_json(
     logger.info(f"Equivalent curl: {curl_cmd}")
     
     timeout = httpx.Timeout(settings.HTTP_TIMEOUT_SECONDS)
-    
-    for attempt in range(max_retries + 1):
+
+    # 429 has its own retry budget so a misbehaving upstream can't exhaust the
+    # transient/5xx budget intended for genuine errors.
+    rl_max_retries = (
+        max_retries_429
+        if max_retries_429 is not None
+        else settings.HTTP_RATE_LIMIT_DEFAULT_RETRIES
+    )
+    rl_max_wait = (
+        max_wait_seconds
+        if max_wait_seconds is not None
+        else settings.HTTP_RETRY_AFTER_MAX_SECONDS
+    )
+
+    transient_attempts = 0    # network errors + 5xx
+    rate_limit_attempts = 0   # 429 only
+
+    while True:
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                logger.debug(f"API request attempt {attempt + 1}/{max_retries + 1}: {method} {url}")
-                
+                logger.debug(
+                    f"API request attempt: transient={transient_attempts}/{max_retries} "
+                    f"rate_limit={rate_limit_attempts}/{rl_max_retries}: {method} {url}"
+                )
                 resp = await client.request(
                     method,
                     url,
@@ -181,51 +236,147 @@ async def fetch_json(
                     json=json_body
                 )
                 resp.raise_for_status()
-                
-                # Check response size limit
+
                 if len(resp.content) > settings.HTTP_MAX_RESPONSE_MB * 1024 * 1024:
                     raise ValueError(
                         f"Response size {len(resp.content)} bytes exceeds "
                         f"limit of {settings.HTTP_MAX_RESPONSE_MB}MB"
                     )
-                
-                logger.info(f"API request successful: {method} {url} (attempt {attempt + 1})")
+
+                logger.info(f"API request successful: {method} {url}")
                 return resp.json()
-        
+
         except (httpx.TimeoutException, httpx.NetworkError, httpx.ConnectError) as e:
-            # Retry on network/timeout errors
-            if attempt < max_retries:
-                backoff_time = initial_backoff * (2 ** attempt)
+            if transient_attempts < max_retries:
+                backoff_time = initial_backoff * (2 ** transient_attempts)
+                transient_attempts += 1
                 logger.warning(
-                    f"API request failed (attempt {attempt + 1}/{max_retries + 1}): {str(e)}. "
-                    f"Retrying in {backoff_time}s..."
+                    f"API request failed ({type(e).__name__}): {str(e)}. "
+                    f"Retrying in {backoff_time}s (transient {transient_attempts}/{max_retries})..."
                 )
                 await asyncio.sleep(backoff_time)
-            else:
-                logger.error(f"API request failed after {max_retries + 1} attempts: {str(e)}")
-                raise
-        
+                continue
+            logger.error(f"API request failed after {max_retries + 1} transient attempts: {str(e)}")
+            raise
+
         except httpx.HTTPStatusError as e:
-            # Don't retry on client errors (4xx), but do retry on server errors (5xx)
-            if e.response.status_code >= 500 and attempt < max_retries:
-                backoff_time = initial_backoff * (2 ** attempt)
+            status = e.response.status_code
+
+            if status == 429:
+                # Honor Retry-After if present, else exponential backoff. Cap at rl_max_wait.
+                advised = _parse_retry_after(e.response.headers.get("Retry-After"))
+                computed = initial_backoff * (2 ** rate_limit_attempts)
+                wait_seconds = advised if advised is not None else computed
+
+                if wait_seconds > rl_max_wait:
+                    logger.error(
+                        f"API returned 429 with Retry-After={advised}; required wait "
+                        f"{wait_seconds}s exceeds cap {rl_max_wait}s. Giving up."
+                    )
+                    raise
+
+                if rate_limit_attempts < rl_max_retries:
+                    rate_limit_attempts += 1
+                    logger.warning(
+                        f"API returned 429 Too Many Requests "
+                        f"(rate_limit {rate_limit_attempts}/{rl_max_retries}). "
+                        f"Retrying in {wait_seconds:.2f}s "
+                        f"(advised={'yes' if advised is not None else 'no'})..."
+                    )
+                    await asyncio.sleep(wait_seconds)
+                    continue
+                logger.error(f"API request failed after {rl_max_retries} rate-limit retries (429)")
+                raise
+
+            if 500 <= status < 600 and transient_attempts < max_retries:
+                backoff_time = initial_backoff * (2 ** transient_attempts)
+                transient_attempts += 1
                 logger.warning(
-                    f"API returned server error {e.response.status_code} "
-                    f"(attempt {attempt + 1}/{max_retries + 1}). "
+                    f"API returned server error {status} "
+                    f"(transient {transient_attempts}/{max_retries}). "
                     f"Retrying in {backoff_time}s..."
                 )
                 await asyncio.sleep(backoff_time)
-            else:
-                logger.error(f"API request failed with status {e.response.status_code}: {str(e)}")
-                raise
-        
+                continue
+
+            logger.error(f"API request failed with status {status}: {str(e)}")
+            raise
+
         except Exception as e:
-            # Don't retry on unexpected errors
+            # Don't retry on unexpected errors (e.g. response-size ValueError, JSON decode).
             logger.error(f"Unexpected error during API request: {str(e)}")
             raise
-    
-    # Should never reach here, but just in case
-    raise RuntimeError("Retry logic failed unexpectedly")
+
+
+async def fetch_with_auth(
+    task: Any,
+    db: Any,
+    method: str,
+    url: str,
+    headers: dict | None = None,
+    params: dict | None = None,
+    json_body: dict | None = None,
+) -> dict:
+    """
+    Fetch JSON honoring the Task's auth configuration. Resolves OAuth tokens
+    via `oauth_token_service` for `client_credentials` / `refresh_token` grants
+    and forces a single refresh-and-retry on a 401 response.
+
+    For non-OAuth tasks this delegates straight to `fetch_json` with the
+    Task's configured auth fields (back-compat).
+
+    Per-task rate-limit tuning (rate_limit_max_retries, rate_limit_max_wait_seconds)
+    is forwarded to the underlying retry loop.
+    """
+    # Lazy import to avoid an import cycle (oauth_token_service imports the Task model).
+    from app.services import oauth_token_service
+
+    rl_max_retries = getattr(task, "rate_limit_max_retries", None)
+    rl_max_wait = getattr(task, "rate_limit_max_wait_seconds", None)
+
+    auth_type = getattr(task, "auth_type", None) or "none"
+
+    # Non-OAuth path: pass Task auth fields through unchanged.
+    if auth_type != "oauth":
+        return await fetch_json(
+            method=method,
+            url=url,
+            headers=headers,
+            params=params,
+            json_body=json_body,
+            auth_type=auth_type,
+            api_key=getattr(task, "api_key", None),
+            username=getattr(task, "username", None),
+            password=getattr(task, "password", None),
+            oauth_config=getattr(task, "oauth_config", None),
+            max_retries_429=rl_max_retries,
+            max_wait_seconds=rl_max_wait,
+        )
+
+    # OAuth path: resolve a fresh access token, retry once with a forced refresh on 401.
+    forced = False
+    while True:
+        token = await oauth_token_service.get_access_token(task, db, force_refresh=forced)
+        try:
+            return await fetch_json(
+                method=method,
+                url=url,
+                headers=headers,
+                params=params,
+                json_body=json_body,
+                auth_type="oauth",
+                oauth_config={"access_token": token, "_already_decrypted": True},
+                max_retries_429=rl_max_retries,
+                max_wait_seconds=rl_max_wait,
+            )
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and not forced:
+                logger.warning(
+                    f"OAuth request returned 401; forcing token refresh for task_id={task.id}"
+                )
+                forced = True
+                continue
+            raise
 
 
 async def fetch_sample_response(
