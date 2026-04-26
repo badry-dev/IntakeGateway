@@ -1,7 +1,138 @@
 
-from pydantic import BaseModel, Field, field_validator
+import re
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Any, Optional, Literal
 from datetime import datetime
+
+
+# Reusable regex for safe API parameter / column identifiers (cursor injection guard).
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
+
+
+class OAuthConfigIn(BaseModel):
+    """OAuth2 configuration for client_credentials / refresh_token grants."""
+    grant_type: Literal['static', 'client_credentials', 'refresh_token'] = 'static'
+    token_url: Optional[str] = None
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None  # Encrypted before storage
+    scope: Optional[str] = None
+    audience: Optional[str] = None
+    # Static-token migration path (back-compat with legacy oauth_config['access_token'])
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_grant_requirements(self):
+        """Reject incomplete OAuth configs at request time so the worker
+        doesn't fail later with a useless error. Each grant has different
+        required fields per RFC 6749."""
+        if self.grant_type == "client_credentials":
+            missing = [
+                f for f, v in (
+                    ("token_url", self.token_url),
+                    ("client_id", self.client_id),
+                    ("client_secret", self.client_secret),
+                ) if not v
+            ]
+            if missing:
+                raise ValueError(
+                    f"grant_type=client_credentials requires: {', '.join(missing)}"
+                )
+        elif self.grant_type == "refresh_token":
+            missing = [
+                f for f, v in (
+                    ("token_url", self.token_url),
+                    ("refresh_token", self.refresh_token),
+                ) if not v
+            ]
+            if missing:
+                raise ValueError(
+                    f"grant_type=refresh_token requires: {', '.join(missing)}"
+                )
+        elif self.grant_type == "static":
+            # Static needs an access_token via this submodel OR via the legacy
+            # oauth_config dict. We only enforce when the submodel is provided
+            # standalone — the legacy path is checked at runtime.
+            if self.access_token is None and self.refresh_token is None:
+                # Empty static block is permitted (back-compat with legacy
+                # oauth_config). Skip the check rather than 422 a request that
+                # will be resolved by the legacy path.
+                pass
+        return self
+
+
+class RateLimitConfigIn(BaseModel):
+    """Per-task rate-limit / 429 retry tuning."""
+    max_retries: Optional[int] = Field(default=None, ge=0, le=20)
+    max_wait_seconds: Optional[int] = Field(default=None, ge=0, le=3600)
+    rps: Optional[int] = Field(default=None, ge=0, le=1000)
+
+
+class CursorConfigIn(BaseModel):
+    """Cursor / incremental fetch configuration."""
+    field: Optional[str] = None
+    param_name: Optional[str] = None
+    initial_value: Optional[str] = None
+
+    @field_validator('field', 'param_name')
+    @classmethod
+    def validate_identifier(cls, v: Optional[str]):
+        if v is not None and not _SAFE_IDENTIFIER_RE.match(v):
+            raise ValueError(
+                "must match ^[A-Za-z_][A-Za-z0-9_]{0,99}$ "
+                "(prevents URL/header injection via cursor params)"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_consistency(self):
+        """Both `field` (response key to read) and `param_name` (request query
+        param to inject) are required together — supplying only one silently
+        disables half of the cursor flow at runtime, which is far worse than
+        a 422 at config time."""
+        if bool(self.field) != bool(self.param_name):
+            raise ValueError(
+                "cursor.field and cursor.param_name must be provided together "
+                "(or both omitted to disable cursor support)"
+            )
+        if self.initial_value is not None and not self.field:
+            raise ValueError(
+                "cursor.initial_value requires cursor.field and cursor.param_name"
+            )
+        return self
+
+
+class BackfillRequest(BaseModel):
+    """Request body for POST /tasks/{id}/backfill."""
+    cursor_start: str = Field(..., min_length=1, max_length=500)
+    cursor_end: Optional[str] = Field(default=None, max_length=500)
+
+
+class ReplayRequest(BaseModel):
+    """Request body for POST /runs/{run_id}/replay."""
+    force: bool = False
+
+
+class BackfillResponse(BaseModel):
+    """202 response shape for POST /tasks/{id}/backfill."""
+    status: str
+    task_id: int
+    is_backfill: bool = True
+    cursor_start: str
+    cursor_end: Optional[str] = None
+    celery_task_id: Optional[str] = None
+
+
+class ReplayResponse(BaseModel):
+    """202 response shape for POST /runs/{run_id}/replay."""
+    status: str
+    task_id: int
+    replay_of_run_id: int
+    cursor_start: Optional[str] = None
+    cursor_end: Optional[str] = None
+    force: bool = False
+    celery_task_id: Optional[str] = None
+
 
 class TaskCreate(BaseModel):
     name: str
@@ -16,13 +147,18 @@ class TaskCreate(BaseModel):
     dest_table: str
     batch_size: int = 500
     is_active: bool = True
-    
+
     # Authentication fields (Phase 7)
     auth_type: Literal['none', 'bearer', 'api_key', 'basic', 'oauth'] = 'none'
     api_key: Optional[str] = None  # Will be encrypted before storage
     username: Optional[str] = None  # For Basic auth
     password: Optional[str] = None  # Will be encrypted before storage
-    oauth_config: Optional[dict[str, Any]] = None  # OAuth settings
+    oauth_config: Optional[dict[str, Any]] = None  # Legacy free-form (deprecated)
+
+    # Structured OAuth / rate-limit / cursor config (P0)
+    oauth: Optional[OAuthConfigIn] = None
+    rate_limit: Optional[RateLimitConfigIn] = None
+    cursor: Optional[CursorConfigIn] = None
 
     # Upsert configuration (Phase 8)
     upsert_enabled: bool = False
@@ -78,6 +214,26 @@ class TaskOut(BaseModel):
     auth_type: str = 'none'
     username: Optional[str] = None  # Safe to expose
     # api_key and password are NOT included in response
+
+    # OAuth2 metadata (safe fields only — secrets never returned)
+    oauth_grant_type: Optional[str] = None
+    oauth_token_url: Optional[str] = None
+    oauth_client_id: Optional[str] = None
+    oauth_scope: Optional[str] = None
+    oauth_audience: Optional[str] = None
+    oauth_token_expires_at: Optional[datetime] = None
+    # oauth_client_secret / oauth_access_token / oauth_refresh_token are NEVER serialized
+
+    # Rate-limit / 429 tuning (safe to return)
+    rate_limit_max_retries: Optional[int] = None
+    rate_limit_max_wait_seconds: Optional[int] = None
+    rate_limit_rps: Optional[int] = None
+
+    # Cursor state (safe to return — last_value is a watermark, not a secret)
+    cursor_field: Optional[str] = None
+    cursor_param_name: Optional[str] = None
+    cursor_initial_value: Optional[str] = None
+    cursor_last_value: Optional[str] = None
 
     # Upsert configuration (Phase 8)
     upsert_enabled: bool = False
@@ -135,9 +291,15 @@ class TaskRunOut(BaseModel):
     error_message: Optional[str] = None
     started_at: datetime
     ended_at: Optional[datetime] = None
+    # Cursor / replay tracking (P0-C)
+    cursor_start: Optional[str] = None
+    cursor_end: Optional[str] = None
+    is_backfill: bool = False
+    is_replay: bool = False
+    replay_of_run_id: Optional[int] = None
     execution_logs: list[TaskLogOut] = []
     row_errors: list[TaskRunLogOut] = []
-    
+
     class Config:
         from_attributes = True
 

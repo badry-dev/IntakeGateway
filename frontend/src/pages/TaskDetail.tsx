@@ -9,7 +9,8 @@ import {
   useSchedule,
   useCreateSchedule,
   useUpdateSchedule,
-  useDeleteSchedule
+  useDeleteSchedule,
+  useBackfillTask,
 } from '@/hooks/api'
 import { Card, Button, Input, Tabs, Tag, Space, Typography, Modal, Spin, Descriptions, message } from 'antd'
 import {
@@ -19,8 +20,19 @@ import {
   SettingOutlined,
   ClockCircleOutlined,
   DatabaseOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons'
-import { TaskFormData, ScheduleCreate } from '@/types'
+import { TaskFormData, ScheduleCreate, ApiErrorLike } from '@/types'
+
+// Narrow an `unknown` error to ApiErrorLike before reading axios fields.
+function isApiErrorLike(e: unknown): e is ApiErrorLike {
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    'response' in e &&
+    typeof (e as { response?: unknown }).response === 'object'
+  )
+}
 import { ColumnMappingEditor } from '@/components/ColumnMappingEditor'
 import { ScheduleEditor } from '@/components/ScheduleEditor'
 import { Select } from 'antd'
@@ -45,6 +57,12 @@ export function TaskDetail() {
     name: '', description: '', endpoint_path: '', http_method: 'GET',
     dest_table: '', headers_json: {}, body_json: {}, batch_size: 500, is_active: true, connection_id: '',
   })
+
+  // Backfill modal state (P0-C)
+  const backfillMutation = useBackfillTask()
+  const [isBackfillOpen, setIsBackfillOpen] = useState(false)
+  const [backfillStart, setBackfillStart] = useState('')
+  const [backfillEnd, setBackfillEnd] = useState('')
 
   const connections = connectionsData?.connections || []
   const selectedConnection = connectionsData?.connections.find(
@@ -126,6 +144,28 @@ export function TaskDetail() {
     if (!schedule) return
     await deleteScheduleMutation.mutateAsync(schedule.id)
     await refetchSchedule()
+  }
+
+  const handleBackfill = async () => {
+    if (!backfillStart.trim()) {
+      message.warning('cursor_start is required for backfill')
+      return
+    }
+    try {
+      await backfillMutation.mutateAsync({
+        taskId: task.id,
+        cursorStart: backfillStart.trim(),
+        cursorEnd: backfillEnd.trim() || undefined,
+      })
+      message.success('Backfill enqueued')
+      setIsBackfillOpen(false)
+      setBackfillStart('')
+      setBackfillEnd('')
+    } catch (e: unknown) {
+      const detail =
+        (isApiErrorLike(e) && e.response?.data?.detail) || 'Failed to enqueue backfill'
+      message.error(detail)
+    }
   }
 
   const tabItems = [
@@ -215,6 +255,18 @@ export function TaskDetail() {
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/tasks')}>Back to Tasks</Button>
         <Space>
+          <Button
+            icon={<HistoryOutlined />}
+            onClick={() => setIsBackfillOpen(true)}
+            disabled={!task.cursor_param_name}
+            title={
+              task.cursor_param_name
+                ? 'Run a backfill against an explicit cursor window'
+                : 'Configure cursor_param_name on the task to enable backfills'
+            }
+          >
+            Backfill
+          </Button>
           <Button icon={<EditOutlined />} onClick={() => setIsEditOpen(true)}>Edit</Button>
           <Button danger icon={<DeleteOutlined />} onClick={handleDelete}>Delete</Button>
         </Space>
@@ -276,6 +328,39 @@ export function TaskDetail() {
           {connections.length === 0 && (
             <Text type="warning">Create a connection in Settings before saving this task.</Text>
           )}
+        </Space>
+      </Modal>
+
+      {/* Backfill Modal (P0-C) */}
+      <Modal
+        title="Backfill cursor window"
+        open={isBackfillOpen}
+        onCancel={() => setIsBackfillOpen(false)}
+        onOk={handleBackfill}
+        confirmLoading={backfillMutation.isPending}
+        okText="Enqueue backfill"
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Text type="secondary">
+            Backfills are tagged is_backfill=true and will NOT advance the task's
+            cursor_last_value. Cursor param: <Text code>{task.cursor_param_name || '(not configured)'}</Text>
+          </Text>
+          <div>
+            <Text strong>Cursor start *</Text>
+            <Input
+              placeholder="e.g. 2024-01-01T00:00:00Z"
+              value={backfillStart}
+              onChange={(e) => setBackfillStart(e.target.value)}
+            />
+          </div>
+          <div>
+            <Text strong>Cursor end (optional)</Text>
+            <Input
+              placeholder="e.g. 2024-02-01T00:00:00Z"
+              value={backfillEnd}
+              onChange={(e) => setBackfillEnd(e.target.value)}
+            />
+          </div>
         </Space>
       </Modal>
     </Space>

@@ -131,6 +131,33 @@ export function useTriggerRun() {
   })
 }
 
+// P0-C: backfill an explicit cursor window. Does not advance task.cursor_last_value.
+export function useBackfillTask() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { taskId: number; cursorStart: string; cursorEnd?: string }) =>
+      apiClient.triggerBackfill(vars.taskId, vars.cursorStart, vars.cursorEnd),
+    onSuccess: () => {
+      // Invalidate the entire run-list namespace so paginated and filtered
+      // views all refresh, not just the first page that happens to match the
+      // hard-coded (skip, limit) keys. Mirrors useReplayRun.
+      queryClient.invalidateQueries({ queryKey: runKeys.lists() })
+    },
+  })
+}
+
+// P0-C: replay a prior run. Refused server-side when upsert is off and force=false.
+export function useReplayRun() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { runId: number; force?: boolean }) =>
+      apiClient.replayRun(vars.runId, vars.force ?? false),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: runKeys.lists() })
+    },
+  })
+}
+
 export function useTaskRuns(taskId: number, skip: number = 0, limit: number = 20, status?: string) {
   return useQuery({
     queryKey: runKeys.list(taskId, skip, limit, status),
