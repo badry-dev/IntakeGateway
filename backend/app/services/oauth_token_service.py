@@ -33,18 +33,31 @@ from app.core.encryption import decrypt_value, encrypt_value
 from app.db.models.task import Task
 
 
-_LOCK_REGISTRY_LOCK = asyncio.Lock()
-_TASK_LOCKS: dict[int, asyncio.Lock] = {}
+# Locks are keyed by (task_id, id(running_loop)) because asyncio.Lock instances
+# are loop-bound on first use. Celery entrypoints call asyncio.run(), which spins
+# a fresh event loop per task invocation — caching a Lock keyed only by task_id
+# would raise "<Lock> is bound to a different event loop" on the second call.
+# We also opportunistically prune entries whose loop has been closed.
+_TASK_LOCKS: dict[tuple[int, int], asyncio.Lock] = {}
 
 
 async def _get_lock(task_id: int) -> asyncio.Lock:
     """Return (creating if needed) the per-task asyncio lock used to serialize refreshes."""
-    async with _LOCK_REGISTRY_LOCK:
-        lock = _TASK_LOCKS.get(task_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            _TASK_LOCKS[task_id] = lock
-        return lock
+    loop = asyncio.get_running_loop()
+    key = (task_id, id(loop))
+    lock = _TASK_LOCKS.get(key)
+    if lock is None:
+        # Drop stale entries whose loops are no longer running. This keeps the
+        # registry from growing unboundedly across many Celery invocations.
+        stale = [
+            k for k in list(_TASK_LOCKS.keys())
+            if k[0] == task_id and k[1] != id(loop)
+        ]
+        for s in stale:
+            _TASK_LOCKS.pop(s, None)
+        lock = asyncio.Lock()
+        _TASK_LOCKS[key] = lock
+    return lock
 
 
 def _utcnow() -> _dt.datetime:

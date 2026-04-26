@@ -150,18 +150,29 @@ async def run_import(
 
         logger.info(
             f"Starting import for task {task_id}, run {task_run_id} "
-            f"(backfill={is_backfill}, replay={is_replay}, cursor_start={cursor_start_value!r})"
+            f"(backfill={is_backfill}, replay={is_replay}, "
+            f"cursor_start={cursor_start_value!r}, cursor_end={cursor_override_end!r})"
         )
 
-        # Inject cursor into query params if configured. We copy task.query_params_json
-        # rather than mutating it so the persisted task config is untouched.
+        # Inject cursor bounds into query params if configured. We copy
+        # task.query_params_json rather than mutating it so the persisted task
+        # config is untouched. The upper-bound is exposed via a derived
+        # `<cursor_param_name>_to` convention so backfills and replays actually
+        # constrain the upstream fetch (otherwise a "fixed window" backfill
+        # would silently fetch beyond the requested end).
         request_params = dict(task.query_params_json or {})
-        if cursor_param_name and cursor_start_value is not None:
-            request_params[cursor_param_name] = cursor_start_value
-        # An explicit `cursor_end` (backfill upper bound) is exposed via the same
-        # query param convention with a `_to` suffix when the task opts in. For v1
-        # we keep this minimal: callers that need an upper bound encode it in the
-        # task's static query params or pass it in via the run via a future extension.
+        if cursor_param_name:
+            if cursor_start_value is not None:
+                request_params[cursor_param_name] = cursor_start_value
+            if cursor_override_end is not None:
+                end_param = f"{cursor_param_name}_to"
+                # The base param already passed the safe-identifier whitelist;
+                # the derived `_to` suffix preserves it. Re-validate defensively.
+                if not _SAFE_IDENTIFIER_RE.match(end_param):
+                    raise ValueError(
+                        f"Derived cursor end param name {end_param!r} is invalid"
+                    )
+                request_params[end_param] = cursor_override_end
 
         # Step 3: Fetch data from API (with auth resolution + retries + 429 handling)
         log_step(db, task_run_id, "FETCH_API", f"Fetching from {task.endpoint_path}")
@@ -296,16 +307,35 @@ async def run_import(
             task_run.status = TaskStatus.SUCCESS.value
 
         # Cursor advancement (P0-C):
-        # - Compute cursor_end as max(record[cursor_field]) across valid_rows.
+        # - Compute cursor_end as max(record[cursor_field]) — preferring
+        #   pre-mapping records since cursor_field refers to the API/normalized
+        #   field name, which typically does NOT survive destination column
+        #   mapping (mapped_records use destination column names). Reading from
+        #   valid_rows alone would silently fail to advance the watermark for
+        #   any task that has column mappings configured.
         # - Persist cursor_end on the TaskRun for audit / replay.
         # - Advance task.cursor_last_value ONLY for non-backfill, non-replay runs
         #   that succeeded (or partially succeeded). Backfills and replays must
         #   never move the high-water mark forward, or a backfill of historical
         #   data could rewind production state.
         cursor_end_value = cursor_override_end
-        if cursor_field and valid_rows:
+        if cursor_field:
             try:
-                observed = [r.get(cursor_field) for r in valid_rows if r.get(cursor_field) is not None]
+                observed: list = []
+                # Prefer pre-mapping source records.
+                if flattened_records:
+                    observed = [
+                        r.get(cursor_field)
+                        for r in flattened_records
+                        if isinstance(r, dict) and r.get(cursor_field) is not None
+                    ]
+                # Fallback for tasks without mappings or where the field is preserved.
+                if not observed and valid_rows:
+                    observed = [
+                        r.get(cursor_field)
+                        for r in valid_rows
+                        if isinstance(r, dict) and r.get(cursor_field) is not None
+                    ]
                 if observed:
                     cursor_end_value = str(max(observed))
             except (TypeError, ValueError) as exc:

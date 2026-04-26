@@ -109,7 +109,7 @@ export function TaskWizard() {
                  authData.authType === 'api_key' ? authData.apiKeyValue : '',
         username: authData.authType === 'basic' ? authData.username : '',
         password: authData.authType === 'basic' ? authData.password : '',
-        oauth: buildOAuth() as any,
+        oauth: buildOAuth(),
       }))
     }
     setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1))
@@ -147,16 +147,16 @@ export function TaskWizard() {
       ...formData,
       headers_json: headerObj,
       body_json: bodyObj,
-      ...(rateLimitPayload ? { rate_limit: rateLimitPayload as any } : {}),
-      ...(cursorPayload ? { cursor: cursorPayload as any } : {}),
-    } as any
+      ...(rateLimitPayload ? { rate_limit: rateLimitPayload } : {}),
+      ...(cursorPayload ? { cursor: cursorPayload } : {}),
+    }
     if (!finalData.name.trim()) { message.warning('Task name is required'); return }
     if (!finalData.endpoint_path.trim()) { message.warning('Endpoint URL is required'); return }
     if (!finalData.dest_table.trim()) { message.warning('Table name is required'); return }
     if (!finalData.connection_id) { message.warning('Destination connection is required'); return }
 
     try {
-      const createdTask = await createTaskMutation.mutateAsync(finalData as any)
+      const createdTask = await createTaskMutation.mutateAsync(finalData)
       if (mappings.length > 0 && !skipMappings) {
         try {
           await createMappingsMutation.mutateAsync({ taskId: createdTask.id, mappings })
@@ -425,7 +425,7 @@ export function TaskWizard() {
                   <Text strong>Grant Type</Text>
                   <Select
                     value={authData.oauthGrantType}
-                    onChange={(v) => setAuthData({ ...authData, oauthGrantType: v as any })}
+                    onChange={(v) => setAuthData({ ...authData, oauthGrantType: v as 'static' | 'client_credentials' | 'refresh_token' })}
                     options={[
                       { value: 'static', label: 'Static (pre-issued access token)' },
                       { value: 'client_credentials', label: 'Client Credentials' },

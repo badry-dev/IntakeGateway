@@ -96,13 +96,42 @@ export interface ReplayRequest {
   force?: boolean
 }
 
-export interface TaskCreate extends Omit<Task, 'id' | 'auth_type' | 'username' | 'connection_id'>, TaskCreateAuth {
+// Explicit writable task payload shape. Do NOT derive from Task — Task includes
+// response-only / server-managed fields (id, created_at, updated_at,
+// oauth_token_expires_at, cursor_last_value, etc.) that the backend rejects
+// or silently ignores on write. Mirroring backend TaskCreate keeps the wire
+// contract honest and surfaces shape mismatches as TypeScript errors instead
+// of runtime 422s.
+export interface TaskInput extends TaskCreateAuth {
+  name: string
+  description?: string
   connection_id: string
+  http_method: string
+  endpoint_path: string
+  query_params_json?: Record<string, any>
+  headers_json?: Record<string, any>
+  body_json?: Record<string, any>
+  record_path?: string
+  dest_table: string
+  // Defaults on the backend (batch_size=500, is_active=true,
+  // upsert_enabled=false, continue_on_error=true), so all optional on the wire.
+  // Defining the upsert fields inline (rather than extending UpsertConfig) so
+  // they stay optional here while UpsertConfig keeps required semantics on
+  // response types.
+  batch_size?: number
+  is_active?: boolean
+  upsert_enabled?: boolean
+  upsert_keys?: string[]
+  skip_column?: string
+  skip_value?: string
+  continue_on_error?: boolean
   oauth?: OAuthConfig
   rate_limit?: RateLimitConfig
   cursor?: CursorConfig
 }
-export interface TaskUpdate extends Partial<Omit<Task, 'id'>> {}
+
+export type TaskCreate = TaskInput
+export type TaskUpdate = Partial<TaskInput>
 
 // Column Mapping types
 export interface ColumnMapping {
@@ -278,6 +307,11 @@ export interface TaskFormData {
   username?: string
   password?: string
   oauth_config?: Record<string, any>
+  // P0 structured submodels — kept here so the wizard can build payloads
+  // without `as any` casts. Optional because most steps don't touch them.
+  oauth?: OAuthConfig
+  rate_limit?: RateLimitConfig
+  cursor?: CursorConfig
   // Upsert fields (Phase 8)
   upsert_enabled?: boolean
   upsert_keys?: string[]

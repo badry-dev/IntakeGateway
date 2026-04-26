@@ -278,9 +278,19 @@ def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depen
     if payload.cursor_end:
         try:
             from datetime import datetime as _dt
-            start_dt = _dt.fromisoformat(payload.cursor_start)
-            end_dt = _dt.fromisoformat(payload.cursor_end)
             from app.core.config import settings as _settings
+
+            def _parse_iso_cursor(value: str) -> _dt:
+                # datetime.fromisoformat() rejects RFC 3339 'Z' suffix on Python <3.11.
+                # Normalize 'Z'/'z' to '+00:00' so common Zulu timestamps actually parse
+                # (otherwise the window-size check silently skips for the most likely format).
+                normalized = value.strip()
+                if normalized.endswith(("Z", "z")):
+                    normalized = f"{normalized[:-1]}+00:00"
+                return _dt.fromisoformat(normalized)
+
+            start_dt = _parse_iso_cursor(payload.cursor_start)
+            end_dt = _parse_iso_cursor(payload.cursor_end)
             window_days = (end_dt - start_dt).days
             if window_days > _settings.BACKFILL_MAX_WINDOW_DAYS:
                 raise HTTPException(

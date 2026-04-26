@@ -390,7 +390,9 @@ async def fetch_sample_response(
     api_key: str | None = None,
     username: str | None = None,
     password: str | None = None,
-    oauth_config: dict | None = None
+    oauth_config: dict | None = None,
+    task: Any = None,
+    db: Any = None,
 ) -> dict | list:
     """
     Fetch sample API response for preview and field mapping purposes.
@@ -422,21 +424,38 @@ async def fetch_sample_response(
     """
     # Debug logging for auth parameters
     logger.debug(f"fetch_sample_response called with auth_type={auth_type}, api_key={'***' if api_key else None}")
-    
+
     try:
-        response_data = await fetch_json(
-            method=method,
-            url=url,
-            headers=headers,
-            params=params,
-            json_body=json_body,
-            max_retries=2,  # Reduce retries for sample fetch
-            auth_type=auth_type,
-            api_key=api_key,
-            username=username,
-            password=password,
-            oauth_config=oauth_config
-        )
+        # When the caller provides a Task + Session (preview / auto-fetch from
+        # the column-mapping route), delegate to fetch_with_auth so the new
+        # OAuth client_credentials / refresh_token grants are exercised. Falling
+        # through to fetch_json with task.oauth_config alone would miss the
+        # per-column oauth_grant_type / oauth_client_secret / token_url path
+        # and silently fail for any task configured via the new structured fields.
+        if task is not None and db is not None and (auth_type or "none") == "oauth":
+            response_data = await fetch_with_auth(
+                task=task,
+                db=db,
+                method=method,
+                url=url,
+                headers=headers,
+                params=params,
+                json_body=json_body,
+            )
+        else:
+            response_data = await fetch_json(
+                method=method,
+                url=url,
+                headers=headers,
+                params=params,
+                json_body=json_body,
+                max_retries=2,  # Reduce retries for sample fetch
+                auth_type=auth_type,
+                api_key=api_key,
+                username=username,
+                password=password,
+                oauth_config=oauth_config
+            )
         
         # Extract data at record_path if provided
         if record_path:

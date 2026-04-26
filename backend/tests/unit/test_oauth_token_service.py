@@ -159,6 +159,37 @@ async def test_static_grant_returns_cached_or_legacy_oauth_config():
     assert token == "STATIC-TOKEN"
 
 
+def test_lock_registry_keyed_by_loop_id():
+    """Regression: asyncio.Lock instances are loop-bound. The registry must key
+    by (task_id, id(loop)) so successive Celery asyncio.run() invocations don't
+    crash with "Lock is bound to a different event loop"."""
+    oauth_token_service._TASK_LOCKS.clear()
+
+    body = {"access_token": "T", "expires_in": 60}
+
+    async def _one_shot(loop_id_holder):
+        # Capture the lock keyed under this loop's id.
+        task = _make_task()
+        db = _FakeDB()
+        response = httpx.Response(
+            200, json=body, request=httpx.Request("POST", task.oauth_token_url)
+        )
+        with patch.object(httpx, "AsyncClient", lambda *a, **kw: _fake_async_client(response)):
+            await oauth_token_service.get_access_token(task, db)
+        loop_id_holder.append(id(asyncio.get_running_loop()))
+
+    holder1 = []
+    holder2 = []
+    # Two distinct asyncio.run calls = two distinct event loops, mirroring
+    # what Celery does between task invocations.
+    asyncio.run(_one_shot(holder1))
+    asyncio.run(_one_shot(holder2))
+
+    assert holder1 and holder2 and holder1[0] != holder2[0]
+    # Both invocations should have succeeded without "<Lock> is bound to a
+    # different event loop" raising.
+
+
 @pytest.mark.asyncio
 async def test_refresh_token_grant_persists_rotated_refresh_token():
     """If the IdP returns a new refresh_token, it must be re-encrypted and persisted."""
