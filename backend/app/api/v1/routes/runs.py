@@ -1,19 +1,20 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.db.session import SessionLocal
-from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task import Task
 from app.db.models.task_log import TaskLog
+from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import (
-    TaskRunOut, TaskLogOut, TaskRunLogOut, ReplayRequest, ReplayResponse,
+    ReplayRequest,
+    ReplayResponse,
 )
-from app.workers.tasks import enqueue_replay
+from app.db.session import SessionLocal
 from app.services.connection_storage import get_connection_storage
+from app.workers.tasks import enqueue_replay
 
 router = APIRouter()
+
 
 def get_retry_info(db: Session, task_id: int, run_id: int) -> tuple[bool, int | None]:
     """Return (is_retry, retry_of_run_id) based on immediate previous run status."""
@@ -27,12 +28,14 @@ def get_retry_info(db: Session, task_id: int, run_id: int) -> tuple[bool, int | 
         return True, previous_run.id
     return False, None
 
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
 
 @router.get("/{run_id}", response_model=dict)
 def get_run(run_id: int, db: Session = Depends(get_db)):
@@ -43,17 +46,23 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
 
     task = db.query(Task).filter(Task.id == task_run.task_id).first()
     is_retry, retry_of_run_id = get_retry_info(db, task_run.task_id, task_run.id)
-    
+
     # Get execution logs
-    execution_logs = db.query(TaskLog).filter(
-        TaskLog.task_run_id == run_id
-    ).order_by(TaskLog.created_at.asc()).all()
-    
+    execution_logs = (
+        db.query(TaskLog)
+        .filter(TaskLog.task_run_id == run_id)
+        .order_by(TaskLog.created_at.asc())
+        .all()
+    )
+
     # Get row errors
-    row_errors = db.query(TaskRunLog).filter(
-        TaskRunLog.task_run_id == run_id
-    ).order_by(TaskRunLog.row_number.asc()).all()
-    
+    row_errors = (
+        db.query(TaskRunLog)
+        .filter(TaskRunLog.task_run_id == run_id)
+        .order_by(TaskRunLog.row_number.asc())
+        .all()
+    )
+
     return {
         "id": task_run.id,
         "task_id": task_run.task_id,
@@ -74,7 +83,7 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
                 "step_name": log.step_name,
                 "message": log.message,
                 "details": log.details,
-                "created_at": log.created_at
+                "created_at": log.created_at,
             }
             for log in execution_logs
         ],
@@ -87,11 +96,12 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
                 "error_type": error.error_type,
                 "error_message": error.error_message,
                 "source_value": error.source_value,
-                "created_at": error.created_at
+                "created_at": error.created_at,
             }
             for error in row_errors
-        ]
+        ],
     }
+
 
 @router.post("/{run_id}/replay", status_code=202, response_model=ReplayResponse)
 def replay_run(run_id: int, payload: ReplayRequest, db: Session = Depends(get_db)):
@@ -162,23 +172,24 @@ def list_runs(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     status: str = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """List recent runs with optional status filtering"""
     query = db.query(TaskRun)
-    
+
     # Filter by status if specified
     if status:
         query = query.filter(TaskRun.status == status)
-    
+
     # Apply pagination - order by id if started_at is null
     runs = query.order_by(TaskRun.id.desc()).offset(skip).limit(limit).all()
-    
+
     # Debug logging
     import logging
+
     logger = logging.getLogger(__name__)
     logger.info(f"list_runs: Found {len(runs)} runs from database")
-    
+
     task_ids = {run.task_id for run in runs}
     tasks = db.query(Task).filter(Task.id.in_(task_ids)).all() if task_ids else []
     task_name_map = {task.id: task.name for task in tasks}
@@ -199,7 +210,9 @@ def list_runs(
                 "error_count": run.error_count,
                 "started_at": run.started_at,
                 "ended_at": run.ended_at,
-                "duration_seconds": (run.ended_at - run.started_at).total_seconds() if run.ended_at else None
+                "duration_seconds": (run.ended_at - run.started_at).total_seconds()
+                if run.ended_at
+                else None,
             }
         )
     logger.info(f"list_runs: Returning {len(result)} runs")

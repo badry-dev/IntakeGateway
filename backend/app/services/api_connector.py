@@ -1,11 +1,12 @@
-
 import asyncio
+import base64
 import datetime as _dt
 import email.utils
-import httpx
-import base64
 from typing import Any
+
+import httpx
 from loguru import logger
+
 from app.core.config import settings
 from app.core.encryption import decrypt_value
 
@@ -33,8 +34,8 @@ def _parse_retry_after(header_value: str | None) -> float | None:
     if when is None:
         return None
     if when.tzinfo is None:
-        when = when.replace(tzinfo=_dt.timezone.utc)
-    delta = (when - _dt.datetime.now(_dt.timezone.utc)).total_seconds()
+        when = when.replace(tzinfo=_dt.UTC)
+    delta = (when - _dt.datetime.now(_dt.UTC)).total_seconds()
     return max(delta, 0.0)
 
 
@@ -44,11 +45,11 @@ def apply_authentication(
     api_key: str | None = None,
     username: str | None = None,
     password: str | None = None,
-    oauth_config: dict | None = None
+    oauth_config: dict | None = None,
 ) -> dict:
     """
     Apply authentication to HTTP headers based on auth type.
-    
+
     Args:
         headers: Base HTTP headers dictionary
         auth_type: Authentication type ('none', 'bearer', 'api_key', 'basic', 'oauth')
@@ -56,69 +57,69 @@ def apply_authentication(
         username: Username for Basic auth
         password: Encrypted password for Basic auth
         oauth_config: OAuth configuration dictionary
-    
+
     Returns:
         Updated headers dictionary with authentication
-    
+
     Raises:
         ValueError: If auth configuration is invalid
     """
-    if not auth_type or auth_type == 'none':
+    if not auth_type or auth_type == "none":
         return headers
-    
+
     headers = dict(headers)  # Create copy to avoid mutating original
-    
-    if auth_type == 'bearer':
+
+    if auth_type == "bearer":
         # Bearer token authentication
         if not api_key:
             raise ValueError("Bearer auth requires api_key")
-        
+
         # Decrypt the API key
         decrypted_key = decrypt_value(api_key)
-        headers['Authorization'] = f'Bearer {decrypted_key}'
+        headers["Authorization"] = f"Bearer {decrypted_key}"
         logger.debug("Applied Bearer token authentication")
-    
-    elif auth_type == 'api_key':
+
+    elif auth_type == "api_key":
         # API Key in custom header (X-API-Key)
         if not api_key:
             raise ValueError("API Key auth requires api_key")
-        
+
         # Decrypt the API key
         decrypted_key = decrypt_value(api_key)
-        headers['X-API-Key'] = decrypted_key
+        headers["X-API-Key"] = decrypted_key
         logger.debug("Applied API Key authentication")
-    
-    elif auth_type == 'basic':
+
+    elif auth_type == "basic":
         # HTTP Basic Authentication
         if not username or not password:
             raise ValueError("Basic auth requires username and password")
-        
+
         # Decrypt the password
         decrypted_password = decrypt_value(password)
-        
+
         # Encode credentials
         credentials = f"{username}:{decrypted_password}"
         encoded = base64.b64encode(credentials.encode()).decode()
-        headers['Authorization'] = f'Basic {encoded}'
+        headers["Authorization"] = f"Basic {encoded}"
         logger.debug(f"Applied Basic authentication for user: {username}")
-    
-    elif auth_type == 'oauth':
+
+    elif auth_type == "oauth":
         # OAuth token authentication. Token may have been resolved by
         # oauth_token_service.get_access_token() and passed in plaintext via
         # `oauth_config['_already_decrypted']=True` — in that case skip decrypt.
-        if not oauth_config or 'access_token' not in oauth_config:
+        if not oauth_config or "access_token" not in oauth_config:
             raise ValueError("OAuth auth requires oauth_config with access_token")
 
-        if oauth_config.get('_already_decrypted'):
-            access_token = oauth_config['access_token']
+        if oauth_config.get("_already_decrypted"):
+            access_token = oauth_config["access_token"]
         else:
-            access_token = decrypt_value(oauth_config['access_token'])
-        headers['Authorization'] = f'Bearer {access_token}'
+            access_token = decrypt_value(oauth_config["access_token"])
+        headers["Authorization"] = f"Bearer {access_token}"
         logger.debug("Applied OAuth authentication")
-    
+
     else:
         raise ValueError(f"Unsupported auth_type: {auth_type}")
-    
+
     return headers
 
 
@@ -140,7 +141,7 @@ async def fetch_json(
 ) -> dict:
     """
     Fetch JSON data from API with exponential backoff retry logic and authentication
-    
+
     Args:
         method: HTTP method (GET, POST, etc.)
         url: Target URL
@@ -154,10 +155,10 @@ async def fetch_json(
         username: Username for Basic auth
         password: Encrypted password for Basic auth
         oauth_config: OAuth configuration dictionary
-    
+
     Returns:
         Parsed JSON response as dictionary
-    
+
     Raises:
         httpx.HTTPError: If all retries fail
         ValueError: If response size exceeds limit or auth is invalid
@@ -169,31 +170,31 @@ async def fetch_json(
         api_key=api_key,
         username=username,
         password=password,
-        oauth_config=oauth_config
+        oauth_config=oauth_config,
     )
-    
+
     # Debug: Show request details (mask sensitive headers)
     debug_headers = dict(headers)
-    if 'Authorization' in debug_headers:
-        auth_value = debug_headers['Authorization']
-        if auth_value.startswith('Bearer '):
-            debug_headers['Authorization'] = f"Bearer ***{auth_value[-4:]}"
-        elif auth_value.startswith('Basic '):
-            debug_headers['Authorization'] = f"Basic ***"
-    if 'X-API-Key' in debug_headers:
-        debug_headers['X-API-Key'] = f"***{debug_headers['X-API-Key'][-4:]}"
-    
+    if "Authorization" in debug_headers:
+        auth_value = debug_headers["Authorization"]
+        if auth_value.startswith("Bearer "):
+            debug_headers["Authorization"] = f"Bearer ***{auth_value[-4:]}"
+        elif auth_value.startswith("Basic "):
+            debug_headers["Authorization"] = "Basic ***"
+    if "X-API-Key" in debug_headers:
+        debug_headers["X-API-Key"] = f"***{debug_headers['X-API-Key'][-4:]}"
+
     logger.info(f"Making API request: {method} {url}")
     logger.info(f"Request headers: {debug_headers}")
     if params:
         logger.debug(f"Query params: {params}")
     if json_body:
         logger.debug(f"Request body: {json_body}")
-    
+
     # Generate curl command for debugging
     curl_cmd = f"curl -X {method} '{url}'"
     for key, value in headers.items():
-        if key == 'Authorization':
+        if key == "Authorization":
             curl_cmd += f" -H '{key}: ***'"
         else:
             curl_cmd += f" -H '{key}: {value}'"
@@ -202,24 +203,20 @@ async def fetch_json(
     if json_body:
         curl_cmd += f" -d '{json_body}'"
     logger.info(f"Equivalent curl: {curl_cmd}")
-    
+
     timeout = httpx.Timeout(settings.HTTP_TIMEOUT_SECONDS)
 
     # 429 has its own retry budget so a misbehaving upstream can't exhaust the
     # transient/5xx budget intended for genuine errors.
     rl_max_retries = (
-        max_retries_429
-        if max_retries_429 is not None
-        else settings.HTTP_RATE_LIMIT_DEFAULT_RETRIES
+        max_retries_429 if max_retries_429 is not None else settings.HTTP_RATE_LIMIT_DEFAULT_RETRIES
     )
     rl_max_wait = (
-        max_wait_seconds
-        if max_wait_seconds is not None
-        else settings.HTTP_RETRY_AFTER_MAX_SECONDS
+        max_wait_seconds if max_wait_seconds is not None else settings.HTTP_RETRY_AFTER_MAX_SECONDS
     )
 
-    transient_attempts = 0    # network errors + 5xx
-    rate_limit_attempts = 0   # 429 only
+    transient_attempts = 0  # network errors + 5xx
+    rate_limit_attempts = 0  # 429 only
 
     while True:
         try:
@@ -229,11 +226,7 @@ async def fetch_json(
                     f"rate_limit={rate_limit_attempts}/{rl_max_retries}: {method} {url}"
                 )
                 resp = await client.request(
-                    method,
-                    url,
-                    headers=headers,
-                    params=params,
-                    json=json_body
+                    method, url, headers=headers, params=params, json=json_body
                 )
                 resp.raise_for_status()
 
@@ -248,7 +241,7 @@ async def fetch_json(
 
         except (httpx.TimeoutException, httpx.NetworkError, httpx.ConnectError) as e:
             if transient_attempts < max_retries:
-                backoff_time = initial_backoff * (2 ** transient_attempts)
+                backoff_time = initial_backoff * (2**transient_attempts)
                 transient_attempts += 1
                 logger.warning(
                     f"API request failed ({type(e).__name__}): {str(e)}. "
@@ -265,7 +258,7 @@ async def fetch_json(
             if status == 429:
                 # Honor Retry-After if present, else exponential backoff. Cap at rl_max_wait.
                 advised = _parse_retry_after(e.response.headers.get("Retry-After"))
-                computed = initial_backoff * (2 ** rate_limit_attempts)
+                computed = initial_backoff * (2**rate_limit_attempts)
                 wait_seconds = advised if advised is not None else computed
 
                 if wait_seconds > rl_max_wait:
@@ -289,7 +282,7 @@ async def fetch_json(
                 raise
 
             if 500 <= status < 600 and transient_attempts < max_retries:
-                backoff_time = initial_backoff * (2 ** transient_attempts)
+                backoff_time = initial_backoff * (2**transient_attempts)
                 transient_attempts += 1
                 logger.warning(
                     f"API returned server error {status} "
@@ -396,10 +389,10 @@ async def fetch_sample_response(
 ) -> dict | list:
     """
     Fetch sample API response for preview and field mapping purposes.
-    
+
     Uses lenient JSON parsing to handle malformed responses gracefully.
     Automatically extracts records at the specified JSONPath (e.g., "data.items[0]").
-    
+
     Args:
         method: HTTP method (GET, POST, etc.)
         url: Target API endpoint
@@ -412,18 +405,20 @@ async def fetch_sample_response(
         username: Username for Basic auth
         password: Encrypted password for Basic auth
         oauth_config: OAuth configuration dictionary
-    
+
     Returns:
         Extracted sample data (dict or list depending on record_path)
         If no record_path specified, returns entire response
-    
+
     Raises:
         httpx.HTTPError: If API request fails
         ValueError: If response is not valid JSON
         KeyError: If record_path doesn't exist in response
     """
     # Debug logging for auth parameters
-    logger.debug(f"fetch_sample_response called with auth_type={auth_type}, api_key={'***' if api_key else None}")
+    logger.debug(
+        f"fetch_sample_response called with auth_type={auth_type}, api_key={'***' if api_key else None}"
+    )
 
     try:
         # When the caller provides a Task + Session (preview / auto-fetch from
@@ -436,9 +431,7 @@ async def fetch_sample_response(
         # populated task with auth_type=oauth still routes through fetch_with_auth
         # even if the caller forgot to forward the explicit auth_type kwarg.
         effective_auth_type = (
-            auth_type
-            or (getattr(task, "auth_type", None) if task is not None else None)
-            or "none"
+            auth_type or (getattr(task, "auth_type", None) if task is not None else None) or "none"
         )
         if task is not None and db is not None and effective_auth_type == "oauth":
             response_data = await fetch_with_auth(
@@ -462,18 +455,20 @@ async def fetch_sample_response(
                 api_key=api_key,
                 username=username,
                 password=password,
-                oauth_config=oauth_config
+                oauth_config=oauth_config,
             )
-        
+
         # Extract data at record_path if provided
         if record_path:
             extracted = _extract_by_path(response_data, record_path)
-            logger.info(f"Extracted sample data at path '{record_path}': {type(extracted).__name__}")
+            logger.info(
+                f"Extracted sample data at path '{record_path}': {type(extracted).__name__}"
+            )
             return extracted
-        
+
         logger.info(f"Fetched sample API response: {type(response_data).__name__}")
         return response_data
-    
+
     except httpx.HTTPError as e:
         logger.error(f"Failed to fetch sample response from {url}: {str(e)}")
         raise ValueError(f"API request failed: {str(e)}")
@@ -482,23 +477,20 @@ async def fetch_sample_response(
         raise ValueError(f"Failed to fetch sample response: {str(e)}")
 
 
-def get_record_type_info(
-    data: dict | list,
-    record_path: str | None = None
-) -> dict:
+def get_record_type_info(data: dict | list, record_path: str | None = None) -> dict:
     """
     Infer field types and flatten nested JSON structure for column mapping.
-    
-    Converts nested objects to dot notation (e.g., {"user": {"name": "Alice"}} → 
-    {"user.name": "Alice"}). Automatically detects field types (string, number, 
+
+    Converts nested objects to dot notation (e.g., {"user": {"name": "Alice"}} →
+    {"user.name": "Alice"}). Automatically detects field types (string, number,
     boolean, null, array, object) and includes sample values.
-    
+
     Supports arbitrarily deep nesting levels. Arrays are kept as-is (not exploded).
-    
+
     Args:
         data: Sample response data (dict or list)
         record_path: Optional JSONPath if data contains multiple records
-    
+
     Returns:
         Flattened and typed field information:
         {
@@ -510,7 +502,7 @@ def get_record_type_info(
             },
             ...
         }
-    
+
     Raises:
         ValueError: If data format is invalid
     """
@@ -522,32 +514,28 @@ def get_record_type_info(
             record = data[0]
         else:
             record = data
-        
+
         if not isinstance(record, dict):
             raise ValueError(f"Expected dict or list, got {type(record).__name__}")
-        
+
         # Flatten and infer types
         flattened = {}
         _flatten_dict(record, "", flattened)
-        
+
         logger.info(f"Inferred types for {len(flattened)} fields from sample data")
         return flattened
-    
+
     except Exception as e:
         logger.error(f"Error inferring record type info: {str(e)}")
         raise ValueError(f"Failed to infer field types: {str(e)}")
 
 
 def _flatten_dict(
-    obj: any,
-    prefix: str,
-    result: dict,
-    max_depth: int = 10,
-    current_depth: int = 0
+    obj: any, prefix: str, result: dict, max_depth: int = 10, current_depth: int = 0
 ) -> None:
     """
     Recursively flatten nested dictionary to dot notation.
-    
+
     Args:
         obj: Object to flatten
         prefix: Current path prefix (e.g., "user.address")
@@ -558,7 +546,7 @@ def _flatten_dict(
     if current_depth >= max_depth:
         logger.warning(f"Max nesting depth ({max_depth}) reached at path '{prefix}'")
         return
-    
+
     if obj is None:
         # Add null field
         field_key = prefix
@@ -566,9 +554,9 @@ def _flatten_dict(
             "field_type": "null",
             "sample_value": None,
             "nullable": True,
-            "parent_path": _get_parent_path(prefix)
+            "parent_path": _get_parent_path(prefix),
         }
-    
+
     elif isinstance(obj, dict):
         if not obj:  # Empty dict
             field_key = prefix
@@ -576,14 +564,14 @@ def _flatten_dict(
                 "field_type": "object",
                 "sample_value": {},
                 "nullable": False,
-                "parent_path": _get_parent_path(prefix)
+                "parent_path": _get_parent_path(prefix),
             }
         else:
             # Recursively process nested dict
             for key, value in obj.items():
                 new_prefix = f"{prefix}.{key}" if prefix else key
                 _flatten_dict(value, new_prefix, result, max_depth, current_depth + 1)
-    
+
     elif isinstance(obj, list):
         # Keep arrays as-is, don't explode (Phase 1 limitation)
         field_key = prefix
@@ -591,9 +579,9 @@ def _flatten_dict(
             "field_type": "array",
             "sample_value": obj if obj else [],
             "nullable": False,
-            "parent_path": _get_parent_path(prefix)
+            "parent_path": _get_parent_path(prefix),
         }
-    
+
     elif isinstance(obj, bool):
         # Check bool before int because bool is subclass of int
         field_key = prefix
@@ -601,27 +589,27 @@ def _flatten_dict(
             "field_type": "boolean",
             "sample_value": obj,
             "nullable": False,
-            "parent_path": _get_parent_path(prefix)
+            "parent_path": _get_parent_path(prefix),
         }
-    
+
     elif isinstance(obj, int) or isinstance(obj, float):
         field_key = prefix
         result[field_key] = {
             "field_type": "number",
             "sample_value": obj,
             "nullable": False,
-            "parent_path": _get_parent_path(prefix)
+            "parent_path": _get_parent_path(prefix),
         }
-    
+
     elif isinstance(obj, str):
         field_key = prefix
         result[field_key] = {
             "field_type": "string",
             "sample_value": obj,
             "nullable": False,
-            "parent_path": _get_parent_path(prefix)
+            "parent_path": _get_parent_path(prefix),
         }
-    
+
     else:
         # Unknown type, treat as string
         field_key = prefix
@@ -629,47 +617,47 @@ def _flatten_dict(
             "field_type": "string",
             "sample_value": str(obj),
             "nullable": False,
-            "parent_path": _get_parent_path(prefix)
+            "parent_path": _get_parent_path(prefix),
         }
 
 
 def _extract_by_path(data: dict | list, path: str) -> any:
     """
     Extract value from nested structure using dot notation and array indexing.
-    
+
     Supports paths like "data.items[0]", "results", "user.address.city"
-    
+
     Args:
         data: Data structure to extract from
         path: Path string with dot notation and optional array indices
-    
+
     Returns:
         Extracted value
-    
+
     Raises:
         KeyError: If path doesn't exist
     """
     current = data
     parts = path.split(".")
-    
+
     for part in parts:
         # Check if part has array index notation [n]
         if "[" in part and "]" in part:
             # Extract field name and index
-            field_name = part[:part.index("[")]
-            index_str = part[part.index("[") + 1:part.index("]")]
-            
+            field_name = part[: part.index("[")]
+            index_str = part[part.index("[") + 1 : part.index("]")]
+
             try:
                 index = int(index_str)
             except ValueError:
                 raise KeyError(f"Invalid array index in path: {part}")
-            
+
             # Navigate to field first if it has a name
             if field_name:
                 if not isinstance(current, dict) or field_name not in current:
                     raise KeyError(f"Path not found: {path}")
                 current = current[field_name]
-            
+
             # Apply array index
             if not isinstance(current, list):
                 raise KeyError(f"Expected list at {part}, got {type(current).__name__}")
@@ -683,14 +671,14 @@ def _extract_by_path(data: dict | list, path: str) -> any:
             if part not in current:
                 raise KeyError(f"Key '{part}' not found in path: {path}")
             current = current[part]
-    
+
     return current
 
 
 def _get_parent_path(field_path: str) -> str | None:
     """
     Extract parent path from dot notation field path.
-    
+
     Examples:
         "user.address.city" → "user.address"
         "user.name" → "user"

@@ -5,15 +5,17 @@ Manages SQLAlchemy engines per connection configuration.
 Pools are created on-demand and cached for performance.
 Supports Oracle, PostgreSQL, and MySQL databases.
 """
+
 import time
 from urllib.parse import quote_plus
-import oracledb
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.engine import Engine
-from loguru import logger
-from app.services.connection_storage import get_connection_storage
 
+import oracledb
+from loguru import logger
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.services.connection_storage import get_connection_storage
 
 # Cache of engines by connection_id
 _engine_cache: dict[str, Engine] = {}
@@ -68,16 +70,10 @@ def build_connection_url(conn: dict, password: str) -> str:
         )
     elif db_type == "postgresql":
         database = conn.get("database", "postgres")
-        return (
-            f"postgresql+psycopg2://{username}:{encoded_password}"
-            f"@{host}:{port}/{database}"
-        )
+        return f"postgresql+psycopg2://{username}:{encoded_password}@{host}:{port}/{database}"
     elif db_type == "mysql":
         database = conn.get("database", "")
-        return (
-            f"mysql+pymysql://{username}:{encoded_password}"
-            f"@{host}:{port}/{database}"
-        )
+        return f"mysql+pymysql://{username}:{encoded_password}@{host}:{port}/{database}"
     else:
         raise ValueError(f"Unsupported database type: {db_type}")
 
@@ -122,7 +118,7 @@ def get_engine(connection_id: str) -> Engine:
         pool_size=5,
         max_overflow=5,
         pool_pre_ping=True,  # Check connection health before use
-        future=True
+        future=True,
     )
 
     _engine_cache[connection_id] = engine
@@ -146,10 +142,7 @@ def get_session(connection_id: str) -> Session:
     # Cache session factory
     if connection_id not in _session_factories:
         _session_factories[connection_id] = sessionmaker(
-            autocommit=False,
-            autoflush=False,
-            bind=engine,
-            expire_on_commit=False
+            autocommit=False, autoflush=False, bind=engine, expire_on_commit=False
         )
 
     return _session_factories[connection_id]()
@@ -201,7 +194,7 @@ def test_connection(config: dict) -> dict:
             pool_size=1,
             max_overflow=0,
             pool_timeout=10,
-            connect_args={"connect_timeout": 10} if test_config.get("db_type") != "oracle" else {}
+            connect_args={"connect_timeout": 10} if test_config.get("db_type") != "oracle" else {},
         )
 
         start = time.time()
@@ -227,13 +220,15 @@ def test_connection(config: dict) -> dict:
         # Cleanup
         test_engine.dispose()
 
-        logger.info(f"Connection test successful: {test_config.get('host')}:{test_config.get('port')}")
+        logger.info(
+            f"Connection test successful: {test_config.get('host')}:{test_config.get('port')}"
+        )
 
         return {
             "success": True,
             "message": "Connection successful",
             "latency_ms": latency,
-            "server_version": str(version) if version else None
+            "server_version": str(version) if version else None,
         }
 
     except Exception as e:
@@ -244,12 +239,7 @@ def test_connection(config: dict) -> dict:
 
         logger.error(f"Connection test failed for {test_config.get('host')}: {e}")
 
-        return {
-            "success": False,
-            "message": error_msg,
-            "latency_ms": None,
-            "server_version": None
-        }
+        return {"success": False, "message": error_msg, "latency_ms": None, "server_version": None}
 
 
 def get_all_engines() -> dict[str, Engine]:

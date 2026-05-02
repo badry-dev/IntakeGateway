@@ -1,13 +1,16 @@
+import logging
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
 from app.core.config import settings
-import logging
 
 logger = logging.getLogger(__name__)
 
+
 class Base(DeclarativeBase):
     pass
+
 
 engine_kwargs = {
     "future": True,
@@ -35,6 +38,7 @@ def init_app_database() -> None:
 
     Base.metadata.create_all(bind=engine)
     logger.info("App database initialized")
+
 
 def get_db():
     """Dependency to get database session for FastAPI routes"""

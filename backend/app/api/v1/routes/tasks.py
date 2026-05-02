@@ -1,28 +1,27 @@
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
-from sqlalchemy.orm import Session
-from datetime import datetime, timezone
 from loguru import logger
+from sqlalchemy.orm import Session
 
-from app.db.session import SessionLocal
+from app.core.encryption import encrypt_value
 from app.db.models.task import Task
-from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task_log import TaskLog
+from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import (
-    TaskCreate,
-    TaskOut,
-    TaskRunOut,
-    TaskStatsOut,
-    TaskLogOut,
-    TaskRunLogOut,
     BackfillRequest,
     BackfillResponse,
+    TaskCreate,
+    TaskLogOut,
+    TaskOut,
+    TaskRunLogOut,
+    TaskRunOut,
+    TaskStatsOut,
 )
-from app.workers.tasks import enqueue_run, enqueue_backfill
-from app.core.encryption import encrypt_value
+from app.db.session import SessionLocal
 from app.services.connection_storage import get_connection_storage
+from app.workers.tasks import enqueue_backfill, enqueue_run
 
 router = APIRouter()
 
@@ -35,6 +34,7 @@ def _require_existing_connection(connection_id: str) -> None:
     if not storage.get_connection(connection_id):
         raise HTTPException(status_code=400, detail=f"Connection {connection_id} not found")
 
+
 def get_db():
     db = SessionLocal()
     try:
@@ -42,9 +42,11 @@ def get_db():
     finally:
         db.close()
 
+
 # ============================================================================
 # Task CRUD Endpoints
 # ============================================================================
+
 
 def _flatten_p0_submodels(task_data: dict, task_name: str) -> dict:
     """
@@ -105,13 +107,13 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
     task_data = payload.model_dump()
 
     # Encrypt api_key if provided
-    if task_data.get('api_key'):
-        task_data['api_key'] = encrypt_value(task_data['api_key'])
+    if task_data.get("api_key"):
+        task_data["api_key"] = encrypt_value(task_data["api_key"])
         logger.debug(f"Encrypted api_key for task '{payload.name}'")
 
     # Encrypt password if provided
-    if task_data.get('password'):
-        task_data['password'] = encrypt_value(task_data['password'])
+    if task_data.get("password"):
+        task_data["password"] = encrypt_value(task_data["password"])
         logger.debug(f"Encrypted password for task '{payload.name}'")
 
     _flatten_p0_submodels(task_data, payload.name)
@@ -122,25 +124,26 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
     db.refresh(task)
     return task
 
+
 @router.get("/", response_model=list[TaskOut])
 def list_tasks(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     is_active: bool = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """List all tasks with pagination and filtering"""
     query = db.query(Task)
-    
+
     # Filter by active status if specified
     if is_active is not None:
         query = query.filter(Task.is_active == is_active)
-    
+
     # Apply pagination
-    total = query.count()
     tasks = query.order_by(Task.id.desc()).offset(skip).limit(limit).all()
-    
+
     return tasks
+
 
 @router.get("/{task_id}", response_model=TaskOut)
 def get_task(task_id: int, db: Session = Depends(get_db)):
@@ -150,13 +153,14 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Task not found")
     return task
 
+
 @router.put("/{task_id}", response_model=TaskOut)
 def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)):
     """Update an existing task"""
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Check if new name conflicts with another task
     if payload.name != task.name:
         exists = db.query(Task).filter(Task.name == payload.name).first()
@@ -164,18 +168,18 @@ def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)
             raise HTTPException(status_code=400, detail="Task with this name already exists")
 
     _require_existing_connection(payload.connection_id)
-    
+
     # Prepare update data and encrypt sensitive fields
     update_data = payload.model_dump()
-    
+
     # Encrypt api_key if provided
-    if update_data.get('api_key'):
-        update_data['api_key'] = encrypt_value(update_data['api_key'])
+    if update_data.get("api_key"):
+        update_data["api_key"] = encrypt_value(update_data["api_key"])
         logger.debug(f"Encrypted api_key for task '{payload.name}'")
 
     # Encrypt password if provided
-    if update_data.get('password'):
-        update_data['password'] = encrypt_value(update_data['password'])
+    if update_data.get("password"):
+        update_data["password"] = encrypt_value(update_data["password"])
         logger.debug(f"Encrypted password for task '{payload.name}'")
 
     _flatten_p0_submodels(update_data, payload.name)
@@ -183,10 +187,11 @@ def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)
     # Update task with all fields from payload
     for key, value in update_data.items():
         setattr(task, key, value)
-    
+
     db.commit()
     db.refresh(task)
     return task
+
 
 @router.delete("/{task_id}", status_code=204)
 def delete_task(task_id: int, db: Session = Depends(get_db)):
@@ -194,14 +199,16 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Delete associated runs and logs (cascading delete via foreign keys)
     db.delete(task)
     db.commit()
 
+
 # ============================================================================
 # Task Run Endpoints
 # ============================================================================
+
 
 @router.post("/{task_id}/run", status_code=202)
 def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
@@ -223,17 +230,15 @@ def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
             status_code=400,
             detail="The task's selected destination connection no longer exists",
         )
-    
+
     # Create TaskRun record in PENDING state
     task_run = TaskRun(
-        task_id=task_id,
-        status=TaskStatus.PENDING.value,
-        started_at=datetime.now(timezone.utc)
+        task_id=task_id, status=TaskStatus.PENDING.value, started_at=datetime.now(UTC)
     )
     db.add(task_run)
     db.commit()
     db.refresh(task_run)
-    
+
     # Enqueue to Celery worker
     try:
         celery_task = enqueue_run(task_id)
@@ -241,12 +246,12 @@ def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
             "status": "enqueued",
             "run_id": task_run.id,
             "task_id": task_id,
-            "celery_task_id": celery_task.id if celery_task else None
+            "celery_task_id": celery_task.id if celery_task else None,
         }
     except Exception as e:
         # If enqueueing fails, update run status to FAILED
         task_run.status = TaskStatus.FAILED.value
-        task_run.ended_at = datetime.now(timezone.utc)
+        task_run.ended_at = datetime.now(UTC)
         db.commit()
         raise HTTPException(status_code=500, detail=f"Failed to enqueue task: {str(e)}")
 
@@ -284,7 +289,9 @@ def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depen
     # We only enforce when both endpoints parse — opaque tokens are passed through.
     if payload.cursor_end:
         try:
-            from datetime import datetime as _dt, timedelta
+            from datetime import datetime as _dt
+            from datetime import timedelta
+
             from app.core.config import settings as _settings
 
             def _parse_iso_cursor(value: str) -> _dt:
@@ -306,8 +313,7 @@ def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depen
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        "cursor_start and cursor_end must both be timezone-aware "
-                        "or both be naive"
+                        "cursor_start and cursor_end must both be timezone-aware or both be naive"
                     ),
                 )
 
@@ -360,23 +366,23 @@ def list_task_runs(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     status: str = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """List all runs for a task with pagination and filtering"""
     # Verify task exists
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     query = db.query(TaskRun).filter(TaskRun.task_id == task_id)
-    
+
     # Filter by status if specified
     if status:
         query = query.filter(TaskRun.status == status)
-    
+
     # Apply pagination
     runs = query.order_by(TaskRun.started_at.desc()).offset(skip).limit(limit).all()
-    
+
     return [
         {
             "id": run.id,
@@ -387,10 +393,13 @@ def list_task_runs(
             "records_failed": run.records_failed,
             "started_at": run.started_at,
             "completed_at": run.completed_at,
-            "duration_seconds": (run.completed_at - run.started_at).total_seconds() if run.completed_at else None
+            "duration_seconds": (run.completed_at - run.started_at).total_seconds()
+            if run.completed_at
+            else None,
         }
         for run in runs
     ]
+
 
 @router.get("/{task_id}/runs/{run_id}", response_model=TaskRunOut)
 def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
@@ -399,12 +408,9 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Get task run
-    task_run = db.query(TaskRun).filter(
-        TaskRun.id == run_id,
-        TaskRun.task_id == task_id
-    ).first()
+    task_run = db.query(TaskRun).filter(TaskRun.id == run_id, TaskRun.task_id == task_id).first()
     if not task_run:
         raise HTTPException(status_code=404, detail="Run not found")
 
@@ -416,17 +422,20 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
     )
     is_retry = previous_run is not None and previous_run.status == TaskStatus.FAILED.value
     retry_of_run_id = previous_run.id if is_retry else None
-    
+
     # Get execution logs
-    execution_logs = db.query(TaskLog).filter(
-        TaskLog.run_id == run_id
-    ).order_by(TaskLog.created_at.asc()).all()
-    
+    execution_logs = (
+        db.query(TaskLog).filter(TaskLog.run_id == run_id).order_by(TaskLog.created_at.asc()).all()
+    )
+
     # Get row errors
-    row_errors = db.query(TaskRunLog).filter(
-        TaskRunLog.run_id == run_id
-    ).order_by(TaskRunLog.row_index.asc()).all()
-    
+    row_errors = (
+        db.query(TaskRunLog)
+        .filter(TaskRunLog.run_id == run_id)
+        .order_by(TaskRunLog.row_index.asc())
+        .all()
+    )
+
     return TaskRunOut(
         id=task_run.id,
         task_id=task_run.task_id,
@@ -449,7 +458,7 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
                 status=log.status,
                 message=log.message,
                 details=log.details,
-                created_at=log.created_at
+                created_at=log.created_at,
             )
             for log in execution_logs
         ],
@@ -461,15 +470,17 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
                 row_index=error.row_index,
                 row_data=error.row_data,
                 errors=error.errors,
-                created_at=error.created_at
+                created_at=error.created_at,
             )
             for error in row_errors
-        ]
+        ],
     )
+
 
 # ============================================================================
 # Task Stats Endpoint
 # ============================================================================
+
 
 @router.get("/{task_id}/stats", response_model=TaskStatsOut)
 def get_task_stats(task_id: int, db: Session = Depends(get_db)):
@@ -478,34 +489,31 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Get all runs for this task
     runs = db.query(TaskRun).filter(TaskRun.task_id == task_id).all()
-    
+
     total_runs = len(runs)
     successful_runs = len([r for r in runs if r.status == TaskStatus.SUCCESS.value])
     failed_runs = len([r for r in runs if r.status == TaskStatus.FAILED.value])
-    
+
     success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0.0
-    
+
     # Calculate totals
     total_records_fetched = sum(r.records_fetched or 0 for r in runs)
     total_records_inserted = sum(r.records_inserted or 0 for r in runs)
     total_records_failed = sum(r.records_failed or 0 for r in runs)
-    
+
     # Calculate average duration
     completed_runs = [r for r in runs if r.completed_at]
     avg_duration = 0.0
     if completed_runs:
-        durations = [
-            (r.completed_at - r.started_at).total_seconds()
-            for r in completed_runs
-        ]
+        durations = [(r.completed_at - r.started_at).total_seconds() for r in completed_runs]
         avg_duration = sum(durations) / len(durations)
-    
+
     # Get last run
     last_run = max(runs, key=lambda r: r.started_at) if runs else None
-    
+
     return TaskStatsOut(
         task_id=task_id,
         total_runs=total_runs,
@@ -517,5 +525,5 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
         total_records_failed=total_records_failed,
         avg_duration_seconds=avg_duration,
         last_run_at=last_run.started_at if last_run else None,
-        last_run_status=last_run.status if last_run else None
+        last_run_status=last_run.status if last_run else None,
     )

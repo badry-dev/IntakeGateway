@@ -1,8 +1,9 @@
-
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text  # noqa: F401
 from sqlalchemy.sql import func
+
 from app.db.session import Base
 from app.db.types import ID_TYPE, JSONText
+
 
 class Task(Base):
     __tablename__ = "task"
@@ -19,16 +20,22 @@ class Task(Base):
     dest_table = Column(String(200), nullable=False)
     batch_size = Column(Integer, nullable=False, default=500)
     is_active = Column(Boolean, nullable=False, default=True)
-    
+
     # Authentication fields (Phase 7)
-    auth_type = Column(String(20), nullable=True, default='none')  # 'none', 'bearer', 'api_key', 'basic', 'oauth'
+    auth_type = Column(
+        String(20), nullable=True, default="none"
+    )  # 'none', 'bearer', 'api_key', 'basic', 'oauth'
     api_key = Column(String(500), nullable=True)  # Encrypted
     username = Column(String(200), nullable=True)  # For Basic auth
     password = Column(String(500), nullable=True)  # Encrypted
-    oauth_config = Column(JSONText, nullable=True)  # Legacy: OAuth settings (deprecated; superseded by columns below)
+    oauth_config = Column(
+        JSONText, nullable=True
+    )  # Legacy: OAuth settings (deprecated; superseded by columns below)
 
     # OAuth2 grant + token cache (P0-A). client_secret/access_token/refresh_token are Fernet-encrypted at rest.
-    oauth_grant_type = Column(String(30), nullable=True)  # 'static' | 'client_credentials' | 'refresh_token'
+    oauth_grant_type = Column(
+        String(30), nullable=True
+    )  # 'static' | 'client_credentials' | 'refresh_token'
     oauth_token_url = Column(String(1000), nullable=True)
     oauth_client_id = Column(String(500), nullable=True)
     # Text rather than String(N) — Fernet ciphertext expands plaintext by ~38%
@@ -58,7 +65,9 @@ class Task(Base):
     upsert_keys = Column(JSONText, nullable=True)  # JSON array of column names for matching
     skip_column = Column(String(100), nullable=True)  # Column to check for skip condition
     skip_value = Column(String(100), nullable=True)  # Value that triggers skip (e.g., 'Y')
-    continue_on_error = Column(Boolean, nullable=False, default=True)  # Continue processing on row errors
+    continue_on_error = Column(
+        Boolean, nullable=False, default=True
+    )  # Continue processing on row errors
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

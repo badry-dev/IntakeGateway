@@ -4,26 +4,25 @@ Integration tests for API endpoints.
 Tests the HTTP API workflows for task management, run triggering, and result retrieval.
 """
 
-import pytest
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
-from datetime import datetime, timezone
+from sqlalchemy.orm import sessionmaker
 
-from app.main import app
-from app.db.session import Base
-from app.db.models.task import Task
-from app.db.models.task_run import TaskRun, TaskStatus
-from app.db.models.task_log import TaskLog
-from app.db.models.task_run_log import TaskRunLog
-from app.db.session import SessionLocal
 from app.api.v1.routes.tasks import get_db
-
+from app.db.models.task import Task
+from app.db.models.task_log import TaskLog
+from app.db.models.task_run import TaskRun, TaskStatus
+from app.db.session import Base
+from app.main import app
 
 # ============================================================================
 # Test Database Setup
 # ============================================================================
+
 
 @pytest.fixture(scope="function")
 def test_db():
@@ -31,18 +30,18 @@ def test_db():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     TestingSessionLocal = sessionmaker(bind=engine)
-    
+
     def override_get_db():
         db = TestingSessionLocal()
         try:
             yield db
         finally:
             db.close()
-    
+
     app.dependency_overrides[get_db] = override_get_db
-    
+
     yield TestingSessionLocal()
-    
+
     app.dependency_overrides.clear()
     engine.dispose()
 
@@ -54,7 +53,9 @@ def mock_connection_dependencies(monkeypatch):
         {"id": connection_id, "name": f"Connection {connection_id}"} if connection_id else None
     )
     monkeypatch.setattr("app.api.v1.routes.tasks.get_connection_storage", lambda: storage)
-    monkeypatch.setattr("app.api.v1.routes.tasks.enqueue_run", lambda task_id: MagicMock(id=f"task-{task_id}"))
+    monkeypatch.setattr(
+        "app.api.v1.routes.tasks.enqueue_run", lambda task_id: MagicMock(id=f"task-{task_id}")
+    )
 
 
 @pytest.fixture
@@ -72,7 +73,7 @@ def sample_task(test_db) -> Task:
         connection_id="conn-1",
         endpoint_path="/api/v1/test-data",
         dest_table="test_data",
-        is_active=True
+        is_active=True,
     )
     test_db.add(task)
     test_db.commit()
@@ -83,6 +84,7 @@ def sample_task(test_db) -> Task:
 # ============================================================================
 # Task CRUD Tests
 # ============================================================================
+
 
 def test_create_task(client: TestClient):
     """Test creating a new task"""
@@ -95,8 +97,8 @@ def test_create_task(client: TestClient):
             "endpoint_path": "/api/users",
             "dest_table": "users",
             "http_method": "GET",
-            "batch_size": 1000
-        }
+            "batch_size": 1000,
+        },
     )
     assert response.status_code == 201
     data = response.json()
@@ -112,8 +114,8 @@ def test_create_duplicate_task(client: TestClient, sample_task):
             "name": sample_task.name,
             "connection_id": "conn-1",
             "endpoint_path": "/api/different",
-            "dest_table": "different_table"
-        }
+            "dest_table": "different_table",
+        },
     )
     assert response.status_code == 400
     assert "already exists" in response.json()["detail"]
@@ -136,11 +138,11 @@ def test_list_tasks_with_pagination(client: TestClient, test_db):
             name=f"Task {i}",
             connection_id="conn-1",
             endpoint_path=f"/api/data{i}",
-            dest_table=f"table{i}"
+            dest_table=f"table{i}",
         )
         test_db.add(task)
     test_db.commit()
-    
+
     # Test skip/limit
     response = client.get("/api/v1/tasks/?skip=0&limit=2")
     assert response.status_code == 200
@@ -150,11 +152,23 @@ def test_list_tasks_with_pagination(client: TestClient, test_db):
 def test_list_tasks_with_filter(client: TestClient, test_db):
     """Test task list filtering by is_active"""
     # Create active and inactive tasks
-    task1 = Task(name="Active", connection_id="conn-1", endpoint_path="/api/active", dest_table="t1", is_active=True)
-    task2 = Task(name="Inactive", connection_id="conn-1", endpoint_path="/api/inactive", dest_table="t2", is_active=False)
+    task1 = Task(
+        name="Active",
+        connection_id="conn-1",
+        endpoint_path="/api/active",
+        dest_table="t1",
+        is_active=True,
+    )
+    task2 = Task(
+        name="Inactive",
+        connection_id="conn-1",
+        endpoint_path="/api/inactive",
+        dest_table="t2",
+        is_active=False,
+    )
     test_db.add_all([task1, task2])
     test_db.commit()
-    
+
     # Filter active only
     response = client.get("/api/v1/tasks/?is_active=true")
     assert response.status_code == 200
@@ -187,20 +201,20 @@ def test_update_task(client: TestClient, sample_task):
             "connection_id": "conn-2",
             "endpoint_path": "/api/updated",
             "dest_table": "updated_table",
-            "is_active": False
-        }
+            "is_active": False,
+        },
     )
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Updated Task"
-    assert data["is_active"] == False
+    assert not data["is_active"]
 
 
 def test_delete_task(client: TestClient, sample_task):
     """Test deleting a task"""
     response = client.delete(f"/api/v1/tasks/{sample_task.id}")
     assert response.status_code == 204
-    
+
     # Verify it's deleted
     response = client.get(f"/api/v1/tasks/{sample_task.id}")
     assert response.status_code == 404
@@ -209,6 +223,7 @@ def test_delete_task(client: TestClient, sample_task):
 # ============================================================================
 # Task Run Tests
 # ============================================================================
+
 
 def test_trigger_task_run(client: TestClient, sample_task, test_db):
     """Test triggering a new task run"""
@@ -235,12 +250,12 @@ def test_list_task_runs(client: TestClient, sample_task, test_db):
             status=TaskStatus.SUCCESS.value if i % 2 == 0 else TaskStatus.FAILED.value,
             records_fetched=100 + i,
             records_inserted=100 + i,
-            started_at=datetime.now(timezone.utc),
-            completed_at=datetime.now(timezone.utc)
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
         )
         test_db.add(run)
     test_db.commit()
-    
+
     response = client.get(f"/api/v1/tasks/{sample_task.id}/runs")
     assert response.status_code == 200
     data = response.json()
@@ -251,14 +266,10 @@ def test_list_task_runs_with_status_filter(client: TestClient, sample_task, test
     """Test filtering runs by status"""
     # Create runs with different statuses
     for status in [TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.PARTIAL_SUCCESS]:
-        run = TaskRun(
-            task_id=sample_task.id,
-            status=status.value,
-            started_at=datetime.now(timezone.utc)
-        )
+        run = TaskRun(task_id=sample_task.id, status=status.value, started_at=datetime.now(UTC))
         test_db.add(run)
     test_db.commit()
-    
+
     response = client.get(f"/api/v1/tasks/{sample_task.id}/runs?status={TaskStatus.SUCCESS.value}")
     assert response.status_code == 200
     data = response.json()
@@ -275,12 +286,12 @@ def test_get_task_run(client: TestClient, sample_task, test_db):
         records_fetched=100,
         records_inserted=100,
         records_failed=0,
-        started_at=datetime.now(timezone.utc),
-        completed_at=datetime.now(timezone.utc)
+        started_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
     )
     test_db.add(run)
     test_db.commit()
-    
+
     # Create a log entry
     log = TaskLog(
         task_id=sample_task.id,
@@ -288,11 +299,11 @@ def test_get_task_run(client: TestClient, sample_task, test_db):
         step_name="FETCH_API",
         status="SUCCESS",
         message="API fetch successful",
-        details={"records_fetched": 100}
+        details={"records_fetched": 100},
     )
     test_db.add(log)
     test_db.commit()
-    
+
     response = client.get(f"/api/v1/tasks/{sample_task.id}/runs/{run.id}")
     assert response.status_code == 200
     data = response.json()
@@ -311,6 +322,7 @@ def test_get_nonexistent_run(client: TestClient, sample_task):
 # Task Stats Tests
 # ============================================================================
 
+
 def test_task_stats(client: TestClient, sample_task, test_db):
     """Test getting task statistics"""
     # Create runs
@@ -319,7 +331,7 @@ def test_task_stats(client: TestClient, sample_task, test_db):
         (TaskStatus.SUCCESS, 200, 200, 0),
         (TaskStatus.PARTIAL_SUCCESS, 150, 140, 10),
     ]
-    
+
     for status, fetched, inserted, failed in runs_data:
         run = TaskRun(
             task_id=sample_task.id,
@@ -327,12 +339,12 @@ def test_task_stats(client: TestClient, sample_task, test_db):
             records_fetched=fetched,
             records_inserted=inserted,
             records_failed=failed,
-            started_at=datetime.now(timezone.utc),
-            completed_at=datetime.now(timezone.utc)
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
         )
         test_db.add(run)
     test_db.commit()
-    
+
     response = client.get(f"/api/v1/tasks/{sample_task.id}/stats")
     assert response.status_code == 200
     data = response.json()
@@ -359,6 +371,7 @@ def test_task_stats_no_runs(client: TestClient, sample_task):
 # Run Endpoint Tests
 # ============================================================================
 
+
 def test_get_run_by_id(client: TestClient, sample_task, test_db):
     """Test getting a run from the runs endpoint"""
     run = TaskRun(
@@ -366,12 +379,12 @@ def test_get_run_by_id(client: TestClient, sample_task, test_db):
         status=TaskStatus.SUCCESS.value,
         records_fetched=100,
         records_inserted=100,
-        started_at=datetime.now(timezone.utc),
-        completed_at=datetime.now(timezone.utc)
+        started_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
     )
     test_db.add(run)
     test_db.commit()
-    
+
     response = client.get(f"/api/v1/runs/{run.id}")
     assert response.status_code == 200
     data = response.json()
@@ -383,24 +396,20 @@ def test_list_all_runs(client: TestClient, test_db):
     """Test listing all runs across all tasks"""
     # Create 2 tasks with runs
     for t in range(2):
-        task = Task(
-            name=f"Task {t}",
-            endpoint_path=f"/api/data{t}",
-            dest_table=f"table{t}"
-        )
+        task = Task(name=f"Task {t}", endpoint_path=f"/api/data{t}", dest_table=f"table{t}")
         test_db.add(task)
         test_db.flush()
-        
+
         for r in range(2):
             run = TaskRun(
                 task_id=task.id,
                 status=TaskStatus.SUCCESS.value,
-                started_at=datetime.now(timezone.utc),
-                completed_at=datetime.now(timezone.utc)
+                started_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
             )
             test_db.add(run)
     test_db.commit()
-    
+
     response = client.get("/api/v1/runs")
     assert response.status_code == 200
     data = response.json()
@@ -410,6 +419,7 @@ def test_list_all_runs(client: TestClient, test_db):
 # ============================================================================
 # Health Check Tests
 # ============================================================================
+
 
 def test_health_check(client: TestClient):
     """Test health check endpoint"""

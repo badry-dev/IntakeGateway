@@ -3,11 +3,12 @@ Unit tests for connection storage service.
 
 Tests encryption, CRUD operations, and file handling.
 """
-import pytest
+
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+
+import pytest
 
 # Set test environment before importing app modules
 os.environ["APP_ENV"] = "development"
@@ -20,7 +21,7 @@ class TestConnectionStorage:
     @pytest.fixture
     def temp_file(self):
         """Create a temporary file for testing"""
-        fd, path = tempfile.mkstemp(suffix='.enc')
+        fd, path = tempfile.mkstemp(suffix=".enc")
         os.close(fd)
         yield path
         # Cleanup
@@ -31,6 +32,7 @@ class TestConnectionStorage:
     def storage_service(self, temp_file):
         """Create a storage service with temp file"""
         from app.services.connection_storage import ConnectionStorageService
+
         return ConnectionStorageService(file_path=temp_file)
 
     def test_empty_file_returns_empty_list(self, temp_file):
@@ -39,6 +41,7 @@ class TestConnectionStorage:
         os.unlink(temp_file)
 
         from app.services.connection_storage import ConnectionStorageService
+
         service = ConnectionStorageService(file_path=temp_file)
 
         result = service.list_connections()
@@ -72,6 +75,7 @@ class TestConnectionStorage:
         Path(temp_file).write_text("not-valid-encrypted-data", encoding="utf-8")
 
         from app.services.connection_storage import ConnectionStorageService
+
         service = ConnectionStorageService(file_path=temp_file)
 
         result = service.list_connections()
@@ -82,21 +86,25 @@ class TestConnectionStorage:
 
     def test_create_multiple_connections(self, storage_service):
         """Test creating multiple connections"""
-        conn1 = storage_service.create_connection({
-            "name": "DB 1",
-            "host": "host1",
-            "username": "user1",
-            "password": "pass1",
-            "service_name": "ORCL1",
-        })
+        conn1 = storage_service.create_connection(
+            {
+                "name": "DB 1",
+                "host": "host1",
+                "username": "user1",
+                "password": "pass1",
+                "service_name": "ORCL1",
+            }
+        )
 
-        conn2 = storage_service.create_connection({
-            "name": "DB 2",
-            "host": "host2",
-            "username": "user2",
-            "password": "pass2",
-            "service_name": "ORCL2",
-        })
+        conn2 = storage_service.create_connection(
+            {
+                "name": "DB 2",
+                "host": "host2",
+                "username": "user2",
+                "password": "pass2",
+                "service_name": "ORCL2",
+            }
+        )
 
         assert "is_default" not in conn1
         assert "is_default" not in conn2
@@ -108,13 +116,15 @@ class TestConnectionStorage:
 
     def test_list_connections_masks_passwords(self, storage_service):
         """Test that list_connections masks all passwords"""
-        storage_service.create_connection({
-            "name": "Test DB",
-            "host": "localhost",
-            "username": "user",
-            "password": "verysecret",
-            "service_name": "ORCL",
-        })
+        storage_service.create_connection(
+            {
+                "name": "Test DB",
+                "host": "localhost",
+                "username": "user",
+                "password": "verysecret",
+                "service_name": "ORCL",
+            }
+        )
 
         result = storage_service.list_connections()
 
@@ -123,13 +133,15 @@ class TestConnectionStorage:
 
     def test_get_connection_by_id(self, storage_service):
         """Test retrieving a specific connection"""
-        created = storage_service.create_connection({
-            "name": "Test DB",
-            "host": "localhost",
-            "username": "user",
-            "password": "secret",
-            "service_name": "ORCL",
-        })
+        created = storage_service.create_connection(
+            {
+                "name": "Test DB",
+                "host": "localhost",
+                "username": "user",
+                "password": "secret",
+                "service_name": "ORCL",
+            }
+        )
 
         result = storage_service.get_connection(created["id"])
 
@@ -144,18 +156,23 @@ class TestConnectionStorage:
 
     def test_update_connection_without_password(self, storage_service):
         """Test updating connection preserves password when not provided"""
-        created = storage_service.create_connection({
-            "name": "Original Name",
-            "host": "localhost",
-            "username": "user",
-            "password": "original_password",
-            "service_name": "ORCL",
-        })
+        created = storage_service.create_connection(
+            {
+                "name": "Original Name",
+                "host": "localhost",
+                "username": "user",
+                "password": "original_password",
+                "service_name": "ORCL",
+            }
+        )
 
         # Update without password
-        updated = storage_service.update_connection(created["id"], {
-            "name": "New Name",
-        })
+        updated = storage_service.update_connection(
+            created["id"],
+            {
+                "name": "New Name",
+            },
+        )
 
         assert updated["name"] == "New Name"
 
@@ -165,17 +182,22 @@ class TestConnectionStorage:
 
     def test_update_connection_with_new_password(self, storage_service):
         """Test updating connection with new password"""
-        created = storage_service.create_connection({
-            "name": "Test DB",
-            "host": "localhost",
-            "username": "user",
-            "password": "old_password",
-            "service_name": "ORCL",
-        })
+        created = storage_service.create_connection(
+            {
+                "name": "Test DB",
+                "host": "localhost",
+                "username": "user",
+                "password": "old_password",
+                "service_name": "ORCL",
+            }
+        )
 
-        storage_service.update_connection(created["id"], {
-            "password": "new_password",
-        })
+        storage_service.update_connection(
+            created["id"],
+            {
+                "password": "new_password",
+            },
+        )
 
         # Verify new password
         decrypted = storage_service.get_decrypted_password(created["id"])
@@ -183,41 +205,47 @@ class TestConnectionStorage:
 
     def test_delete_connection(self, storage_service):
         """Test deleting a connection"""
-        created = storage_service.create_connection({
-            "name": "Test DB",
-            "host": "localhost",
-            "username": "user",
-            "password": "secret",
-            "service_name": "ORCL",
-        })
+        created = storage_service.create_connection(
+            {
+                "name": "Test DB",
+                "host": "localhost",
+                "username": "user",
+                "password": "secret",
+                "service_name": "ORCL",
+            }
+        )
 
         result = storage_service.delete_connection(created["id"])
 
-        assert result == True
+        assert result
         assert storage_service.get_connection(created["id"]) is None
 
     def test_delete_connection_not_found(self, storage_service):
         """Test deleting non-existent connection returns False"""
         result = storage_service.delete_connection("non-existent-id")
-        assert result == False
+        assert not result
 
     def test_delete_one_connection_keeps_the_rest(self, storage_service):
         """Deleting one connection should keep the others intact."""
-        conn1 = storage_service.create_connection({
-            "name": "DB 1",
-            "host": "host1",
-            "username": "user1",
-            "password": "pass1",
-            "service_name": "ORCL1",
-        })
+        conn1 = storage_service.create_connection(
+            {
+                "name": "DB 1",
+                "host": "host1",
+                "username": "user1",
+                "password": "pass1",
+                "service_name": "ORCL1",
+            }
+        )
 
-        conn2 = storage_service.create_connection({
-            "name": "DB 2",
-            "host": "host2",
-            "username": "user2",
-            "password": "pass2",
-            "service_name": "ORCL2",
-        })
+        conn2 = storage_service.create_connection(
+            {
+                "name": "DB 2",
+                "host": "host2",
+                "username": "user2",
+                "password": "pass2",
+                "service_name": "ORCL2",
+            }
+        )
 
         storage_service.delete_connection(conn1["id"])
 
@@ -228,13 +256,15 @@ class TestConnectionStorage:
 
     def test_get_decrypted_password(self, storage_service):
         """Test decrypting password for internal use"""
-        storage_service.create_connection({
-            "name": "Test DB",
-            "host": "localhost",
-            "username": "user",
-            "password": "supersecret123",
-            "service_name": "ORCL",
-        })
+        storage_service.create_connection(
+            {
+                "name": "Test DB",
+                "host": "localhost",
+                "username": "user",
+                "password": "supersecret123",
+                "service_name": "ORCL",
+            }
+        )
 
         connections = storage_service.list_connections()
         conn_id = connections["connections"][0]["id"]
@@ -369,16 +399,18 @@ class TestConnectionTestFunction:
         from app.services.connection_pool import test_connection
 
         # Use invalid connection that will fail
-        result = test_connection({
-            "db_type": "oracle",
-            "host": "nonexistent.invalid.host",
-            "port": 1521,
-            "username": "user",
-            "password": "pass",
-            "service_name": "ORCL",
-        })
+        result = test_connection(
+            {
+                "db_type": "oracle",
+                "host": "nonexistent.invalid.host",
+                "port": 1521,
+                "username": "user",
+                "password": "pass",
+                "service_name": "ORCL",
+            }
+        )
 
-        assert result["success"] == False
+        assert not result["success"]
         assert "message" in result
         assert result["latency_ms"] is None
         assert result["server_version"] is None

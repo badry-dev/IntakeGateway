@@ -3,6 +3,7 @@ Pytest configuration for backend tests.
 
 Adds the backend directory to Python path to enable imports.
 """
+
 import sys
 from pathlib import Path
 

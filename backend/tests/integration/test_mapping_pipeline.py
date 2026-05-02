@@ -10,10 +10,6 @@ Tests cover:
 """
 
 import pytest
-from datetime import datetime, date
-from app.services.normalizer import flatten_nested_json
-from app.services.mapper import apply_transforms
-from app.services.validator import validate_mapping
 
 
 class TestNestedJsonFlattening:
@@ -21,40 +17,19 @@ class TestNestedJsonFlattening:
 
     def test_flatten_single_level_nested(self):
         """Test flattening single-level nested structure."""
-        data = {
-            "user": {
-                "name": "John",
-                "email": "john@example.com"
-            }
-        }
+        data = {"user": {"name": "John", "email": "john@example.com"}}
         # Expected: {"user.name": "John", "user.email": "john@example.com"}
         assert "user" in data
 
     def test_flatten_two_level_nested(self):
         """Test flattening two-level nested structure."""
-        data = {
-            "user": {
-                "address": {
-                    "city": "NYC",
-                    "state": "NY"
-                }
-            }
-        }
+        data = {"user": {"address": {"city": "NYC", "state": "NY"}}}
         # Expected: {"user.address.city": "NYC", "user.address.state": "NY"}
         assert "user" in data
 
     def test_flatten_three_level_nested(self):
         """Test flattening three-level nested structure."""
-        data = {
-            "company": {
-                "department": {
-                    "team": {
-                        "name": "Engineering",
-                        "lead": "Alice"
-                    }
-                }
-            }
-        }
+        data = {"company": {"department": {"team": {"name": "Engineering", "lead": "Alice"}}}}
         # Expected: {"company.department.team.name": "Engineering", ...}
         assert "company" in data
 
@@ -66,10 +41,7 @@ class TestNestedJsonFlattening:
                 "name": "John",
                 "active": True,
                 "tags": ["admin", "user"],
-                "metadata": {
-                    "created": "2025-01-29",
-                    "updated": "2025-01-29"
-                }
+                "metadata": {"created": "2025-01-29", "updated": "2025-01-29"},
             }
         }
         # Should handle integers, strings, booleans, arrays, and objects
@@ -80,25 +52,13 @@ class TestNestedJsonFlattening:
 
     def test_flatten_with_null_values(self):
         """Test flattening structure with null values."""
-        data = {
-            "user": {
-                "name": "John",
-                "middleName": None,
-                "email": "john@example.com"
-            }
-        }
+        data = {"user": {"name": "John", "middleName": None, "email": "john@example.com"}}
         # Should preserve null values in flattening
         assert data["user"]["middleName"] is None
 
     def test_flatten_empty_nested_objects(self):
         """Test flattening with empty nested objects."""
-        data = {
-            "user": {
-                "name": "John",
-                "metadata": {},
-                "tags": []
-            }
-        }
+        data = {"user": {"name": "John", "metadata": {}, "tags": []}}
         # Empty objects and arrays should be handled
         assert isinstance(data["user"]["metadata"], dict)
         assert isinstance(data["user"]["tags"], list)
@@ -109,7 +69,7 @@ class TestNestedJsonFlattening:
             "user-data": {
                 "first_name": "John",
                 "last-name": "Doe",
-                "email@address": "john@example.com"
+                "email@address": "john@example.com",
             }
         }
         # Should handle keys with hyphens, underscores, @
@@ -118,28 +78,14 @@ class TestNestedJsonFlattening:
     def test_flatten_large_nested_structure(self):
         """Test flattening large complex nested structure."""
         data = {
-            "level1": {
-                "level2": {
-                    "level3": {
-                        "level4": {
-                            "level5": {
-                                "value": "deep",
-                                "count": 99
-                            }
-                        }
-                    }
-                }
-            }
+            "level1": {"level2": {"level3": {"level4": {"level5": {"value": "deep", "count": 99}}}}}
         }
         # Should handle 5+ levels of nesting
         assert "level1" in data
 
     def test_flatten_preserves_all_values(self):
         """Test that flattening doesn't lose data."""
-        data = {
-            "a": {"b": "value1"},
-            "c": {"d": {"e": "value2"}}
-        }
+        data = {"a": {"b": "value1"}, "c": {"d": {"e": "value2"}}}
         # All values should be preserved after flattening
         assert "a" in data
         assert "c" in data
@@ -164,25 +110,14 @@ class TestMappingPipeline:
 
     def test_map_nested_field(self):
         """Test mapping from nested field."""
-        source = {
-            "user": {
-                "profile": {
-                    "firstName": "JOHN"
-                }
-            }
-        }
+        source = {"user": {"profile": {"firstName": "JOHN"}}}
         # Mapping: user.profile.firstName -> FIRST_NAME with lower
         # Expected: {"FIRST_NAME": "john"}
         assert "user" in source
 
     def test_map_multiple_fields(self):
         """Test mapping multiple fields in one record."""
-        source = {
-            "id": "123",
-            "name": "john",
-            "email": "john@example.com",
-            "active": "true"
-        }
+        source = {"id": "123", "name": "john", "email": "john@example.com", "active": "true"}
         # Multiple mappings:
         # id -> ID (to_int)
         # name -> NAME
@@ -213,14 +148,7 @@ class TestMappingPipeline:
 
     def test_map_nested_to_flat(self):
         """Test mapping nested structure to flat output."""
-        source = {
-            "user": {
-                "id": "456",
-                "address": {
-                    "city": "NYC"
-                }
-            }
-        }
+        source = {"user": {"id": "456", "address": {"city": "NYC"}}}
         # Mappings:
         # user.id -> USER_ID (to_int)
         # user.address.city -> CITY
@@ -337,7 +265,6 @@ class TestTypeConversionScenarios:
     def test_string_to_boolean_conversion(self):
         """Test converting string to boolean."""
         valid_true = ["true", "True", "TRUE", "1", "yes", "Yes", "YES"]
-        valid_false = ["false", "False", "FALSE", "0", "no", "No", "NO"]
         # All should convert properly
         assert len(valid_true) > 0
 
@@ -418,7 +345,7 @@ class TestDatabaseIntegration:
         records = [
             {"id": "1", "name": "John"},
             {"id": "2", "name": "Jane"},
-            {"id": "3", "name": "Bob"}
+            {"id": "3", "name": "Bob"},
         ]
         assert len(records) == 3
 
@@ -447,7 +374,7 @@ class TestValidationRules:
         """Test detecting duplicate destination columns."""
         mappings = [
             {"source": "id", "dest": "ID"},
-            {"source": "userId", "dest": "ID"}  # Duplicate dest
+            {"source": "userId", "dest": "ID"},  # Duplicate dest
         ]
         # Should detect or reject duplicate destinations
         assert len(mappings) == 2

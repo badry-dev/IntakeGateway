@@ -1,6 +1,6 @@
-
-from pydantic_settings import BaseSettings
 from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     APP_NAME: str = "intake-gateway"
@@ -36,33 +36,35 @@ class Settings(BaseSettings):
     def destination_sqlalchemy_url(self) -> str:
         # Using oracledb with thin mode
         # For older Oracle versions, Oracle Instant Client (thick mode) may be required
-        
+
         # Check if Oracle credentials are configured
         if not self.ORACLE_USER or not self.ORACLE_PASSWORD:
             raise ValueError(
                 "Oracle database credentials not configured. "
                 "Please set ORACLE_USER and ORACLE_PASSWORD in .env file or environment variables."
             )
-        
+
         if self.ORACLE_DSN:
             # Parse DSN to extract host, port, and service name
             # Format: host:port/service_name or just host/service_name
-            if '/' in self.ORACLE_DSN:
-                host_port, service = self.ORACLE_DSN.rsplit('/', 1)
-                if ':' in host_port:
-                    host, port = host_port.rsplit(':', 1)
+            if "/" in self.ORACLE_DSN:
+                host_port, service = self.ORACLE_DSN.rsplit("/", 1)
+                if ":" in host_port:
+                    host, port = host_port.rsplit(":", 1)
                 else:
                     host, port = host_port, "1521"
                 return f"oracle+oracledb://{self.ORACLE_USER}:{self.ORACLE_PASSWORD}@{host}:{port}/?service_name={service}"
             else:
-                return f"oracle+oracledb://{self.ORACLE_USER}:{self.ORACLE_PASSWORD}@{self.ORACLE_DSN}"
-        
+                return (
+                    f"oracle+oracledb://{self.ORACLE_USER}:{self.ORACLE_PASSWORD}@{self.ORACLE_DSN}"
+                )
+
         if not self.ORACLE_HOST or not self.ORACLE_SERVICE_NAME:
             raise ValueError(
                 "Oracle database connection not configured. "
                 "Please set ORACLE_HOST and ORACLE_SERVICE_NAME (or ORACLE_DSN) in .env file or environment variables."
             )
-        
+
         return f"oracle+oracledb://{self.ORACLE_USER}:{self.ORACLE_PASSWORD}@{self.ORACLE_HOST}:{self.ORACLE_PORT}/?service_name={self.ORACLE_SERVICE_NAME}"
 
     @property
@@ -83,8 +85,7 @@ class Settings(BaseSettings):
     def normalize_level(cls, v: str) -> str:
         return v.upper()
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+
 
 settings = Settings()

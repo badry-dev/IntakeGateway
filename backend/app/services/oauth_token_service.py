@@ -19,11 +19,12 @@ Concurrency model:
   client. If a stricter guarantee becomes necessary, replace `_get_lock` with
   a DB advisory lock (e.g. `SELECT ... FOR UPDATE` on the task row).
 """
+
 from __future__ import annotations
 
 import asyncio
 import datetime as _dt
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -31,7 +32,6 @@ from loguru import logger
 from app.core.config import settings
 from app.core.encryption import decrypt_value, encrypt_value
 from app.db.models.task import Task
-
 
 # Locks are keyed by (task_id, id(running_loop)) because asyncio.Lock instances
 # are loop-bound on first use. Celery entrypoints call asyncio.run(), which spins
@@ -49,10 +49,7 @@ async def _get_lock(task_id: int) -> asyncio.Lock:
     if lock is None:
         # Drop stale entries whose loops are no longer running. This keeps the
         # registry from growing unboundedly across many Celery invocations.
-        stale = [
-            k for k in list(_TASK_LOCKS.keys())
-            if k[0] == task_id and k[1] != id(loop)
-        ]
+        stale = [k for k in list(_TASK_LOCKS.keys()) if k[0] == task_id and k[1] != id(loop)]
         for s in stale:
             _TASK_LOCKS.pop(s, None)
         lock = asyncio.Lock()
@@ -61,7 +58,7 @@ async def _get_lock(task_id: int) -> asyncio.Lock:
 
 
 def _utcnow() -> _dt.datetime:
-    return _dt.datetime.now(_dt.timezone.utc)
+    return _dt.datetime.now(_dt.UTC)
 
 
 def _is_expired(task: Task, skew_seconds: int) -> bool:
@@ -73,11 +70,11 @@ def _is_expired(task: Task, skew_seconds: int) -> bool:
         return True
     expires_at = task.oauth_token_expires_at
     if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=_dt.timezone.utc)
+        expires_at = expires_at.replace(tzinfo=_dt.UTC)
     return (_utcnow() + _dt.timedelta(seconds=skew_seconds)) >= expires_at
 
 
-def _legacy_static_token(task: Task) -> Optional[str]:
+def _legacy_static_token(task: Task) -> str | None:
     """Read a static access_token from the legacy `oauth_config` JSON for back-compat."""
     cfg = task.oauth_config
     if isinstance(cfg, dict) and cfg.get("access_token"):
@@ -198,10 +195,8 @@ async def get_access_token(
     lock = await _get_lock(task.id)
     try:
         await asyncio.wait_for(lock.acquire(), timeout=settings.OAUTH_REFRESH_LOCK_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError as exc:
-        raise TimeoutError(
-            f"Timed out waiting for OAuth refresh lock on task {task.id}"
-        ) from exc
+    except TimeoutError as exc:
+        raise TimeoutError(f"Timed out waiting for OAuth refresh lock on task {task.id}") from exc
 
     try:
         # Re-read from DB inside the lock so we pick up any refresh by a sibling coroutine.
