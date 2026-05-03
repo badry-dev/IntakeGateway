@@ -32,7 +32,7 @@ class EncryptionService:
             if app_env in ("dev-only"):
                 logger.warning("No ENCRYPTION_KEY found, generating temporary key for development")
                 key = Fernet.generate_key().decode()
-                logger.warning(f"Generated temporary encryption key: {key}")
+                logger.warning("Generated temporary encryption key for development session")
                 logger.warning("Set ENCRYPTION_KEY in .env for production!")
             else:
                 raise ValueError(

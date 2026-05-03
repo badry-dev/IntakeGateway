@@ -1,4 +1,4 @@
-.PHONY: dev worker scheduler fmt lint test test-cov audit build-docker
+.PHONY: dev worker scheduler fmt lint typecheck test test-cov test-fe audit build-docker up down
 
 # ── Dev servers ───────────────────────────────────────────────────────────────
 dev:

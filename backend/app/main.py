@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.routes import column_mappings, connections, runs, schedules, tasks
-from app.api.v1.routes.column_mappings import router as oracle_router
+from app.api.v1.routes.column_mappings import oracle_router
 from app.core.config import settings
 from app.db.session import init_app_database
 

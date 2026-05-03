@@ -34,6 +34,7 @@ from app.services.oracle_metadata import get_table_columns
 from app.services.transform_suggester import suggest_transforms
 
 router = APIRouter()
+oracle_router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
@@ -348,7 +349,7 @@ async def preview_fields(
 # ============================================================================
 
 
-@router.get("/oracle/tables/{table_name}/columns", response_model=OracleColumnsResponse)
+@oracle_router.get("/oracle/tables/{table_name}/columns", response_model=OracleColumnsResponse)
 def get_columns(
     table_name: str,
     connection_id: str = Query(..., min_length=1, description="Required destination connection ID"),
@@ -412,7 +413,7 @@ def get_columns(
 # ============================================================================
 
 
-@router.post("/preview-fields-standalone", response_model=FieldsPreviewResponse)
+@oracle_router.post("/preview-fields-standalone", response_model=FieldsPreviewResponse)
 async def preview_fields_standalone(request: PreviewFieldsRequest):
     """
     Preview available fields from a sample API response (standalone - no task required).
@@ -504,7 +505,7 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
         )
 
 
-@router.post("/suggest-transforms", response_model=TransformSuggestionsResponse)
+@oracle_router.post("/suggest-transforms", response_model=TransformSuggestionsResponse)
 def suggest_transforms_endpoint(
     source_type: str = Query(
         ...,

@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [tool.pytest.ini_options]
-# Run from the repo root: pytest backend/tests/
+# Run from backend/: cd backend && pytest tests/
 testpaths = ["tests"]
 asyncio_mode = "auto"
 

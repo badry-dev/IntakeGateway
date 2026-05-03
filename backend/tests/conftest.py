@@ -34,5 +34,6 @@ def setup_database():
         db.commit()
     except Exception:
         db.rollback()
+        raise
     finally:
         db.close()

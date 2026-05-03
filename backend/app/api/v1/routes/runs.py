@@ -8,6 +8,7 @@ from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import (
     ReplayRequest,
     ReplayResponse,
+    TaskRunOut,
 )
 from app.db.session import SessionLocal
 from app.services.connection_storage import get_connection_storage
@@ -37,7 +38,7 @@ def get_db():
         db.close()
 
 
-@router.get("/{run_id}", response_model=dict)
+@router.get("/{run_id}", response_model=TaskRunOut)
 def get_run(run_id: int, db: Session = Depends(get_db)):
     """Get detailed information about a specific run"""
     task_run = db.query(TaskRun).filter(TaskRun.id == run_id).first()
@@ -167,7 +168,7 @@ def replay_run(run_id: int, payload: ReplayRequest, db: Session = Depends(get_db
     }
 
 
-@router.get("", response_model=list[dict])
+@router.get("", response_model=list[TaskRunOut])
 def list_runs(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),

@@ -42,8 +42,8 @@ def validate_type(column: str, value: Any, expected_type: str) -> ValidationErro
         "int": lambda v: isinstance(v, int) or (isinstance(v, str) and v.isdigit()),
         "float": lambda v: isinstance(v, (int, float)) or (isinstance(v, str) and is_float(v)),
         "string": lambda v: (
-            isinstance(v, (str, int, float)) or not isinstance(v, bool)
-        ),  # Coerce numbers to string
+            isinstance(v, str) or (isinstance(v, (int, float)) and not isinstance(v, bool))
+        ),  # Coerce numbers to string, reject booleans
         "bool": lambda v: (
             isinstance(v, bool)
             or (isinstance(v, str) and v.lower() in ("true", "false", "1", "0", "yes", "no"))
