@@ -5,7 +5,7 @@ dev:
 	cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 worker:
-	cd backend && celery -A app.workers.celery_app.celery_app worker --loglevel=INFO
+	cd backend && celery -A app.workers.celery_app.celery_app worker --loglevel=INFO --pool=solo --concurrency=1
 
 scheduler:
 	cd backend && python app/services/scheduler.py

@@ -11,6 +11,7 @@ Endpoints:
 
 import json
 import logging
+import base64
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -36,6 +37,42 @@ from app.services.transform_suggester import suggest_transforms
 router = APIRouter()
 oracle_router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _headers_with_plaintext_preview_auth(request: PreviewFieldsRequest) -> dict:
+    """Apply wizard-time auth values to standalone preview headers.
+
+    Standalone preview runs before a Task is saved, so bearer/api-key/basic
+    secrets are still plaintext form values rather than encrypted database
+    values. The shared task runner auth helper expects encrypted fields, so the
+    preview route builds those headers directly.
+    """
+    headers = dict(request.headers or {})
+    auth_type = request.auth_type or "none"
+
+    if auth_type == "bearer" and request.api_key:
+        headers["Authorization"] = f"Bearer {request.api_key}"
+    elif auth_type == "api_key" and request.api_key:
+        header_name = (request.oauth_config or {}).get("api_key_header", "X-API-Key")
+        headers[header_name] = request.api_key
+    elif auth_type == "basic" and request.username and request.password:
+        credentials = f"{request.username}:{request.password}".encode()
+        headers["Authorization"] = f"Basic {base64.b64encode(credentials).decode()}"
+    elif auth_type == "oauth":
+        token = (request.oauth_config or {}).get("access_token")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Standalone sample fetch supports OAuth only when a static access token "
+                    "is provided. Save the task before previewing client_credentials or "
+                    "refresh_token OAuth flows."
+                ),
+            )
+
+    return headers
 
 
 def get_db():
@@ -457,15 +494,11 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
             raw_response = await fetch_sample_response(
                 method=request.method,
                 url=request.url,
-                headers=request.headers,
+                headers=_headers_with_plaintext_preview_auth(request),
                 params=request.params,
                 json_body=request.json_body,
                 record_path=request.record_path,
-                auth_type=request.auth_type,
-                api_key=request.api_key,
-                username=request.username,
-                password=request.password,
-                oauth_config=request.oauth_config,
+                auth_type="none",
             )
         else:
             if not request.sample_json:

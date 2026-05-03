@@ -39,6 +39,15 @@ def _parse_retry_after(header_value: str | None) -> float | None:
     return max(delta, 0.0)
 
 
+def _response_excerpt(response: httpx.Response, limit: int = 500) -> str:
+    text = response.text.strip()
+    if not text:
+        return ""
+    if len(text) > limit:
+        return f"{text[:limit]}..."
+    return text
+
+
 def apply_authentication(
     headers: dict,
     auth_type: str | None = None,
@@ -296,7 +305,11 @@ async def fetch_json(
                 await asyncio.sleep(backoff_time)
                 continue
 
-            logger.error(f"API request failed with status {status}: {str(e)}")
+            body_excerpt = _response_excerpt(e.response)
+            logger.error(
+                f"API request failed with status {status} for {method} {url}: "
+                f"{body_excerpt or str(e)}"
+            )
             raise
 
         except Exception as e:
@@ -473,9 +486,21 @@ async def fetch_sample_response(
         logger.info(f"Fetched sample API response: {type(response_data).__name__}")
         return response_data
 
+    except httpx.HTTPStatusError as e:
+        body_excerpt = _response_excerpt(e.response)
+        message = (
+            f"API returned {e.response.status_code} {e.response.reason_phrase} "
+            f"for {method} {url}"
+        )
+        if e.response.status_code == 405:
+            message += ". Check that the selected HTTP method matches the method used in Postman."
+        if body_excerpt:
+            message += f" Response body: {body_excerpt}"
+        logger.error(f"Failed to fetch sample response: {message}")
+        raise ValueError(message)
     except httpx.HTTPError as e:
         logger.error(f"Failed to fetch sample response from {url}: {str(e)}")
-        raise ValueError(f"API request failed: {str(e)}")
+        raise ValueError(f"API request failed for {method} {url}: {str(e)}")
     except Exception as e:
         logger.error(f"Error fetching sample response: {str(e)}")
         raise ValueError(f"Failed to fetch sample response: {str(e)}")

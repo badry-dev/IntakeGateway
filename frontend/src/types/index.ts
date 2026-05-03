@@ -254,8 +254,10 @@ export interface TaskRun {
   rows_skipped?: number   // Phase 8: Skipped due to skip condition
   error_count: number
   warning_count?: number
+  error_message?: string | null
   started_at: string
   ended_at?: string
+  duration_seconds?: number | null
   // Cursor / replay tracking (P0-C)
   cursor_start?: string | null
   cursor_end?: string | null

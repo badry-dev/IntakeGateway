@@ -1,3 +1,13 @@
 {
-    "makefile.configureOnOpen": false
+    "makefile.configureOnOpen": false,
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "name": "instal-local",
+            "group": "local",
+            "database": "${workspaceFolder:IntakeGateway}/backend/intakegateway_app.db"
+        }
+    ],
+    "sqltools.useNodeRuntime": true
 }

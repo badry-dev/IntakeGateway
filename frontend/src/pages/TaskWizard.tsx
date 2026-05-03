@@ -109,6 +109,9 @@ export function TaskWizard() {
                  authData.authType === 'api_key' ? authData.apiKeyValue : '',
         username: authData.authType === 'basic' ? authData.username : '',
         password: authData.authType === 'basic' ? authData.password : '',
+        oauth_config: authData.authType === 'api_key'
+          ? { api_key_header: authData.apiKeyHeaderName }
+          : undefined,
         oauth: buildOAuth(),
       }))
     }

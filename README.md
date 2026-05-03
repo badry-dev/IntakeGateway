@@ -127,8 +127,11 @@ UI available at: **http://localhost:5173**
 
 ```bash
 cd backend
-celery -A app.workers.celery_app.celery_app worker --loglevel=INFO
+celery -A app.workers.celery_app.celery_app worker --loglevel=INFO --pool=solo --concurrency=1
 ```
+
+On Windows, use `--pool=solo --concurrency=1`. Celery's default prefork pool can
+fail with Windows handle permission errors from billiard multiprocessing.
 
 ### Docker (alternative)
 

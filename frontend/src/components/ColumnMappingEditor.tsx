@@ -10,6 +10,7 @@ import {
 import { apiClient } from '@/api/client'
 import { useOracleColumns } from '@/hooks/api'
 import type { DataNode } from 'antd/es/tree'
+import type { AxiosError } from 'axios'
 
 const { Text } = Typography
 
@@ -35,6 +36,69 @@ interface MappingRow {
 
 const AVAILABLE_TRANSFORMS = ['trim', 'upper', 'lower', 'to_int', 'to_float', 'to_timestamp']
 
+const shellQuote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
+
+const stringifyValue = (value: unknown) => {
+  if (value === undefined || value === null) return ''
+  return typeof value === 'string' ? value : JSON.stringify(value)
+}
+
+const buildCurlCommand = (taskFormData?: TaskFormData) => {
+  if (!taskFormData?.endpoint_path) return ''
+
+  const method = taskFormData.http_method || 'GET'
+  let url: URL
+  try {
+    url = new URL(taskFormData.endpoint_path)
+  } catch {
+    return `curl -X ${method} ${shellQuote(taskFormData.endpoint_path)}`
+  }
+  Object.entries(taskFormData.query_params_json || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      url.searchParams.set(key, stringifyValue(value))
+    }
+  })
+
+  const headers: Record<string, string> = {}
+  Object.entries(taskFormData.headers_json || {}).forEach(([key, value]) => {
+    if (key.trim()) headers[key] = stringifyValue(value)
+  })
+
+  if (taskFormData.auth_type === 'bearer' && taskFormData.api_key) {
+    headers.Authorization = `Bearer ${taskFormData.api_key}`
+  }
+  if (taskFormData.auth_type === 'api_key' && taskFormData.api_key) {
+    const headerName = taskFormData.oauth_config?.api_key_header || 'X-API-Key'
+    headers[headerName] = taskFormData.api_key
+  }
+  if (taskFormData.auth_type === 'basic' && taskFormData.username && taskFormData.password) {
+    headers.Authorization = `Basic ${btoa(`${taskFormData.username}:${taskFormData.password}`)}`
+  }
+  if (taskFormData.auth_type === 'oauth') {
+    const token = taskFormData.oauth?.access_token || taskFormData.oauth_config?.access_token
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
+
+  const parts = ['curl', '-X', method, shellQuote(url.toString())]
+  Object.entries(headers).forEach(([key, value]) => {
+    parts.push('-H', shellQuote(`${key}: ${value}`))
+  })
+  if (taskFormData.body_json && Object.keys(taskFormData.body_json).length > 0) {
+    parts.push('-H', shellQuote('Content-Type: application/json'))
+    parts.push('--data', shellQuote(JSON.stringify(taskFormData.body_json)))
+  }
+  return parts.join(' ')
+}
+
+const getPreviewErrorMessage = (err: unknown) => {
+  const axiosError = err as AxiosError<{ detail?: unknown }>
+  const detail = axiosError.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (detail) return JSON.stringify(detail)
+  if (err instanceof Error) return err.message
+  return 'Unknown error'
+}
+
 export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
   fields = [], oracleColumns = [], existingMappings = [],
   onSave, onFieldsLoad, isLoading = false, readOnly = false,
@@ -48,6 +112,7 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
   const [isSaving, setIsSaving] = useState(false)
   const [isFetching, setIsFetching] = useState(false)
   const [fetchedFields, setFetchedFields] = useState<FieldPreview[]>([])
+  const curlCommand = useMemo(() => buildCurlCommand(taskFormData), [taskFormData])
 
   const tableName = taskFormData?.dest_table || ''
   const connectionId = taskFormData?.connection_id
@@ -55,6 +120,8 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
   const { data: fetchedOracleColumnsData, isLoading: isLoadingColumns, error: columnsError } = useOracleColumns(tableName, connectionId)
   const fetchedOracleColumns = fetchedOracleColumnsData?.columns || []
   const activeOracleColumns = fetchedOracleColumns.length > 0 ? fetchedOracleColumns : oracleColumns
+  const hasLoadedColumns = activeOracleColumns.length > 0
+  const shouldShowColumnLoadError = !!columnsError && !hasLoadedColumns
 
   // Build tree data from fields
   const treeData = useMemo((): DataNode[] => {
@@ -134,10 +201,15 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
         headers: taskFormData.headers_json as Record<string, string>,
         params: taskFormData.query_params_json, json_body: taskFormData.body_json,
         record_path: taskFormData.record_path,
+        auth_type: taskFormData.auth_type,
+        api_key: taskFormData.api_key,
+        username: taskFormData.username,
+        password: taskFormData.password,
+        oauth_config: taskFormData.oauth || taskFormData.oauth_config,
       })
       setFetchedFields(preview.fields); onFieldsLoad?.()
     } catch (err) {
-      setSampleError(`Failed to fetch: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setSampleError(`Failed to fetch sample response: ${getPreviewErrorMessage(err)}`)
     } finally { setIsFetching(false) }
   }
 
@@ -208,9 +280,22 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
         </Space>
 
         {selectedSampleTab === 'auto' && (
-          <Button block onClick={handleAutoFetch} loading={isFetching || isLoading}>
-            Fetch Sample from API
-          </Button>
+          <>
+            <Button block onClick={handleAutoFetch} loading={isFetching || isLoading}>
+              Fetch Sample from API
+            </Button>
+            {curlCommand && (
+              <Card size="small" title="Generated cURL" style={{ marginTop: 8 }}>
+                <Typography.Paragraph
+                  code
+                  copyable={{ text: curlCommand }}
+                  style={{ marginBottom: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                >
+                  {curlCommand}
+                </Typography.Paragraph>
+              </Card>
+            )}
+          </>
         )}
 
         {selectedSampleTab === 'manual' && (
@@ -234,7 +319,7 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
         {taskFormData && (
           <div style={{ marginTop: 8, fontSize: 12, color: '#8c8c8c' }}>
             Connection: <strong>{connectionId || '(not selected)'}</strong> | Table: <strong>{tableName || '(not set)'}</strong> | Columns: {isLoadingColumns ? 'Loading...' : `${activeOracleColumns.length} found`}
-            {columnsError && <span style={{ color: '#ff4d4f' }}> | Column auto-load not available</span>}
+            {shouldShowColumnLoadError && <span style={{ color: '#ff4d4f' }}> | Column auto-load not available</span>}
           </div>
         )}
         {taskFormData && !hasSelectedConnection && (
@@ -273,7 +358,7 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
                       <Button danger icon={<DeleteOutlined />} size="small" onClick={() => removeMapping(mapping.id)} disabled={readOnly} />
                     </Space>
 
-                    {activeOracleColumns.length > 0 ? (
+                    {hasLoadedColumns ? (
                       <Select
                         value={mapping.destColumn || undefined}
                         onChange={(v) => updateMapping(mapping.id, { destColumn: v })}

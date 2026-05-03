@@ -182,6 +182,11 @@ class ApiClient {
     params?: Record<string, any>
     json_body?: Record<string, any>
     record_path?: string
+    auth_type?: string
+    api_key?: string
+    username?: string
+    password?: string
+    oauth_config?: Record<string, any>
   }): Promise<MappingPreview> {
     const requestBody = {
       use_auto_fetch: params.use_auto_fetch ?? false,
@@ -192,9 +197,14 @@ class ApiClient {
       params: params.params,
       json_body: params.json_body,
       record_path: params.record_path,
+      auth_type: params.auth_type,
+      api_key: params.api_key,
+      username: params.username,
+      password: params.password,
+      oauth_config: params.oauth_config,
     }
 
-    const response = await this.client.post('/tasks/preview-fields-standalone', requestBody)
+    const response = await this.client.post('/preview-fields-standalone', requestBody)
     return response.data
   }
 

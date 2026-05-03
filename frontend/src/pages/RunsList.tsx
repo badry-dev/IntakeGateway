@@ -60,10 +60,18 @@ export function RunsList() {
       render: (v: number) => <Text type={v > 0 ? 'danger' : undefined}>{v || 0}</Text>,
     },
     {
+      title: 'Failure Reason',
+      dataIndex: 'error_message',
+      key: 'error_message',
+      ellipsis: true,
+      render: (v: string | null, record: TaskRun) =>
+        v ? <Text type="danger">{v}</Text> : record.status === 'FAILED' ? <Text type="secondary">No reason captured</Text> : <Text type="secondary">-</Text>,
+    },
+    {
       title: 'Duration',
       key: 'duration',
       render: (_: unknown, record: TaskRun) =>
-        (record as any).duration_seconds ? `${((record as any).duration_seconds).toFixed(2)}s` : 'N/A',
+        record.duration_seconds ? `${record.duration_seconds.toFixed(2)}s` : 'N/A',
     },
     {
       title: 'Started',

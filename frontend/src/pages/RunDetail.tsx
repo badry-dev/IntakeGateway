@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useRun } from '@/hooks/api'
-import { Card, Button, Tag, Spin, Table, Typography, Descriptions, Space, Row, Col, Statistic, Result } from 'antd'
+import { Alert, Card, Button, Tag, Spin, Table, Typography, Descriptions, Space, Row, Col, Statistic, Result } from 'antd'
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
@@ -123,6 +123,24 @@ export function RunDetail() {
           )}
         </Descriptions>
       </Card>
+
+      {run.error_message && (
+        <Alert
+          type={run.status === 'FAILED' ? 'error' : 'warning'}
+          showIcon
+          message="Failure reason"
+          description={<Text code style={{ whiteSpace: 'pre-wrap' }}>{run.error_message}</Text>}
+        />
+      )}
+
+      {run.status === 'FAILED' && !run.error_message && (!run.execution_logs || run.execution_logs.length === 0) && (
+        <Alert
+          type="error"
+          showIcon
+          message="Run failed before detailed logging was captured"
+          description="No execution logs or row errors were saved for this run. This usually means the failure happened before the worker pipeline started, such as a Celery broker or enqueue failure."
+        />
+      )}
 
       {/* Execution Logs */}
       {run.execution_logs && run.execution_logs.length > 0 && (
