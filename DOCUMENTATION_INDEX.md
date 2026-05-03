@@ -50,7 +50,7 @@ IntakeGateway/
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 18 + TypeScript, Ant Design, React Query 5, Vite |
-| Backend | Python 3.11, FastAPI 0.104, SQLAlchemy 2.0, Pydantic v2, cryptography 46.0.7 |
+| Backend | Python 3.11, FastAPI 0.115, SQLAlchemy 2.0, Pydantic v2 (2.10), cryptography 46.0.7 |
 | Queue | Celery 5.4 + Redis |
 | Scheduler | APScheduler 3.10 + croniter 2.0.7 |
 | App DB | SQLite (default via `APP_DATABASE_URL`) |

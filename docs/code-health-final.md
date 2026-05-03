@@ -339,7 +339,7 @@ After the automated review pass, three rounds of human code review on PR #8 surf
 | File | Issue | Fix |
 |---|---|---|
 | `backend/app/db/models/task_run.py` | `class TaskStatus(str, Enum)` — verbose pre-3.11 pattern | Migrated to `class TaskStatus(StrEnum)` (ruff UP042) |
-| `backend/app/db/schemas/task.py` | `response_model=dict` / `response_model=list[dict]` on run endpoints — bypassed Pydantic serialization | Changed to `response_model=TaskRunOut` / `response_model=list[TaskRunOut]` |
+| `backend/app/api/v1/routes/runs.py` | `response_model=dict` / `response_model=list[dict]` on run endpoints — bypassed Pydantic serialization | Changed to `response_model=TaskRunOut` / `response_model=list[TaskRunOut]` |
 | `backend/app/api/v1/routes/column_mappings.py` | Oracle-specific endpoints mounted on the same `router` prefix as mapping CRUD, causing route ambiguity | Introduced `oracle_router = APIRouter()` for `/oracle/…`, `/preview-fields-standalone`, and `/suggest-transforms`; registered separately in `main.py` |
 | `backend/app/db/schemas/column_mapping.py` | `class Config: from_attributes = True` missed in initial pass | Migrated to `model_config = ConfigDict(from_attributes=True)` |
 

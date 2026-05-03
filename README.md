@@ -2,7 +2,7 @@
 
 > Import data from any HTTP API into your database — with scheduling, transforms, upsert logic, and full observability.
 
-**Version**: 0.2.0 | **Status**: Production Ready | **Health Score**: 73 / 100
+**Version**: 0.1.0 | **Status**: Production Ready | **Health Score**: 73 / 100
 
 IntakeGateway is a full-stack web application that lets you define, schedule, and monitor data import tasks. It fetches records from external REST APIs, maps fields to destination database columns, and loads them with configurable insert/upsert/skip logic. The app stores its own state in a local SQLite database, so the UI and API remain fully operational even when no destination database is configured.
 
@@ -57,13 +57,13 @@ App-owned state (tasks, runs, schedules, mappings, logs) lives in a local SQLite
 - **Vitest** + **React Testing Library** for testing (14 test files)
 
 ### Backend
-- **Python 3.11** with **FastAPI 0.104**
+- **Python 3.11** with **FastAPI 0.115**
 - **SQLAlchemy 2.0** ORM for database operations
 - **SQLite** for local app state via `APP_DATABASE_URL`
 - **Celery 5.4** with Redis for async task execution
 - **APScheduler 3.10** for cron-based scheduling
-- **Pydantic 2.4** for data validation
-- **cryptography** for encrypted credential storage
+- **Pydantic v2** for data validation
+- **cryptography 46.0.7** for encrypted credential storage
 - **pytest** for testing (409+ test cases)
 - **Oracle Database** as the current ingestion destination
 
@@ -139,7 +139,7 @@ docker compose up --build
 
 Starts the backend API (port 8000), Celery worker, scheduler, and Redis. Run the frontend separately with `npm run dev`.
 
-All services have healthchecks configured. The API container waits for Redis to report `healthy` before starting (`depends_on: condition: service_healthy`). Healthchecks use the Python standard library (`urllib.request`) — no `curl` required in the image.
+The `redis` and `api` services have healthchecks configured; `worker` and `scheduler` use `depends_on: condition: service_healthy` on Redis so they start only after Redis is ready. The `api` healthcheck uses the Python standard library (`urllib.request`) — no `curl` required in the image.
 
 ### Run Tests
 
@@ -164,7 +164,7 @@ IntakeGateway/
 │   │   ├── db/                # App DB models, schemas, and cross-database types
 │   │   ├── workers/           # Celery task queue configuration
 │   │   └── core/              # Config, encryption, logging
-│   └── tests/                 # Unit + integration tests (110+ cases)
+│   └── tests/                 # Unit + integration tests (409+ cases)
 │
 ├── frontend/                   # React application (Ant Design)
 │   ├── src/
@@ -311,4 +311,4 @@ GPLv3
 
 ---
 
-**Version**: 0.2.0 | **Status**: Production Ready | **Health Score**: 73 / 100
+**Version**: 0.1.0 | **Status**: Production Ready | **Health Score**: 73 / 100

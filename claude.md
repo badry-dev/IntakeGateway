@@ -22,8 +22,8 @@
 - SQLAlchemy ORM with SQLite app state and a separate destination DB layer
 - Celery for async task execution
 - APScheduler for cron-based task scheduling
-- Pydantic v2 for data validation (all schemas use `model_config = ConfigDict(from_attributes=True)`)
-- pytest for testing (13 test files: 7 unit + 6 integration; 409+ tests passing)
+- Pydantic v2 for data validation (`task.py`, `task_run.py`, and `column_mapping.py` schemas use `model_config = ConfigDict(from_attributes=True)`; `connection.py` and `schedule.py` still use Pydantic v1-style `class Config`)
+- pytest for testing (18 test files: 13 unit + 5 integration; 409+ tests passing)
 
 ### Architecture Update (April 2026)
 
@@ -307,17 +307,17 @@ POST   /api/v1/schedules/{id}/resume    # Resume paused schedule
 ### Column Mapping Management
 
 ```
-# Mapping CRUD (router prefix: /api/v1)
+# Mapping CRUD (router prefix: /api/v1/tasks in main.py)
 GET    /api/v1/tasks/{task_id}/mappings        # List mappings
 POST   /api/v1/tasks/{task_id}/mappings        # Bulk create mappings
 PUT    /api/v1/mappings/{mapping_id}           # Update mapping
 DELETE /api/v1/mappings/{mapping_id}           # Delete mapping
 POST   /api/v1/tasks/{task_id}/preview-fields  # Fetch sample API response
 
-# Oracle / utility endpoints (oracle_router, registered separately in main.py)
-GET    /api/v1/oracle/tables/{table}/columns         # Query Oracle metadata
-POST   /api/v1/oracle/preview-fields-standalone      # Preview fields without saved task
-GET    /api/v1/oracle/suggest-transforms             # Transform suggestions by type
+# Oracle / utility endpoints (oracle_router, prefix /api/v1 in main.py)
+GET    /api/v1/oracle/tables/{table}/columns   # Query Oracle metadata
+POST   /api/v1/preview-fields-standalone       # Preview fields without saved task
+POST   /api/v1/suggest-transforms              # Transform suggestions by type
 ```
 
 > The `oracle_router` is defined as a second `APIRouter()` in `column_mappings.py` and included
@@ -441,7 +441,7 @@ cd backend
 pytest tests/unit/ -v --tb=short
 ```
 
-**Test Count**: 110+ tests passing
+**Test Count**: 409+ tests passing
 
 ### Frontend Testing
 
@@ -640,6 +640,7 @@ npm run dev
 - TaskOut / TaskRunOut schemas never expose `api_key` or `password` fields
 
 ### Future Considerations
+
 - JWT token-based UI authentication (not yet implemented)
 - Role-based access control (RBAC)
 - Per-connection random PBKDF2 salts (current implementation uses a fixed salt)
@@ -810,8 +811,8 @@ Two routers are defined in this file:
   - `POST /api/v1/tasks/{task_id}/preview-fields` - Fetch sample API response (manual/auto)
 - `oracle_router` — Oracle/utility endpoints (prefix `/api/v1` in `main.py`)
   - `GET /api/v1/oracle/tables/{table_name}/columns` - Query Oracle metadata
-  - `POST /api/v1/oracle/preview-fields-standalone` - Preview fields without a saved task
-  - `GET /api/v1/oracle/suggest-transforms` - Suggest transforms by source/dest type
+  - `POST /api/v1/preview-fields-standalone` - Preview fields without a saved task
+  - `POST /api/v1/suggest-transforms` - Suggest transforms by source/dest type
 
 **New Services**:
 - `oracle_metadata.py` - Query Oracle `USER_TAB_COLUMNS` for table schema
@@ -2124,9 +2125,10 @@ class TaskRun:
 - Task-level destination connection selection with active-connection fallback
 
 ### Code Health Review ✅ COMPLETE (2026-05-02)
+
 See `docs/code-health-final.md` for the full report. Summary of changes:
 - CI/CD: 7-job GitHub Actions workflow (lint, test, audit, build × backend + frontend)
-- Pydantic V2: all schemas migrated to `ConfigDict`; all deprecation warnings eliminated
+- Pydantic V2: `task.py`, `task_run.py`, and `column_mapping.py` schemas migrated to `ConfigDict`
 - `TaskStatus` migrated to `StrEnum` (Python 3.11 idiomatic)
 - `oracle_router` split for clean endpoint isolation in `column_mappings.py`
 - `response_model=TaskRunOut` on run endpoints (was untyped `dict`)
@@ -2138,6 +2140,7 @@ See `docs/code-health-final.md` for the full report. Summary of changes:
 - Test suite: all `TestNestedJsonFlattening` tests rewired to call `flatten()`; 409+ passing
 
 ### Future Enhancements
+
 - E2E testing with Cypress/Playwright
 - OAuth provider integration (Google, GitHub, Azure AD)
 - Advanced search & filtering
