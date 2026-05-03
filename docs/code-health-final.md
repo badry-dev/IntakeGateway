@@ -311,3 +311,73 @@ python -m pytest tests/ -q --ignore=tests/unit/test_encryption.py
 | `Makefile` | Expanded to 12 targets |
 | ~~`backend/debug_columns.py`~~ | Deleted |
 | ~~`backend/test_runs_query.py`~~ | Deleted |
+
+---
+
+## Post-Review Fixes (PR #8 Code Review)
+
+After the automated review pass, three rounds of human code review on PR #8 surfaced additional issues. All were remediated on the same branch.
+
+### Critical Bug
+
+| File | Issue | Fix |
+|---|---|---|
+| `backend/app/api/v1/routes/column_mappings.py` | `fields_info, flattened_data = get_record_type_info(...)` — function returns a single dict, not a tuple; caused `ValueError: not enough values to unpack` at runtime | Assigned to `flattened_data` alone; built `fields_info` list manually |
+
+### Security / Correctness
+
+| File | Issue | Fix |
+|---|---|---|
+| `backend/app/core/encryption.py` | `if app_env in ("dev-only")` — string membership check, not tuple; `"dev"` is a substring so temp-key generation triggered in any `dev*` environment | Changed to `app_env == "dev-only"` |
+| `backend/app/core/encryption.py` | `logger.warning(f"Generated temporary encryption key: {key}")` — leaked raw Fernet key to logs | Removed the log line |
+| `backend/app/services/api_connector.py` | OAuth auth with no `access_token` silently returned original headers, masking misconfiguration | Changed to `raise ValueError("OAuth auth configured but no access_token available")` |
+| `backend/app/workers/tasks.py` | `logger.error(..., exc_info=exc)` — Loguru ignores stdlib `exc_info=` kwarg; tracebacks were silently dropped | Replaced with `logger.opt(exception=exc).error(...)` |
+| `backend/app/workers/tasks.py` | `task_run.error_message = raw_error_msg` — unbounded; could store multi-MB Oracle tracebacks in the app DB | Capped at `[:2000]` |
+
+### Architecture / Type Safety
+
+| File | Issue | Fix |
+|---|---|---|
+| `backend/app/db/models/task_run.py` | `class TaskStatus(str, Enum)` — verbose pre-3.11 pattern | Migrated to `class TaskStatus(StrEnum)` (ruff UP042) |
+| `backend/app/api/v1/routes/runs.py` | `response_model=dict` / `response_model=list[dict]` on run endpoints — bypassed Pydantic serialization | Changed to `response_model=TaskRunOut` / `response_model=list[TaskRunOut]` |
+| `backend/app/api/v1/routes/column_mappings.py` | Oracle-specific endpoints mounted on the same `router` prefix as mapping CRUD, causing route ambiguity | Introduced `oracle_router = APIRouter()` for `/oracle/…`, `/preview-fields-standalone`, and `/suggest-transforms`; registered separately in `main.py` |
+| `backend/app/db/schemas/column_mapping.py` | `class Config: from_attributes = True` missed in initial pass | Migrated to `model_config = ConfigDict(from_attributes=True)` |
+
+### Validator Logic
+
+| File | Issue | Fix |
+|---|---|---|
+| `backend/app/services/validator.py` | `string` type validator: `isinstance(v, (str, int, float)) or not isinstance(v, bool)` — second operand always `True`; `bool` values passed as strings | Corrected to `isinstance(v, str) or (isinstance(v, (int, float)) and not isinstance(v, bool))` |
+| `backend/app/services/validator.py` | `int` / `float` validators did not exclude `bool` (Python `bool` subclasses `int`) | Added `and not isinstance(v, bool)` guard to both |
+
+### CI / Deployment
+
+| File | Issue | Fix |
+|---|---|---|
+| `.github/workflows/ci.yml` | `ENCRYPTION_KEY` not set in test environment; encryption tests silently skipped | Added `ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY \|\| 'GRAuWlz_...' }}` to backend-test job |
+| `docker-compose.yml` | Healthcheck used `curl` which is absent from `python:3.11-slim` image | Replaced with `python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"` |
+
+### Test Suite
+
+| File | Issue | Fix |
+|---|---|---|
+| `backend/tests/integration/test_mapping_pipeline.py` | All 10 `TestNestedJsonFlattening` tests contained only stub `assert True` bodies — no actual function calls | Rewrote all 10 tests to call `flatten()` and assert precise expected output |
+| `backend/tests/integration/test_mapping_pipeline.py` | `test_flatten_mixed_types_nested` used per-key assertions; did not detect extra unexpected keys | Replaced with single `assert result == {full dict}` |
+| `backend/tests/unit/test_authentication.py` | `test_oauth_auth_not_fully_implemented` expected silent pass-through after OAuth fix | Rewrote to `pytest.raises(ValueError, match="no access_token available")` |
+| `backend/tests/conftest.py` | `except Exception: db.rollback()` swallowed errors silently | Added `raise` after rollback |
+
+### Updated Score After All Fixes
+
+| # | Category | Initial | After automated review | After PR review |
+|---|---|---|---|---|
+| 1 | Maintainability | 3 | 7 | **8** |
+| 2 | Test Coverage | 3 | 5 | **6** |
+| 3 | Complexity | 5 | 5 | 5 |
+| 4 | Duplication | 6 | 6 | 6 |
+| 5 | Architecture Consistency | 4 | 7 | **8** |
+| 6 | Dependency / Security | 4 | 7 | **8** |
+| 7 | Documentation | 7 | 7 | **8** |
+| 8 | CI / CD Reliability | 0 | 8 | **9** |
+| 9 | API Reliability | 6 | 6 | **7** |
+| 10 | Config / Deployment | 4 | 7 | **8** |
+| | **Total** | **42** | **65** | **73** |
