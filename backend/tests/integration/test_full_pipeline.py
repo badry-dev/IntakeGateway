@@ -13,7 +13,6 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.logging import get_task_context
 from app.db.models.column_mapping import ColumnMapping
 from app.db.models.task import Task
 from app.db.models.task_log import TaskLog
