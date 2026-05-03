@@ -2,7 +2,7 @@
 
 > Import data from any HTTP API into your database — with scheduling, transforms, upsert logic, and full observability.
 
-**Version**: 0.1.0 | **Status**: Production Ready
+**Version**: 0.2.0 | **Status**: Production Ready | **Health Score**: 73 / 100
 
 IntakeGateway is a full-stack web application that lets you define, schedule, and monitor data import tasks. It fetches records from external REST APIs, maps fields to destination database columns, and loads them with configurable insert/upsert/skip logic. The app stores its own state in a local SQLite database, so the UI and API remain fully operational even when no destination database is configured.
 
@@ -64,7 +64,7 @@ App-owned state (tasks, runs, schedules, mappings, logs) lives in a local SQLite
 - **APScheduler 3.10** for cron-based scheduling
 - **Pydantic 2.4** for data validation
 - **cryptography** for encrypted credential storage
-- **pytest** for testing (110+ test cases)
+- **pytest** for testing (409+ test cases)
 - **Oracle Database** as the current ingestion destination
 
 ---
@@ -75,7 +75,7 @@ App-owned state (tasks, runs, schedules, mappings, logs) lives in a local SQLite
 |--------|---------|----------|-------|
 | **Lines of Code** | 2,500+ | 2,600+ | 5,100+ |
 | **Test Files** | 11 | 14 | 25 |
-| **Test Cases** | 110+ | 60+ | 170+ |
+| **Test Cases** | 409+ | 60+ | 469+ |
 | **Components/Services** | 8 services | 12 components | 20 |
 | **Routes/Endpoints** | 15+ | 8 | 23+ |
 | **TypeScript Coverage** | N/A | 100% | - |
@@ -138,6 +138,8 @@ docker compose up --build
 ```
 
 Starts the backend API (port 8000), Celery worker, scheduler, and Redis. Run the frontend separately with `npm run dev`.
+
+All services have healthchecks configured. The API container waits for Redis to report `healthy` before starting (`depends_on: condition: service_healthy`). Healthchecks use the Python standard library (`urllib.request`) — no `curl` required in the image.
 
 ### Run Tests
 
@@ -309,4 +311,4 @@ GPLv3
 
 ---
 
-**Version**: 0.1.0 | **Status**: Production Ready
+**Version**: 0.2.0 | **Status**: Production Ready | **Health Score**: 73 / 100

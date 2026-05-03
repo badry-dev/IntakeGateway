@@ -7,7 +7,9 @@
 | File | Description |
 |------|-------------|
 | [README.md](README.md) | Project overview, setup, and quick start |
+| [claude.md](claude.md) | AI assistant context, architecture, conventions, and phase history |
 | [frontend/README.md](frontend/README.md) | Frontend setup and structure |
+| [docs/code-health-final.md](docs/code-health-final.md) | Code-health review report (2026-05-02) — scorecard, findings, and all remediation |
 | [.env.example](.env.example) | Environment variable reference |
 
 ## API Reference
@@ -48,9 +50,9 @@ IntakeGateway/
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 18 + TypeScript, Ant Design, React Query 5, Vite |
-| Backend | Python 3.11, FastAPI 0.104, SQLAlchemy 2.0, Pydantic 2.4 |
+| Backend | Python 3.11, FastAPI 0.104, SQLAlchemy 2.0, Pydantic v2, cryptography 46.0.7 |
 | Queue | Celery 5.4 + Redis |
-| Scheduler | APScheduler 3.10 |
+| Scheduler | APScheduler 3.10 + croniter 2.0.7 |
 | App DB | SQLite (default via `APP_DATABASE_URL`) |
 | Destination DB | Oracle / PostgreSQL / MySQL |
-| Testing | pytest (110+ cases), Vitest + RTL (60+ cases) |
+| Testing | pytest (409+ cases), Vitest + RTL (60+ cases) |

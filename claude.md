@@ -1,7 +1,7 @@
 # IntakeGateway: Project Context & Development Guidelines
 
-**Last Updated**: April 21, 2026
-**Project Status**: Phase 4 Complete | Phase 5 Complete | Phase 6 Complete | Phase 7 Complete | Phase 8 Complete | Phase 9 Complete (Ant Design Migration)
+**Last Updated**: May 3, 2026
+**Project Status**: Phase 4 Complete | Phase 5 Complete | Phase 6 Complete | Phase 7 Complete | Phase 8 Complete | Phase 9 Complete (Ant Design Migration) | Code Health Review Complete
 **AI Assistant Guide**: Use this document to understand the project architecture, conventions, and development practices.
 
 ---
@@ -22,8 +22,8 @@
 - SQLAlchemy ORM with SQLite app state and a separate destination DB layer
 - Celery for async task execution
 - APScheduler for cron-based task scheduling
-- Pydantic for data validation
-- pytest for testing (13 test files: 7 unit + 6 integration)
+- Pydantic v2 for data validation (all schemas use `model_config = ConfigDict(from_attributes=True)`)
+- pytest for testing (13 test files: 7 unit + 6 integration; 409+ tests passing)
 
 ### Architecture Update (April 2026)
 
@@ -307,13 +307,22 @@ POST   /api/v1/schedules/{id}/resume    # Resume paused schedule
 ### Column Mapping Management
 
 ```
+# Mapping CRUD (router prefix: /api/v1)
 GET    /api/v1/tasks/{task_id}/mappings        # List mappings
 POST   /api/v1/tasks/{task_id}/mappings        # Bulk create mappings
 PUT    /api/v1/mappings/{mapping_id}           # Update mapping
 DELETE /api/v1/mappings/{mapping_id}           # Delete mapping
 POST   /api/v1/tasks/{task_id}/preview-fields  # Fetch sample API response
-GET    /api/v1/oracle/tables/{table}/columns   # Query Oracle metadata
+
+# Oracle / utility endpoints (oracle_router, registered separately in main.py)
+GET    /api/v1/oracle/tables/{table}/columns         # Query Oracle metadata
+POST   /api/v1/oracle/preview-fields-standalone      # Preview fields without saved task
+GET    /api/v1/oracle/suggest-transforms             # Transform suggestions by type
 ```
+
+> The `oracle_router` is defined as a second `APIRouter()` in `column_mappings.py` and included
+> in `main.py` via `app.include_router(oracle_router, prefix="/api/v1")` to keep Oracle-specific
+> endpoints isolated from the mapping CRUD router.
 
 ### Statistics
 
@@ -375,7 +384,8 @@ CREATE TABLE task_runs (
 - Services are testable and reusable
 
 #### 2. Pydantic Models
-- All input validation through Pydantic schemas
+- All input validation through Pydantic v2 schemas
+- All schemas use `model_config = ConfigDict(from_attributes=True)` (not the deprecated V1 `class Config`)
 - Type hints on all functions
 - Request/response models in `/db/schemas/`
 
@@ -619,15 +629,20 @@ npm run dev
 ## 🔐 Authentication & Security
 
 ### Current Implementation
-- No authentication in Phase 5 (ready for Phase 6)
+- **External API auth**: Bearer token, API Key, HTTP Basic, and OAuth (Phase 7, complete)
+- Credentials stored encrypted at rest using Fernet (`cryptography==46.0.7`)
+- Encryption key read from `ENCRYPTION_KEY` env var; only the literal value `"dev-only"` triggers
+  temp-key generation (not any string containing `"dev"`)
+- OAuth: if `access_token` is absent from `oauth_config`, `apply_authentication()` raises
+  `ValueError` immediately (fail-fast; no silent pass-through)
 - CORS configured for localhost development
-- API validation through Pydantic models
+- API input validation through Pydantic v2 models
+- TaskOut / TaskRunOut schemas never expose `api_key` or `password` fields
 
-### Future Implementation (Phase 6)
-- JWT token-based authentication
+### Future Considerations
+- JWT token-based UI authentication (not yet implemented)
 - Role-based access control (RBAC)
-- API key for service-to-service
-- Encrypted sensitive data storage
+- Per-connection random PBKDF2 salts (current implementation uses a fixed salt)
 
 ---
 
@@ -784,13 +799,19 @@ Phase 6 adds comprehensive column mapping functionality to enable users to map A
 
 #### Backend Components
 
-**New API Routes** (`app/api/v1/routes/column_mappings.py`):
-- `GET /api/v1/tasks/{task_id}/mappings` - List mappings
-- `POST /api/v1/tasks/{task_id}/mappings` - Bulk create mappings
-- `PUT /api/v1/mappings/{mapping_id}` - Update mapping
-- `DELETE /api/v1/mappings/{mapping_id}` - Delete mapping
-- `POST /api/v1/tasks/{task_id}/preview-fields` - Fetch sample API response (manual/auto)
-- `GET /api/v1/oracle/tables/{table_name}/columns` - Query Oracle metadata
+**API Routes** (`app/api/v1/routes/column_mappings.py`):
+
+Two routers are defined in this file:
+- `router` — mapping CRUD endpoints (prefix `/api/v1` in `main.py`)
+  - `GET /api/v1/tasks/{task_id}/mappings` - List mappings
+  - `POST /api/v1/tasks/{task_id}/mappings` - Bulk create mappings
+  - `PUT /api/v1/mappings/{mapping_id}` - Update mapping
+  - `DELETE /api/v1/mappings/{mapping_id}` - Delete mapping
+  - `POST /api/v1/tasks/{task_id}/preview-fields` - Fetch sample API response (manual/auto)
+- `oracle_router` — Oracle/utility endpoints (prefix `/api/v1` in `main.py`)
+  - `GET /api/v1/oracle/tables/{table_name}/columns` - Query Oracle metadata
+  - `POST /api/v1/oracle/preview-fields-standalone` - Preview fields without a saved task
+  - `GET /api/v1/oracle/suggest-transforms` - Suggest transforms by source/dest type
 
 **New Services**:
 - `oracle_metadata.py` - Query Oracle `USER_TAB_COLUMNS` for table schema
@@ -2102,20 +2123,35 @@ class TaskRun:
 - Destination DB separation so broken Oracle connectivity does not break the app shell
 - Task-level destination connection selection with active-connection fallback
 
-### Future Enhancements (Phase 9+)
+### Code Health Review ✅ COMPLETE (2026-05-02)
+See `docs/code-health-final.md` for the full report. Summary of changes:
+- CI/CD: 7-job GitHub Actions workflow (lint, test, audit, build × backend + frontend)
+- Pydantic V2: all schemas migrated to `ConfigDict`; all deprecation warnings eliminated
+- `TaskStatus` migrated to `StrEnum` (Python 3.11 idiomatic)
+- `oracle_router` split for clean endpoint isolation in `column_mappings.py`
+- `response_model=TaskRunOut` on run endpoints (was untyped `dict`)
+- Validator bool-exclusion fixes for `int`, `float`, and `string` type checks
+- Encryption: `APP_ENV == "dev-only"` guard; key no longer logged; Fernet key pinned `46.0.7`
+- OAuth fail-fast: `ValueError` raised when `access_token` absent
+- Loguru tracebacks: `logger.opt(exception=exc).error()` (was `exc_info=` kwarg, silently ignored)
+- Docker healthcheck: Python `urllib.request` (no `curl` dependency)
+- Test suite: all `TestNestedJsonFlattening` tests rewired to call `flatten()`; 409+ passing
+
+### Future Enhancements
 - E2E testing with Cypress/Playwright
 - OAuth provider integration (Google, GitHub, Azure AD)
 - Advanced search & filtering
 - Certificate-based authentication (mTLS)
+- Per-connection PBKDF2 random salts
 
 ---
 
 ## 📝 Last Updated
 
-- **Date**: April 21, 2026
-- **Version**: 1.1.0
-- **Status**: Phase 1-9 Complete | App DB / destination DB split documented
-- **Next Focus**: Additional destination adapters and UX refinement
+- **Date**: May 3, 2026
+- **Version**: 1.2.0
+- **Status**: Phase 1-9 Complete | Code Health Review Complete | 409+ tests passing
+- **Next Focus**: Additional destination adapters, UX refinement, per-connection PBKDF2 salts
 
 ---
 
