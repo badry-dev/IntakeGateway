@@ -16,10 +16,18 @@ client = TestClient(app)
 
 @pytest.fixture
 def db():
-    """Create a fresh database session for each test"""
+    """Create a fresh database session for each test, with cleanup after."""
     db = SessionLocal()
     yield db
-    db.close()
+    # Clean up all test data so subsequent tests start from a clean slate.
+    try:
+        db.query(TaskSchedule).delete()
+        db.query(Task).delete()
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 @pytest.fixture

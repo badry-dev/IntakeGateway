@@ -186,9 +186,10 @@ def test_lock_registry_keyed_by_loop_id():
     asyncio.run(_one_shot(holder1))
     asyncio.run(_one_shot(holder2))
 
-    assert holder1 and holder2 and holder1[0] != holder2[0]
     # Both invocations should have succeeded without "<Lock> is bound to a
-    # different event loop" raising.
+    # different event loop" raising. We verify both calls completed, not loop IDs
+    # (CPython may reuse memory addresses for short-lived loops).
+    assert holder1 and holder2
 
 
 @pytest.mark.asyncio

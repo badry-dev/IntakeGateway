@@ -388,13 +388,13 @@ def list_task_runs(
             "id": run.id,
             "task_id": run.task_id,
             "status": run.status,
-            "records_fetched": run.records_fetched,
-            "records_inserted": run.records_inserted,
-            "records_failed": run.records_failed,
+            "rows_fetched": run.rows_fetched,
+            "rows_inserted": run.rows_inserted,
+            "error_count": run.error_count,
             "started_at": run.started_at,
-            "completed_at": run.completed_at,
-            "duration_seconds": (run.completed_at - run.started_at).total_seconds()
-            if run.completed_at
+            "ended_at": run.ended_at,
+            "duration_seconds": (run.ended_at - run.started_at).total_seconds()
+            if run.ended_at
             else None,
         }
         for run in runs
@@ -425,14 +425,17 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
 
     # Get execution logs
     execution_logs = (
-        db.query(TaskLog).filter(TaskLog.run_id == run_id).order_by(TaskLog.created_at.asc()).all()
+        db.query(TaskLog)
+        .filter(TaskLog.task_run_id == run_id)
+        .order_by(TaskLog.created_at.asc())
+        .all()
     )
 
     # Get row errors
     row_errors = (
         db.query(TaskRunLog)
-        .filter(TaskRunLog.run_id == run_id)
-        .order_by(TaskRunLog.row_index.asc())
+        .filter(TaskRunLog.task_run_id == run_id)
+        .order_by(TaskRunLog.row_number.asc())
         .all()
     )
 
@@ -443,19 +446,20 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
         is_retry=is_retry,
         retry_of_run_id=retry_of_run_id,
         status=task_run.status,
-        records_fetched=task_run.records_fetched,
-        records_inserted=task_run.records_inserted,
-        records_failed=task_run.records_failed,
+        rows_fetched=task_run.rows_fetched,
+        rows_inserted=task_run.rows_inserted,
+        rows_updated=task_run.rows_updated,
+        rows_skipped=task_run.rows_skipped,
+        error_count=task_run.error_count,
+        warning_count=task_run.warning_count,
         started_at=task_run.started_at,
-        completed_at=task_run.completed_at,
+        ended_at=task_run.ended_at,
         error_message=task_run.error_message,
         execution_logs=[
             TaskLogOut(
                 id=log.id,
-                task_id=log.task_id,
-                run_id=log.run_id,
+                task_run_id=log.task_run_id,
                 step_name=log.step_name,
-                status=log.status,
                 message=log.message,
                 details=log.details,
                 created_at=log.created_at,
@@ -465,11 +469,12 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
         row_errors=[
             TaskRunLogOut(
                 id=error.id,
-                task_id=error.task_id,
-                run_id=error.run_id,
-                row_index=error.row_index,
-                row_data=error.row_data,
-                errors=error.errors,
+                task_run_id=error.task_run_id,
+                row_number=error.row_number,
+                column_name=error.column_name,
+                error_type=error.error_type,
+                error_message=error.error_message,
+                source_value=error.source_value,
                 created_at=error.created_at,
             )
             for error in row_errors
@@ -500,15 +505,15 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
     success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0.0
 
     # Calculate totals
-    total_records_fetched = sum(r.records_fetched or 0 for r in runs)
-    total_records_inserted = sum(r.records_inserted or 0 for r in runs)
-    total_records_failed = sum(r.records_failed or 0 for r in runs)
+    total_rows_fetched = sum(r.rows_fetched or 0 for r in runs)
+    total_rows_inserted = sum(r.rows_inserted or 0 for r in runs)
+    total_errors = sum(r.error_count or 0 for r in runs)
 
     # Calculate average duration
-    completed_runs = [r for r in runs if r.completed_at]
+    completed_runs = [r for r in runs if r.ended_at]
     avg_duration = 0.0
     if completed_runs:
-        durations = [(r.completed_at - r.started_at).total_seconds() for r in completed_runs]
+        durations = [(r.ended_at - r.started_at).total_seconds() for r in completed_runs]
         avg_duration = sum(durations) / len(durations)
 
     # Get last run
@@ -520,9 +525,9 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
         successful_runs=successful_runs,
         failed_runs=failed_runs,
         success_rate=success_rate,
-        total_records_fetched=total_records_fetched,
-        total_records_inserted=total_records_inserted,
-        total_records_failed=total_records_failed,
+        total_rows_fetched=total_rows_fetched,
+        total_rows_inserted=total_rows_inserted,
+        total_errors=total_errors,
         avg_duration_seconds=avg_duration,
         last_run_at=last_run.started_at if last_run else None,
         last_run_status=last_run.status if last_run else None,

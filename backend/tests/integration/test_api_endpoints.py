@@ -11,7 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
+from app.api.v1.routes.runs import get_db as runs_get_db
 from app.api.v1.routes.tasks import get_db
 from app.db.models.task import Task
 from app.db.models.task_log import TaskLog
@@ -27,7 +29,11 @@ from app.main import app
 @pytest.fixture(scope="function")
 def test_db():
     """Create in-memory SQLite database for testing"""
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     TestingSessionLocal = sessionmaker(bind=engine)
 
@@ -39,6 +45,7 @@ def test_db():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[runs_get_db] = override_get_db
 
     yield TestingSessionLocal()
 
@@ -248,10 +255,10 @@ def test_list_task_runs(client: TestClient, sample_task, test_db):
         run = TaskRun(
             task_id=sample_task.id,
             status=TaskStatus.SUCCESS.value if i % 2 == 0 else TaskStatus.FAILED.value,
-            records_fetched=100 + i,
-            records_inserted=100 + i,
+            rows_fetched=100 + i,
+            rows_inserted=100 + i,
             started_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC),
+            ended_at=datetime.now(UTC),
         )
         test_db.add(run)
     test_db.commit()
@@ -283,23 +290,21 @@ def test_get_task_run(client: TestClient, sample_task, test_db):
     run = TaskRun(
         task_id=sample_task.id,
         status=TaskStatus.SUCCESS.value,
-        records_fetched=100,
-        records_inserted=100,
-        records_failed=0,
+        rows_fetched=100,
+        rows_inserted=100,
+        error_count=0,
         started_at=datetime.now(UTC),
-        completed_at=datetime.now(UTC),
+        ended_at=datetime.now(UTC),
     )
     test_db.add(run)
     test_db.commit()
 
     # Create a log entry
     log = TaskLog(
-        task_id=sample_task.id,
-        run_id=run.id,
+        task_run_id=run.id,
         step_name="FETCH_API",
-        status="SUCCESS",
         message="API fetch successful",
-        details={"records_fetched": 100},
+        details={"rows_fetched": 100},
     )
     test_db.add(log)
     test_db.commit()
@@ -336,11 +341,11 @@ def test_task_stats(client: TestClient, sample_task, test_db):
         run = TaskRun(
             task_id=sample_task.id,
             status=status.value,
-            records_fetched=fetched,
-            records_inserted=inserted,
-            records_failed=failed,
+            rows_fetched=fetched,
+            rows_inserted=inserted,
+            error_count=failed,
             started_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC),
+            ended_at=datetime.now(UTC),
         )
         test_db.add(run)
     test_db.commit()
@@ -351,9 +356,9 @@ def test_task_stats(client: TestClient, sample_task, test_db):
     assert data["task_id"] == sample_task.id
     assert data["total_runs"] == 3
     assert data["successful_runs"] == 2  # SUCCESS + PARTIAL_SUCCESS count as successful
-    assert data["total_records_fetched"] == 450
-    assert data["total_records_inserted"] == 440
-    assert data["total_records_failed"] == 10
+    assert data["total_rows_fetched"] == 450
+    assert data["total_rows_inserted"] == 440
+    assert data["total_errors"] == 10
     assert data["success_rate"] >= 66.0  # 2 out of 3
 
 
@@ -377,10 +382,10 @@ def test_get_run_by_id(client: TestClient, sample_task, test_db):
     run = TaskRun(
         task_id=sample_task.id,
         status=TaskStatus.SUCCESS.value,
-        records_fetched=100,
-        records_inserted=100,
+        rows_fetched=100,
+        rows_inserted=100,
         started_at=datetime.now(UTC),
-        completed_at=datetime.now(UTC),
+        ended_at=datetime.now(UTC),
     )
     test_db.add(run)
     test_db.commit()
@@ -405,7 +410,7 @@ def test_list_all_runs(client: TestClient, test_db):
                 task_id=task.id,
                 status=TaskStatus.SUCCESS.value,
                 started_at=datetime.now(UTC),
-                completed_at=datetime.now(UTC),
+                ended_at=datetime.now(UTC),
             )
             test_db.add(run)
     test_db.commit()

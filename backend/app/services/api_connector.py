@@ -64,6 +64,9 @@ def apply_authentication(
     Raises:
         ValueError: If auth configuration is invalid
     """
+    if headers is None:
+        headers = {}
+
     if not auth_type or auth_type == "none":
         return headers
 
@@ -72,7 +75,7 @@ def apply_authentication(
     if auth_type == "bearer":
         # Bearer token authentication
         if not api_key:
-            raise ValueError("Bearer auth requires api_key")
+            raise ValueError("Bearer token required")
 
         # Decrypt the API key
         decrypted_key = decrypt_value(api_key)
@@ -80,19 +83,20 @@ def apply_authentication(
         logger.debug("Applied Bearer token authentication")
 
     elif auth_type == "api_key":
-        # API Key in custom header (X-API-Key)
+        # API Key in custom header
         if not api_key:
-            raise ValueError("API Key auth requires api_key")
+            raise ValueError("API key required")
 
         # Decrypt the API key
         decrypted_key = decrypt_value(api_key)
-        headers["X-API-Key"] = decrypted_key
-        logger.debug("Applied API Key authentication")
+        header_name = (oauth_config or {}).get("api_key_header", "X-API-Key")
+        headers[header_name] = decrypted_key
+        logger.debug(f"Applied API Key authentication using header {header_name}")
 
     elif auth_type == "basic":
         # HTTP Basic Authentication
         if not username or not password:
-            raise ValueError("Basic auth requires username and password")
+            raise ValueError("Username and password required")
 
         # Decrypt the password
         decrypted_password = decrypt_value(password)
@@ -108,7 +112,8 @@ def apply_authentication(
         # oauth_token_service.get_access_token() and passed in plaintext via
         # `oauth_config['_already_decrypted']=True` — in that case skip decrypt.
         if not oauth_config or "access_token" not in oauth_config:
-            raise ValueError("OAuth auth requires oauth_config with access_token")
+            logger.warning("OAuth auth configured but no access_token available; skipping auth")
+            return headers
 
         if oauth_config.get("_already_decrypted"):
             access_token = oauth_config["access_token"]
@@ -118,7 +123,7 @@ def apply_authentication(
         logger.debug("Applied OAuth authentication")
 
     else:
-        raise ValueError(f"Unsupported auth_type: {auth_type}")
+        logger.warning(f"Unknown auth_type {auth_type!r}; skipping auth")
 
     return headers
 

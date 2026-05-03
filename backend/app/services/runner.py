@@ -153,6 +153,11 @@ async def run_import(
             is_backfill=is_backfill,
             is_replay=is_replay,
             replay_of_run_id=replay_of_run_id,
+            rows_fetched=0,
+            rows_inserted=0,
+            rows_updated=0,
+            rows_skipped=0,
+            error_count=0,
         )
         db.add(task_run)
         db.commit()

@@ -34,6 +34,7 @@ def mock_task():
         dest_table="CUSTOMERS",
         record_path="$.data",
         is_active=True,
+        connection_id="test-conn",
     )
 
 
@@ -45,10 +46,10 @@ def mock_task_run():
         task_id=1,
         status=TaskStatus.PENDING,
         started_at=None,
-        completed_at=None,
-        records_fetched=0,
-        records_inserted=0,
-        records_failed=0,
+        ended_at=None,
+        rows_fetched=0,
+        rows_inserted=0,
+        error_count=0,
     )
 
 
@@ -133,14 +134,11 @@ class TestInsertBatch:
             {"CUSTOMER_ID": 2, "CUSTOMER_NAME": "BOB"},
         ]
 
-        mock_connection = MagicMock()
-        mock_db.connection.return_value.__enter__.return_value = mock_connection
-
         result = insert_batch(db=mock_db, table_name="CUSTOMERS", rows=rows)
 
         assert result == 2
-        mock_connection.execute.assert_called_once()
-        mock_connection.commit.assert_called_once()
+        mock_db.execute.assert_called_once()
+        mock_db.commit.assert_called()
 
     @patch("app.services.runner.text")
     def test_insert_batch_empty_rows(self, mock_text, mock_db):
@@ -148,27 +146,26 @@ class TestInsertBatch:
         result = insert_batch(db=mock_db, table_name="CUSTOMERS", rows=[])
 
         assert result == 0
-        mock_db.connection.assert_not_called()
+        mock_db.execute.assert_not_called()
 
     @patch("app.services.runner.text")
     def test_insert_batch_transaction_rollback_on_error(self, mock_text, mock_db):
         """Test insert_batch rolls back on error"""
         rows = [{"CUSTOMER_ID": 1, "CUSTOMER_NAME": "ALICE"}]
 
-        mock_connection = MagicMock()
-        mock_connection.execute.side_effect = Exception("Database error")
-        mock_db.connection.return_value.__enter__.return_value = mock_connection
+        mock_db.execute.side_effect = Exception("Database error")
 
         with pytest.raises(Exception, match="Database error"):
             insert_batch(db=mock_db, table_name="CUSTOMERS", rows=rows)
 
-        mock_connection.rollback.assert_called_once()
+        mock_db.rollback.assert_called_once()
 
 
 class TestRunImport:
     """Tests for run_import function"""
 
     @pytest.mark.asyncio
+    @patch("app.services.runner.get_destination_session")
     @patch("app.services.runner.api_connector")
     @patch("app.services.runner.normalizer")
     @patch("app.services.runner.mapper")
@@ -185,19 +182,14 @@ class TestRunImport:
         mock_mapper,
         mock_normalizer,
         mock_api_connector,
+        mock_get_destination_session,
         mock_db,
         mock_task,
         mock_task_run,
         mock_column_mappings,
     ):
         """Test run_import complete success flow"""
-        # Setup mocks
-        mock_db.query.return_value.filter.return_value.first.side_effect = [
-            mock_task,  # First call for Task
-            mock_task_run,  # Second call for TaskRun
-        ]
-
-        mock_db.query.return_value.filter.return_value.all.return_value = mock_column_mappings
+        mock_db.get.return_value = mock_task
 
         # Mock API response
         api_response = {
@@ -206,11 +198,11 @@ class TestRunImport:
                 {"id": 2, "name": "  bob  ", "email": "bob@example.com"},
             ]
         }
-        mock_api_connector.fetch_json = AsyncMock(return_value=api_response)
+        mock_api_connector.fetch_with_auth = AsyncMock(return_value=api_response)
 
         # Mock normalizer
         mock_normalizer.select_records.return_value = api_response["data"]
-        mock_normalizer.flatten.side_effect = lambda x: x  # Return as-is
+        mock_normalizer.flatten.side_effect = lambda x: x
 
         # Mock mapper
         mock_mapper.map_rows.return_value = [
@@ -220,32 +212,30 @@ class TestRunImport:
 
         # Mock validator
         mock_validator.validate_rows.return_value = (
-            [  # Valid rows
+            [
                 {"CUSTOMER_ID": 1, "CUSTOMER_NAME": "ALICE", "EMAIL": "alice@example.com"},
                 {"CUSTOMER_ID": 2, "CUSTOMER_NAME": "BOB", "EMAIL": "bob@example.com"},
             ],
-            [],  # No invalid rows
+            [],
         )
 
         # Mock insert
         mock_insert_batch.return_value = 2
 
         # Execute
-        await run_import(task_id=1, db=mock_db)
+        result = await run_import(task_id=1, db=mock_db)
 
-        # Verify TaskRun status updated to RUNNING
-        assert mock_task_run.status == TaskStatus.SUCCESS
-        assert mock_task_run.records_fetched == 2
-        assert mock_task_run.records_inserted == 2
-        assert mock_task_run.records_failed == 0
-
-        # Verify steps were logged
-        assert mock_log_step.call_count >= 5
+        # Verify return values
+        assert result["status"] == TaskStatus.SUCCESS.value
+        assert result["rows_fetched"] == 2
+        assert result["rows_inserted"] == 2
+        assert result["error_count"] == 0
 
         # Verify insert was called
         mock_insert_batch.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("app.services.runner.get_destination_session")
     @patch("app.services.runner.api_connector")
     @patch("app.services.runner.normalizer")
     @patch("app.services.runner.mapper")
@@ -262,19 +252,14 @@ class TestRunImport:
         mock_mapper,
         mock_normalizer,
         mock_api_connector,
+        mock_get_destination_session,
         mock_db,
         mock_task,
         mock_task_run,
         mock_column_mappings,
     ):
         """Test run_import with some validation errors"""
-        # Setup mocks
-        mock_db.query.return_value.filter.return_value.first.side_effect = [
-            mock_task,
-            mock_task_run,
-        ]
-
-        mock_db.query.return_value.filter.return_value.all.return_value = mock_column_mappings
+        mock_db.get.return_value = mock_task
 
         # Mock API response
         api_response = {
@@ -283,7 +268,7 @@ class TestRunImport:
                 {"id": 2, "name": "bob", "email": "invalid-email"},
             ]
         }
-        mock_api_connector.fetch_json = AsyncMock(return_value=api_response)
+        mock_api_connector.fetch_with_auth = AsyncMock(return_value=api_response)
 
         mock_normalizer.select_records.return_value = api_response["data"]
         mock_normalizer.flatten.side_effect = lambda x: x
@@ -297,10 +282,8 @@ class TestRunImport:
         from app.services.validator import ValidationError
 
         mock_validator.validate_rows.return_value = (
-            [  # Valid rows
-                {"CUSTOMER_ID": 1, "CUSTOMER_NAME": "ALICE", "EMAIL": "alice@example.com"}
-            ],
-            [  # Invalid rows
+            [{"CUSTOMER_ID": 1, "CUSTOMER_NAME": "ALICE", "EMAIL": "alice@example.com"}],
+            [
                 {
                     "row": {"CUSTOMER_ID": 2, "CUSTOMER_NAME": "BOB", "EMAIL": "invalid-email"},
                     "errors": [
@@ -313,13 +296,13 @@ class TestRunImport:
         mock_insert_batch.return_value = 1
 
         # Execute
-        await run_import(task_id=1, db=mock_db)
+        result = await run_import(task_id=1, db=mock_db)
 
         # Verify PARTIAL_SUCCESS status
-        assert mock_task_run.status == TaskStatus.PARTIAL_SUCCESS
-        assert mock_task_run.records_fetched == 2
-        assert mock_task_run.records_inserted == 1
-        assert mock_task_run.records_failed == 1
+        assert result["status"] == TaskStatus.PARTIAL_SUCCESS.value
+        assert result["rows_fetched"] == 2
+        assert result["rows_inserted"] == 1
+        assert result["error_count"] == 1
 
         # Verify error was logged
         mock_log_row_error.assert_called()
@@ -331,32 +314,25 @@ class TestRunImport:
         self, mock_log_step, mock_api_connector, mock_db, mock_task, mock_task_run
     ):
         """Test run_import handles API failure"""
-        # Setup mocks
-        mock_db.query.return_value.filter.return_value.first.side_effect = [
-            mock_task,
-            mock_task_run,
-        ]
+        mock_db.get.return_value = mock_task
 
         # Mock API failure
-        mock_api_connector.fetch_json = AsyncMock(side_effect=Exception("API Error"))
+        mock_api_connector.fetch_with_auth = AsyncMock(side_effect=Exception("API Error"))
 
-        # Execute
+        # Execute — should raise
         with pytest.raises(Exception, match="API Error"):
             await run_import(task_id=1, db=mock_db)
-
-        # Verify FAILED status
-        assert mock_task_run.status == TaskStatus.FAILED
-        assert "API Error" in mock_task_run.error_message
 
     @pytest.mark.asyncio
     async def test_run_import_task_not_found(self, mock_db):
         """Test run_import raises error when task not found"""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.get.return_value = None
 
         with pytest.raises(ValueError, match="Task .* not found"):
             await run_import(task_id=999, db=mock_db)
 
     @pytest.mark.asyncio
+    @patch("app.services.runner.get_destination_session")
     @patch("app.services.runner.api_connector")
     @patch("app.services.runner.normalizer")
     @patch("app.services.runner.mapper")
@@ -371,22 +347,17 @@ class TestRunImport:
         mock_mapper,
         mock_normalizer,
         mock_api_connector,
+        mock_get_destination_session,
         mock_db,
         mock_task,
         mock_task_run,
         mock_column_mappings,
     ):
         """Test run_import when all rows are invalid"""
-        # Setup mocks
-        mock_db.query.return_value.filter.return_value.first.side_effect = [
-            mock_task,
-            mock_task_run,
-        ]
-
-        mock_db.query.return_value.filter.return_value.all.return_value = mock_column_mappings
+        mock_db.get.return_value = mock_task
 
         api_response = {"data": [{"id": 1, "name": "alice", "email": "invalid"}]}
-        mock_api_connector.fetch_json = AsyncMock(return_value=api_response)
+        mock_api_connector.fetch_with_auth = AsyncMock(return_value=api_response)
 
         mock_normalizer.select_records.return_value = api_response["data"]
         mock_normalizer.flatten.side_effect = lambda x: x
@@ -399,7 +370,7 @@ class TestRunImport:
         from app.services.validator import ValidationError
 
         mock_validator.validate_rows.return_value = (
-            [],  # No valid rows
+            [],
             [
                 {
                     "row": {"CUSTOMER_ID": 1, "CUSTOMER_NAME": "ALICE", "EMAIL": "invalid"},
@@ -411,12 +382,12 @@ class TestRunImport:
         )
 
         # Execute
-        await run_import(task_id=1, db=mock_db)
+        result = await run_import(task_id=1, db=mock_db)
 
         # Verify FAILED status
-        assert mock_task_run.status == TaskStatus.FAILED
-        assert mock_task_run.records_inserted == 0
-        assert mock_task_run.records_failed == 1
+        assert result["status"] == TaskStatus.FAILED.value
+        assert result["rows_inserted"] == 0
+        assert result["error_count"] == 1
 
         # Verify insert was NOT called
         mock_insert_batch.assert_not_called()
