@@ -1,16 +1,14 @@
 """Unit tests for database models"""
 
-from datetime import UTC, datetime
-
 import pytest
-
-from app.db.models.column_mapping import ColumnMapping
+from datetime import datetime, timezone
 from app.db.models.task import Task
-from app.db.models.task_log import TaskLog
 from app.db.models.task_run import TaskRun
-from app.db.models.task_run_log import TaskRunLog
 from app.db.models.task_schedule import TaskSchedule
-from app.db.session import Base
+from app.db.models.task_log import TaskLog
+from app.db.models.task_run_log import TaskRunLog
+from app.db.models.column_mapping import ColumnMapping
+from app.db.session import Base, SessionLocal
 
 
 class TestTaskModel:
@@ -38,7 +36,9 @@ class TestTaskModel:
     def test_task_defaults(self):
         """Test Task model defaults (set at database level)"""
         task = Task(
-            name="Minimal Task", endpoint_path="https://api.example.com/data", dest_table="DATA"
+            name="Minimal Task",
+            endpoint_path="https://api.example.com/data",
+            dest_table="DATA",
         )
 
         # SQLAlchemy defaults are applied at database level, not Python instantiation
@@ -122,7 +122,7 @@ class TestTaskScheduleModel:
 
     def test_task_schedule_with_dates(self):
         """Test TaskSchedule with execution dates"""
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         schedule = TaskSchedule(
             task_id=1, cron_expression="0 * * * *", last_run_date=now, next_run_date=now
         )

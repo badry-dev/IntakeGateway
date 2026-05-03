@@ -1,14 +1,7 @@
 import asyncio
 import hashlib
-from datetime import UTC, datetime
-
+from datetime import datetime, timezone
 from loguru import logger
-
-from app.core.logging import clear_task_context, set_task_context
-from app.db.models.task_run import TaskRun, TaskStatus
-from app.db.session import SessionLocal
-from app.services.runner import run_import
-from app.workers.celery_app import celery_app
 
 
 def _redact_cursor(value: str | None) -> str:
@@ -28,6 +21,12 @@ def _redact_cursor(value: str | None) -> str:
     digest = hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:8]
     return f"<len={len(value)} sha256={digest}>"
 
+from app.workers.celery_app import celery_app
+from app.services.runner import run_import
+from app.db.session import SessionLocal
+from app.db.models.task_run import TaskRun, TaskStatus
+from app.core.logging import set_task_context, clear_task_context
+
 
 def on_task_failure(self, exc, task_id, args, kwargs, einfo):
     """Callback for task failure - log to database and dead-letter queue"""
@@ -35,7 +34,9 @@ def on_task_failure(self, exc, task_id, args, kwargs, einfo):
 
     # Escape curly braces in error message to prevent loguru formatting issues
     error_msg = str(exc).replace("{", "{{").replace("}", "}}")
-    logger.error(f"Task import failed for task_id={import_task_id}: {error_msg}", exc_info=exc)
+    logger.error(
+        f"Task import failed for task_id={import_task_id}: {error_msg}", exc_info=exc
+    )
 
     # Update TaskRun status to FAILED if exists
     try:
@@ -43,14 +44,17 @@ def on_task_failure(self, exc, task_id, args, kwargs, einfo):
         # Find the most recent running task run for this task
         task_run = (
             db.query(TaskRun)
-            .filter(TaskRun.task_id == import_task_id, TaskRun.status == TaskStatus.RUNNING.value)
+            .filter(
+                TaskRun.task_id == import_task_id,
+                TaskRun.status == TaskStatus.RUNNING.value,
+            )
             .order_by(TaskRun.started_at.desc())
             .first()
         )
 
         if task_run:
             task_run.status = TaskStatus.FAILED.value
-            task_run.ended_at = datetime.now(UTC)
+            task_run.ended_at = datetime.now(timezone.utc)
             db.commit()
             logger.info(f"Updated TaskRun {task_run.id} status to FAILED")
 

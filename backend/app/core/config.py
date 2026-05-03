@@ -1,5 +1,5 @@
+from pydantic_settings import BaseSettings
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -55,9 +55,7 @@ class Settings(BaseSettings):
                     host, port = host_port, "1521"
                 return f"oracle+oracledb://{self.ORACLE_USER}:{self.ORACLE_PASSWORD}@{host}:{port}/?service_name={service}"
             else:
-                return (
-                    f"oracle+oracledb://{self.ORACLE_USER}:{self.ORACLE_PASSWORD}@{self.ORACLE_DSN}"
-                )
+                return f"oracle+oracledb://{self.ORACLE_USER}:{self.ORACLE_PASSWORD}@{self.ORACLE_DSN}"
 
         if not self.ORACLE_HOST or not self.ORACLE_SERVICE_NAME:
             raise ValueError(
@@ -85,7 +83,9 @@ class Settings(BaseSettings):
     def normalize_level(cls, v: str) -> str:
         return v.upper()
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
 
 
 settings = Settings()

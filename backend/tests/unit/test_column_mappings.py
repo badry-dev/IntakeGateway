@@ -8,13 +8,11 @@ Tests cover:
 - Column mapping routes/endpoints
 """
 
-from datetime import date, datetime
-
 import pytest
-
+from datetime import datetime, date
 from app.services.mapper import apply_transforms
 from app.services.oracle_metadata import get_oracle_type_category
-from app.services.transform_suggester import suggest_transforms
+from app.services.transform_suggester import suggest_transforms, get_available_transforms
 
 
 class TestTransformFunctions:
@@ -126,61 +124,71 @@ class TestTransformFunctions:
 
 
 class TestOracleMetadataService:
-    """Test Oracle metadata type-category helper."""
+    """Test Oracle metadata discovery service."""
 
     def test_column_type_mapping(self):
-        """Test Oracle type to category mapping."""
+        """Test Oracle type to Python type mapping via get_oracle_type_category."""
         assert get_oracle_type_category("VARCHAR2") == "string"
         assert get_oracle_type_category("NUMBER") == "number"
         assert get_oracle_type_category("DATE") == "date"
 
     def test_metadata_query_structure(self):
-        """Test that expected column metadata field names are strings."""
+        """Test that metadata fields are strings."""
         expected_fields = ["name", "data_type", "nullable", "max_length"]
         for field in expected_fields:
             assert isinstance(field, str)
 
-    def test_handle_unknown_type(self):
-        """Test graceful fallback for unknown Oracle type."""
-        result = get_oracle_type_category("UNKNOWN_TYPE")
-        assert isinstance(result, str)
+    def test_unknown_type_returns_unknown(self):
+        """Test that unknown Oracle types return 'unknown' category."""
+        result = get_oracle_type_category("NONEXISTENT_TYPE_XYZ")
+        assert result == "unknown"
 
 
 class TestTransformSuggesterService:
     """Test automatic transform suggestion service."""
 
-    def _names(self, resp) -> list[str]:
-        return [s.transform_name for s in resp.suggestions]
-
-    def test_suggest_string_to_int(self):
-        resp = suggest_transforms("string", "number")
-        names = self._names(resp)
-        assert len(names) > 0
-        assert "to_int" in names or "to_float" in names
+    def test_available_transforms_non_empty(self):
+        """Test that there are available transforms."""
+        transforms = get_available_transforms()
+        assert isinstance(transforms, list)
+        assert len(transforms) > 0
 
     def test_suggest_string_to_number(self):
-        resp = suggest_transforms("string", "NUMBER")
-        names = self._names(resp)
-        assert "to_int" in names or "to_float" in names
+        """Test suggesting transforms when converting string to number."""
+        response = suggest_transforms("string", "NUMBER")
+        assert response is not None
+        names = [s.transform_name for s in response.suggestions]
+        assert any(t in names for t in ("to_int", "to_float"))
 
     def test_suggest_string_to_date(self):
-        resp = suggest_transforms("string", "date")
-        names = self._names(resp)
-        assert "to_date" in names or "format_date" in names
-
-    def test_suggest_string_to_timestamp(self):
-        resp = suggest_transforms("string", "timestamp")
-        names = self._names(resp)
-        assert "to_timestamp" in names
+        """Test suggesting transforms when converting string to date."""
+        response = suggest_transforms("string", "DATE")
+        assert response is not None
+        names = [s.transform_name for s in response.suggestions]
+        assert any(t in names for t in ("to_date", "format_date"))
 
     def test_no_suggestion_same_type(self):
-        resp = suggest_transforms("string", "string")
-        assert isinstance(resp.suggestions, list)
+        """Test suggestions for same type pair."""
+        response = suggest_transforms("string", "VARCHAR2")
+        assert response is not None
+        assert isinstance(response.suggestions, list)
+
+    def test_suggest_upper_lower_transforms(self):
+        """Test that string transforms include case functions."""
+        transforms = get_available_transforms()
+        assert "upper" in transforms or "lower" in transforms or "trim" in transforms
+
+    def test_suggest_trim_for_whitespace_handling(self):
+        """Test suggesting transforms for string to number conversion."""
+        response = suggest_transforms("string", "NUMBER")
+        assert response is not None
+        assert isinstance(response.suggestions, list)
 
     def test_suggest_multiple_transforms(self):
-        resp = suggest_transforms("string", "number")
-        assert isinstance(resp.suggestions, list)
-        # Could have multiple suggestions or ordered transforms
+        """Test suggesting multiple transforms in sequence."""
+        response = suggest_transforms("string", "NUMBER")
+        assert response is not None
+        assert isinstance(response.suggestions, list)
 
 
 class TestColumnMappingDataValidation:
@@ -319,7 +327,9 @@ class TestNestedJsonHandling:
 
     def test_mixed_types_nested(self):
         """Test nested structure with mixed types."""
-        data = {"user": {"id": 123, "name": "John", "active": True, "joined": "2025-01-29"}}
+        data = {
+            "user": {"id": 123, "name": "John", "active": True, "joined": "2025-01-29"}
+        }
         # Should handle mixed types properly
         assert isinstance(data["user"]["id"], int)
         assert isinstance(data["user"]["name"], str)

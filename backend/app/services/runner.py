@@ -293,7 +293,12 @@ async def run_import(
 
         # Step 9: Insert/Upsert valid rows to the configured destination database
         if valid_rows:
-            log_step(db, task_run_id, "CONNECT_DESTINATION", "Opening destination database session")
+            log_step(
+                db,
+                task_run_id,
+                "CONNECT_DESTINATION",
+                "Opening destination database session",
+            )
 
             if destination_db is None:
                 destination_db = get_destination_session(task.connection_id)
@@ -344,7 +349,9 @@ async def run_import(
                 )
 
                 task_run.rows_inserted = rows_inserted
-                logger.info(f"Successfully inserted {rows_inserted} rows to {task.dest_table}")
+                logger.info(
+                    f"Successfully inserted {rows_inserted} rows to {task.dest_table}"
+                )
         else:
             task_run.rows_inserted = 0
             task_run.rows_updated = 0
@@ -496,14 +503,18 @@ def insert_batch(db: Session, table_name: str, rows: list[dict], batch_size: int
                 column_str = ", ".join(columns)
                 placeholders = ", ".join([f":{col}" for col in columns])
 
-                insert_sql = f"INSERT INTO {table_name} ({column_str}) VALUES ({placeholders})"
+                insert_sql = (
+                    f"INSERT INTO {table_name} ({column_str}) VALUES ({placeholders})"
+                )
 
                 # Execute batch insert
                 db.execute(text(insert_sql), batch)
                 db.commit()
 
                 total_inserted += len(batch)
-                logger.debug(f"Inserted batch of {len(batch)} rows ({total_inserted}/{len(rows)})")
+                logger.debug(
+                    f"Inserted batch of {len(batch)} rows ({total_inserted}/{len(rows)})"
+                )
 
         except Exception as e:
             logger.error(f"Failed to insert batch: {str(e)}")
@@ -675,7 +686,9 @@ def _should_skip(task: Task, existing_record: dict) -> bool:
     if not task.skip_column or not task.skip_value:
         return False
 
-    current_value = existing_record.get(task.skip_column.upper())  # Oracle returns uppercase
+    current_value = existing_record.get(
+        task.skip_column.upper()
+    )  # Oracle returns uppercase
     if current_value is None:
         current_value = existing_record.get(task.skip_column.lower())
     if current_value is None:
@@ -711,7 +724,9 @@ def _update_existing_row(db: Session, table_name: str, row: dict, upsert_keys: l
     db.execute(text(update_sql), row)
 
 
-def log_step(db: Session, task_run_id: int, step_name: str, message: str, details: dict = None):
+def log_step(
+    db: Session, task_run_id: int, step_name: str, message: str, details: dict = None
+):
     """Log execution step to TaskLog table"""
     log_entry = TaskLog(
         task_run_id=task_run_id,

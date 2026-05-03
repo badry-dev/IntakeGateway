@@ -1,12 +1,9 @@
-import json
-from collections.abc import Callable
-from datetime import datetime
-from typing import Any
-
-from loguru import logger
+from typing import Any, Callable
 from sqlalchemy.orm import Session
-
 from app.db.models.column_mapping import ColumnMapping
+import json
+from datetime import datetime
+from loguru import logger
 
 
 # Transform registry for field transformations
@@ -44,12 +41,12 @@ def to_bool(x):
     if isinstance(x, bool):
         return x
     if isinstance(x, str):
-        low = x.lower()
-        if low in ("true", "1", "yes", "y"):
+        lower = x.lower()
+        if lower in ("true", "1", "yes", "y"):
             return True
-        if low in ("false", "0", "no", "n"):
+        if lower in ("false", "0", "no", "n"):
             return False
-        return None  # unrecognized string → caller handles as null
+        return None
     return bool(x)
 
 
@@ -183,7 +180,11 @@ def apply_transforms(value: Any, transform_rules: str | None) -> Any:
         return value
 
     try:
-        rules = json.loads(transform_rules) if isinstance(transform_rules, str) else transform_rules
+        rules = (
+            json.loads(transform_rules)
+            if isinstance(transform_rules, str)
+            else transform_rules
+        )
     except json.JSONDecodeError:
         return value
 
@@ -229,10 +230,7 @@ def get_column_mappings(db: Session, task_id: int) -> list[ColumnMapping]:
     """Fetch active column mappings for a task"""
     return (
         db.query(ColumnMapping)
-        .filter(
-            ColumnMapping.task_id == task_id,
-            ColumnMapping.is_active.is_(True),
-        )
+        .filter(ColumnMapping.task_id == task_id, ColumnMapping.is_active == True)
         .all()
     )
 

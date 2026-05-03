@@ -9,7 +9,9 @@ class ColumnMapping(Base):
     __tablename__ = "column_mapping"
 
     id = Column(ID_TYPE, primary_key=True, autoincrement=True)
-    task_id = Column(ID_TYPE, ForeignKey("task.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_id = Column(
+        ID_TYPE, ForeignKey("task.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     source_field = Column(String(255), nullable=False)  # from API response
     dest_column = Column(String(255), nullable=False)  # Oracle table column
     transform_rules = Column(Text, nullable=True)  # JSON string with transform configs

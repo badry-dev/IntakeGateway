@@ -9,29 +9,28 @@ Endpoints:
 - GET /api/v1/oracle/tables/{table_name}/columns - Query Oracle metadata
 """
 
-import json
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-
-from app.db.models.column_mapping import ColumnMapping
+from app.db.session import SessionLocal
 from app.db.models.task import Task
+from app.db.models.column_mapping import ColumnMapping
 from app.db.schemas.column_mapping import (
-    BulkMappingCreate,
+    ColumnMappingCreate,
     ColumnMappingOut,
     ColumnMappingUpdate,
-    FieldPreview,
+    BulkMappingCreate,
     FieldsPreviewResponse,
     OracleColumnsResponse,
-    PreviewFieldsRequest,
     TransformSuggestionsResponse,
+    PreviewFieldsRequest,
+    FieldPreview,
 )
-from app.db.session import SessionLocal
 from app.services.api_connector import fetch_sample_response, get_record_type_info
 from app.services.connection_pool import get_session as get_destination_session
 from app.services.oracle_metadata import get_table_columns
 from app.services.transform_suggester import suggest_transforms
+import json
+import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -98,8 +97,12 @@ def list_mappings(
 # ============================================================================
 
 
-@router.post("/{task_id}/mappings", response_model=list[ColumnMappingOut], status_code=201)
-def create_mappings(task_id: int, payload: BulkMappingCreate, db: Session = Depends(get_db)):
+@router.post(
+    "/{task_id}/mappings", response_model=list[ColumnMappingOut], status_code=201
+)
+def create_mappings(
+    task_id: int, payload: BulkMappingCreate, db: Session = Depends(get_db)
+):
     """
     Create multiple column mappings for a task (bulk operation).
 
@@ -172,7 +175,9 @@ def create_mappings(task_id: int, payload: BulkMappingCreate, db: Session = Depe
 
 
 @router.put("/{mapping_id}", response_model=ColumnMappingOut)
-def update_mapping(mapping_id: int, payload: ColumnMappingUpdate, db: Session = Depends(get_db)):
+def update_mapping(
+    mapping_id: int, payload: ColumnMappingUpdate, db: Session = Depends(get_db)
+):
     """
     Update an existing column mapping.
 
@@ -213,7 +218,9 @@ def update_mapping(mapping_id: int, payload: ColumnMappingUpdate, db: Session = 
     # Handle transform_rules JSON serialization
     if "transform_rules" in update_data:
         transform_rules = update_data["transform_rules"]
-        update_data["transform_rules"] = json.dumps(transform_rules) if transform_rules else None
+        update_data["transform_rules"] = (
+            json.dumps(transform_rules) if transform_rules else None
+        )
 
     for key, value in update_data.items():
         setattr(mapping, key, value)
@@ -316,14 +323,19 @@ async def preview_fields(
         else:
             if not sample_json:
                 raise HTTPException(
-                    status_code=400, detail="sample_json is required when use_auto_fetch=False"
+                    status_code=400,
+                    detail="sample_json is required when use_auto_fetch=False",
                 )
             raw_response = sample_json
 
         # Get field information (flatten and infer types)
-        fields_info, flattened_data = get_record_type_info(raw_response, task.record_path)
+        fields_info, flattened_data = get_record_type_info(
+            raw_response, task.record_path
+        )
 
-        logger.info(f"Generated field preview for task {task_id}: {len(fields_info)} fields")
+        logger.info(
+            f"Generated field preview for task {task_id}: {len(fields_info)} fields"
+        )
 
         return FieldsPreviewResponse(
             fields=fields_info,
@@ -350,7 +362,9 @@ async def preview_fields(
 @router.get("/oracle/tables/{table_name}/columns", response_model=OracleColumnsResponse)
 def get_columns(
     table_name: str,
-    connection_id: str = Query(..., min_length=1, description="Required destination connection ID"),
+    connection_id: str = Query(
+        ..., min_length=1, description="Required destination connection ID"
+    ),
 ):
     """
     Query Oracle database for table column information.
@@ -455,7 +469,8 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
         else:
             if not request.sample_json:
                 raise HTTPException(
-                    status_code=400, detail="sample_json is required when use_auto_fetch=False"
+                    status_code=400,
+                    detail="sample_json is required when use_auto_fetch=False",
                 )
             raw_response = request.sample_json
 
@@ -505,10 +520,12 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
 @router.post("/suggest-transforms", response_model=TransformSuggestionsResponse)
 def suggest_transforms_endpoint(
     source_type: str = Query(
-        ..., description="Source field type (string, number, boolean, array, object, null)"
+        ...,
+        description="Source field type (string, number, boolean, array, object, null)",
     ),
     dest_type: str = Query(
-        ..., description="Destination column type (VARCHAR2, NUMBER, DATE, TIMESTAMP, etc)"
+        ...,
+        description="Destination column type (VARCHAR2, NUMBER, DATE, TIMESTAMP, etc)",
     ),
 ):
     """
@@ -538,4 +555,6 @@ def suggest_transforms_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error suggesting transforms: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Error generating suggestions: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"Error generating suggestions: {str(e)}"
+        )

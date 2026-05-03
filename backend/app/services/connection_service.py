@@ -5,14 +5,15 @@ Uses Fernet symmetric encryption to securely store Oracle connection credentials
 in a JSON file. The encryption key is derived from the application's SECRET_KEY.
 """
 
-import base64
 import json
-from datetime import datetime
+import os
 from pathlib import Path
-
+from typing import Optional
+from datetime import datetime
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import base64
 
 from app.core.config import settings
 
@@ -21,9 +22,11 @@ class ConnectionFileService:
     """Service for managing encrypted database connection configurations."""
 
     # Connection file location (in app data directory)
-    DEFAULT_CONNECTION_FILE = Path(__file__).parent.parent.parent / "data" / "connections.enc"
+    DEFAULT_CONNECTION_FILE = (
+        Path(__file__).parent.parent.parent / "data" / "connections.enc"
+    )
 
-    def __init__(self, connection_file: Path | None = None):
+    def __init__(self, connection_file: Optional[Path] = None):
         """
         Initialize the connection service.
 
@@ -90,7 +93,7 @@ class ConnectionFileService:
         encrypted_data = self._fernet.encrypt(json_data.encode("utf-8"))
         self.connection_file.write_bytes(encrypted_data)
 
-    def get_connection(self, name: str = "default") -> dict | None:
+    def get_connection(self, name: str = "default") -> Optional[dict]:
         """
         Get a specific connection by name.
 
@@ -116,7 +119,7 @@ class ConnectionFileService:
         data = self._read_connections()
         return data.get("connections", [])
 
-    def get_active_connection(self) -> dict | None:
+    def get_active_connection(self) -> Optional[dict]:
         """
         Get the currently active connection.
 
@@ -140,7 +143,7 @@ class ConnectionFileService:
         username: str,
         password: str,
         is_active: bool = False,
-        description: str | None = None,
+        description: Optional[str] = None,
     ) -> dict:
         """
         Create a new connection configuration.
@@ -194,15 +197,15 @@ class ConnectionFileService:
     def update_connection(
         self,
         name: str,
-        host: str | None = None,
-        port: int | None = None,
-        service_name: str | None = None,
-        username: str | None = None,
-        password: str | None = None,
-        is_active: bool | None = None,
-        description: str | None = None,
-        new_name: str | None = None,
-    ) -> dict | None:
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        service_name: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        description: Optional[str] = None,
+        new_name: Optional[str] = None,
+    ) -> Optional[dict]:
         """
         Update an existing connection configuration.
 
@@ -226,7 +229,9 @@ class ConnectionFileService:
         if new_name:
             for conn in data.get("connections", []):
                 if conn.get("name") == new_name and conn.get("name") != name:
-                    raise ValueError(f"Connection with name '{new_name}' already exists")
+                    raise ValueError(
+                        f"Connection with name '{new_name}' already exists"
+                    )
 
         updated_conn = None
         for conn in data.get("connections", []):
@@ -285,7 +290,7 @@ class ConnectionFileService:
 
         return False
 
-    def set_active_connection(self, name: str) -> dict | None:
+    def set_active_connection(self, name: str) -> Optional[dict]:
         """
         Set a connection as the active connection.
 
@@ -297,7 +302,9 @@ class ConnectionFileService:
         """
         return self.update_connection(name, is_active=True)
 
-    def get_sqlalchemy_url(self, connection_name: str | None = None) -> str | None:
+    def get_sqlalchemy_url(
+        self, connection_name: Optional[str] = None
+    ) -> Optional[str]:
         """
         Get SQLAlchemy connection URL for a specific or the active connection.
 
@@ -324,7 +331,7 @@ class ConnectionFileService:
         """Check if a connection with the given name exists."""
         return self.get_connection(name) is not None
 
-    def get_connection_without_password(self, name: str) -> dict | None:
+    def get_connection_without_password(self, name: str) -> Optional[dict]:
         """
         Get a connection without the password field (for API responses).
 
@@ -347,7 +354,9 @@ class ConnectionFileService:
             List of connection dictionaries without passwords.
         """
         connections = self.get_all_connections()
-        return [{k: v for k, v in conn.items() if k != "password"} for conn in connections]
+        return [
+            {k: v for k, v in conn.items() if k != "password"} for conn in connections
+        ]
 
 
 # Singleton instance for use across the application

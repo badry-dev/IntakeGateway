@@ -1,18 +1,16 @@
 """Unit tests for validator service"""
 
-from datetime import date, datetime
-
 import pytest
-
+from datetime import datetime, date
 from app.services.validator import (
     ValidationError,
-    validate_format,
-    validate_length,
-    validate_range,
     validate_required,
+    validate_type,
+    validate_length,
+    validate_format,
+    validate_range,
     validate_row,
     validate_rows,
-    validate_type,
 )
 
 
@@ -143,7 +141,10 @@ class TestValidateType:
     def test_validate_type_datetime_valid(self):
         """Test datetime type validation"""
         assert validate_type("created_at", "2024-01-15T10:30:00", "datetime") is None
-        assert validate_type("created_at", datetime(2024, 1, 15, 10, 30), "datetime") is None
+        assert (
+            validate_type("created_at", datetime(2024, 1, 15, 10, 30), "datetime")
+            is None
+        )
 
     def test_validate_type_datetime_invalid(self):
         """Test datetime type validation fails"""
@@ -229,7 +230,10 @@ class TestValidateFormat:
 
     def test_validate_format_uuid_valid(self):
         """Test UUID format validation"""
-        assert validate_format("id", "550e8400-e29b-41d4-a716-446655440000", "uuid") is None
+        assert (
+            validate_format("id", "550e8400-e29b-41d4-a716-446655440000", "uuid")
+            is None
+        )
 
     def test_validate_format_uuid_invalid(self):
         """Test UUID format validation fails"""
@@ -380,7 +384,10 @@ class TestValidateRows:
         """Test validating multiple valid rows"""
         rows = [{"name": "Alice", "age": 25}, {"name": "Bob", "age": 30}]
 
-        column_specs = {"name": {"required": True}, "age": {"type": "int", "min": 0, "max": 120}}
+        column_specs = {
+            "name": {"required": True},
+            "age": {"type": "int", "min": 0, "max": 120},
+        }
 
         valid, invalid = validate_rows(rows, column_specs)
 

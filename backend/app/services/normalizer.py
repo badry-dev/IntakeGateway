@@ -1,22 +1,13 @@
-from collections.abc import Iterable
-from typing import Any
-
+from typing import Any, Iterable
 from jsonpath_ng.ext import parse as jsonpath_parse
 
 
 def select_records(payload: Any, record_path: str | None) -> Iterable[dict]:
     if record_path:
         jp = jsonpath_parse(record_path)
-        matches = [m.value for m in jp.find(payload)]
-        # A path that resolves to exactly one scalar (not a list/dict) is most
-        # likely a misconfigured record_path pointing at a string or number field
-        # rather than an array. Catch it early rather than silently wrapping the
-        # scalar in a list and producing downstream type errors.
-        if len(matches) == 1 and not isinstance(matches[0], (list, dict)):
-            raise ValueError(f"Record path '{record_path}' did not resolve to a list or object")
-        # If the path resolved to a list-of-lists (e.g. $.items), unwrap one level.
-        if len(matches) == 1 and isinstance(matches[0], list):
-            matches = matches[0]
+        found = [m.value for m in jp.find(payload)]
+        # Unwrap single match so the value (not the wrapper list) is type-checked
+        matches = found[0] if len(found) == 1 else found
     else:
         matches = payload
     if isinstance(matches, dict):

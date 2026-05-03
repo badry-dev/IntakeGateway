@@ -5,21 +5,20 @@ Provides CRUD operations for database connections with encrypted storage.
 Connections are tested before saving to prevent invalid configurations.
 """
 
-from datetime import datetime
-
 from fastapi import APIRouter, HTTPException
 from loguru import logger
-
 from app.db.schemas.connection import (
     ConnectionCreate,
-    ConnectionListOut,
+    ConnectionUpdate,
     ConnectionOut,
+    ConnectionListOut,
     ConnectionTestRequest,
     ConnectionTestResult,
-    ConnectionUpdate,
 )
-from app.services.connection_pool import invalidate_pool, test_connection
 from app.services.connection_storage import get_connection_storage
+from app.services.connection_pool import test_connection, invalidate_pool
+from datetime import datetime
+
 
 router = APIRouter(prefix="/api/v1/connections", tags=["connections"])
 
@@ -85,7 +84,9 @@ def get_connection(connection_id: str):
     conn = storage.get_connection(connection_id)
 
     if not conn:
-        raise HTTPException(status_code=404, detail=f"Connection {connection_id} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Connection {connection_id} not found"
+        )
 
     return _connection_to_out(conn)
 
@@ -121,7 +122,9 @@ def create_connection(payload: ConnectionCreate):
     )
 
     if not test_result["success"]:
-        logger.warning(f"Connection test failed for {payload.name}: {test_result['message']}")
+        logger.warning(
+            f"Connection test failed for {payload.name}: {test_result['message']}"
+        )
         raise HTTPException(
             status_code=400, detail=f"Connection test failed: {test_result['message']}"
         )
@@ -158,7 +161,9 @@ def update_connection(connection_id: str, payload: ConnectionUpdate):
     # Verify exists
     existing = storage.get_connection(connection_id, include_password=True)
     if not existing:
-        raise HTTPException(status_code=404, detail=f"Connection {connection_id} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Connection {connection_id} not found"
+        )
 
     updates = payload.model_dump(exclude_unset=True)
 
@@ -179,7 +184,8 @@ def update_connection(connection_id: str, payload: ConnectionUpdate):
             "host": updates.get("host", existing["host"]),
             "port": updates.get("port", existing.get("port", 1521)),
             "username": updates.get("username", existing["username"]),
-            "password": updates.get("password") or storage.get_decrypted_password(connection_id),
+            "password": updates.get("password")
+            or storage.get_decrypted_password(connection_id),
             "service_name": updates.get("service_name", existing.get("service_name")),
             "database": updates.get("database", existing.get("database")),
         }
@@ -190,7 +196,8 @@ def update_connection(connection_id: str, payload: ConnectionUpdate):
                 f"Connection test failed during update for {connection_id}: {test_result['message']}"
             )
             raise HTTPException(
-                status_code=400, detail=f"Connection test failed: {test_result['message']}"
+                status_code=400,
+                detail=f"Connection test failed: {test_result['message']}",
             )
 
         # Invalidate cached pool since connection details changed
@@ -198,7 +205,9 @@ def update_connection(connection_id: str, payload: ConnectionUpdate):
 
     conn = storage.update_connection(connection_id, updates)
     if not conn:
-        raise HTTPException(status_code=404, detail=f"Connection {connection_id} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Connection {connection_id} not found"
+        )
 
     logger.info(f"Updated connection: {conn['name']} ({conn['id']})")
     return _connection_to_out(conn)
@@ -218,7 +227,9 @@ def delete_connection(connection_id: str):
     storage = get_connection_storage()
 
     if not storage.delete_connection(connection_id):
-        raise HTTPException(status_code=404, detail=f"Connection {connection_id} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Connection {connection_id} not found"
+        )
 
     invalidate_pool(connection_id)
     logger.info(f"Deleted connection: {connection_id}")

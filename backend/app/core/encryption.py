@@ -6,7 +6,7 @@ Encryption key is stored in environment variable for security.
 """
 
 import os
-
+import base64
 from cryptography.fernet import Fernet
 from loguru import logger
 
@@ -30,7 +30,9 @@ class EncryptionService:
             # For development, generate a temporary key (NOT for production!)
             app_env = os.getenv("APP_ENV", "dev").lower()
             if app_env in ("dev-only"):
-                logger.warning("No ENCRYPTION_KEY found, generating temporary key for development")
+                logger.warning(
+                    "No ENCRYPTION_KEY found, generating temporary key for development"
+                )
                 key = Fernet.generate_key().decode()
                 logger.warning(f"Generated temporary encryption key: {key}")
                 logger.warning("Set ENCRYPTION_KEY in .env for production!")
@@ -99,7 +101,9 @@ class EncryptionService:
             return decrypted_bytes.decode()
         except Exception as e:
             logger.error(f"Decryption failed: {e}")
-            raise ValueError("Failed to decrypt value (invalid key or corrupted data)") from e
+            raise ValueError(
+                "Failed to decrypt value (invalid key or corrupted data)"
+            ) from e
 
     def rotate_key(self, old_key: str, new_key: str, ciphertext: str) -> str:
         """

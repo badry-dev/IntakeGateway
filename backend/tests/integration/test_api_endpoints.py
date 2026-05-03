@@ -4,22 +4,24 @@ Integration tests for API endpoints.
 Tests the HTTP API workflows for task management, run triggering, and result retrieval.
 """
 
-from datetime import UTC, datetime
-from unittest.mock import MagicMock
-
 import pytest
+from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
+from datetime import datetime, timezone
 
-from app.api.v1.routes.runs import get_db as runs_get_db
-from app.api.v1.routes.tasks import get_db
-from app.db.models.task import Task
-from app.db.models.task_log import TaskLog
-from app.db.models.task_run import TaskRun, TaskStatus
-from app.db.session import Base
 from app.main import app
+from app.db.session import Base
+from app.db.models.task import Task
+from app.db.models.task_run import TaskRun, TaskStatus
+from app.db.models.task_log import TaskLog
+from app.db.models.task_run_log import TaskRunLog
+from app.db.session import SessionLocal
+from app.api.v1.routes.tasks import get_db
+from app.api.v1.routes.runs import get_db as runs_get_db
+
 
 # ============================================================================
 # Test Database Setup
@@ -57,11 +59,16 @@ def test_db():
 def mock_connection_dependencies(monkeypatch):
     storage = MagicMock()
     storage.get_connection.side_effect = lambda connection_id, include_password=False: (
-        {"id": connection_id, "name": f"Connection {connection_id}"} if connection_id else None
+        {"id": connection_id, "name": f"Connection {connection_id}"}
+        if connection_id
+        else None
     )
-    monkeypatch.setattr("app.api.v1.routes.tasks.get_connection_storage", lambda: storage)
     monkeypatch.setattr(
-        "app.api.v1.routes.tasks.enqueue_run", lambda task_id: MagicMock(id=f"task-{task_id}")
+        "app.api.v1.routes.tasks.get_connection_storage", lambda: storage
+    )
+    monkeypatch.setattr(
+        "app.api.v1.routes.tasks.enqueue_run",
+        lambda task_id: MagicMock(id=f"task-{task_id}"),
     )
 
 
@@ -214,7 +221,7 @@ def test_update_task(client: TestClient, sample_task):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Updated Task"
-    assert not data["is_active"]
+    assert data["is_active"] == False
 
 
 def test_delete_task(client: TestClient, sample_task):
@@ -257,8 +264,8 @@ def test_list_task_runs(client: TestClient, sample_task, test_db):
             status=TaskStatus.SUCCESS.value if i % 2 == 0 else TaskStatus.FAILED.value,
             rows_fetched=100 + i,
             rows_inserted=100 + i,
-            started_at=datetime.now(UTC),
-            ended_at=datetime.now(UTC),
+            started_at=datetime.now(timezone.utc),
+            ended_at=datetime.now(timezone.utc),
         )
         test_db.add(run)
     test_db.commit()
@@ -273,11 +280,17 @@ def test_list_task_runs_with_status_filter(client: TestClient, sample_task, test
     """Test filtering runs by status"""
     # Create runs with different statuses
     for status in [TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.PARTIAL_SUCCESS]:
-        run = TaskRun(task_id=sample_task.id, status=status.value, started_at=datetime.now(UTC))
+        run = TaskRun(
+            task_id=sample_task.id,
+            status=status.value,
+            started_at=datetime.now(timezone.utc),
+        )
         test_db.add(run)
     test_db.commit()
 
-    response = client.get(f"/api/v1/tasks/{sample_task.id}/runs?status={TaskStatus.SUCCESS.value}")
+    response = client.get(
+        f"/api/v1/tasks/{sample_task.id}/runs?status={TaskStatus.SUCCESS.value}"
+    )
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
@@ -293,8 +306,8 @@ def test_get_task_run(client: TestClient, sample_task, test_db):
         rows_fetched=100,
         rows_inserted=100,
         error_count=0,
-        started_at=datetime.now(UTC),
-        ended_at=datetime.now(UTC),
+        started_at=datetime.now(timezone.utc),
+        ended_at=datetime.now(timezone.utc),
     )
     test_db.add(run)
     test_db.commit()
@@ -344,8 +357,8 @@ def test_task_stats(client: TestClient, sample_task, test_db):
             rows_fetched=fetched,
             rows_inserted=inserted,
             error_count=failed,
-            started_at=datetime.now(UTC),
-            ended_at=datetime.now(UTC),
+            started_at=datetime.now(timezone.utc),
+            ended_at=datetime.now(timezone.utc),
         )
         test_db.add(run)
     test_db.commit()
@@ -384,8 +397,8 @@ def test_get_run_by_id(client: TestClient, sample_task, test_db):
         status=TaskStatus.SUCCESS.value,
         rows_fetched=100,
         rows_inserted=100,
-        started_at=datetime.now(UTC),
-        ended_at=datetime.now(UTC),
+        started_at=datetime.now(timezone.utc),
+        ended_at=datetime.now(timezone.utc),
     )
     test_db.add(run)
     test_db.commit()
@@ -401,7 +414,9 @@ def test_list_all_runs(client: TestClient, test_db):
     """Test listing all runs across all tasks"""
     # Create 2 tasks with runs
     for t in range(2):
-        task = Task(name=f"Task {t}", endpoint_path=f"/api/data{t}", dest_table=f"table{t}")
+        task = Task(
+            name=f"Task {t}", endpoint_path=f"/api/data{t}", dest_table=f"table{t}"
+        )
         test_db.add(task)
         test_db.flush()
 
@@ -409,8 +424,8 @@ def test_list_all_runs(client: TestClient, test_db):
             run = TaskRun(
                 task_id=task.id,
                 status=TaskStatus.SUCCESS.value,
-                started_at=datetime.now(UTC),
-                ended_at=datetime.now(UTC),
+                started_at=datetime.now(timezone.utc),
+                ended_at=datetime.now(timezone.utc),
             )
             test_db.add(run)
     test_db.commit()

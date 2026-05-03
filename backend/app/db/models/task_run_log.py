@@ -1,6 +1,5 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, String, Text, ForeignKey, Integer
 from sqlalchemy.sql import func
-
 from app.db.session import Base
 from app.db.types import ID_TYPE
 
@@ -10,7 +9,10 @@ class TaskRunLog(Base):
 
     id = Column(ID_TYPE, primary_key=True, autoincrement=True)
     task_run_id = Column(
-        ID_TYPE, ForeignKey("task_run.id", ondelete="CASCADE"), nullable=False, index=True
+        ID_TYPE,
+        ForeignKey("task_run.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     row_number = Column(Integer, nullable=True)  # NULL if log entry is not row-specific
     column_name = Column(String(255), nullable=True)

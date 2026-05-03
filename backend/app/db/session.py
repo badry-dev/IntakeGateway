@@ -1,9 +1,7 @@
-import logging
-
 from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
-
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from app.core.config import settings
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +22,9 @@ else:
     engine_kwargs["max_overflow"] = 5
 
 engine = create_engine(settings.APP_DATABASE_URL, **engine_kwargs)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
+SessionLocal = sessionmaker(
+    autocommit=False, autoflush=False, bind=engine, expire_on_commit=False
+)
 
 
 def init_app_database() -> None:

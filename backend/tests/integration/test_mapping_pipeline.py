@@ -10,6 +10,9 @@ Tests cover:
 """
 
 import pytest
+from datetime import datetime, date
+from app.services.normalizer import flatten
+from app.services.mapper import apply_transforms
 
 
 class TestNestedJsonFlattening:
@@ -29,7 +32,11 @@ class TestNestedJsonFlattening:
 
     def test_flatten_three_level_nested(self):
         """Test flattening three-level nested structure."""
-        data = {"company": {"department": {"team": {"name": "Engineering", "lead": "Alice"}}}}
+        data = {
+            "company": {
+                "department": {"team": {"name": "Engineering", "lead": "Alice"}}
+            }
+        }
         # Expected: {"company.department.team.name": "Engineering", ...}
         assert "company" in data
 
@@ -52,7 +59,9 @@ class TestNestedJsonFlattening:
 
     def test_flatten_with_null_values(self):
         """Test flattening structure with null values."""
-        data = {"user": {"name": "John", "middleName": None, "email": "john@example.com"}}
+        data = {
+            "user": {"name": "John", "middleName": None, "email": "john@example.com"}
+        }
         # Should preserve null values in flattening
         assert data["user"]["middleName"] is None
 
@@ -78,7 +87,11 @@ class TestNestedJsonFlattening:
     def test_flatten_large_nested_structure(self):
         """Test flattening large complex nested structure."""
         data = {
-            "level1": {"level2": {"level3": {"level4": {"level5": {"value": "deep", "count": 99}}}}}
+            "level1": {
+                "level2": {
+                    "level3": {"level4": {"level5": {"value": "deep", "count": 99}}}
+                }
+            }
         }
         # Should handle 5+ levels of nesting
         assert "level1" in data
@@ -117,7 +130,12 @@ class TestMappingPipeline:
 
     def test_map_multiple_fields(self):
         """Test mapping multiple fields in one record."""
-        source = {"id": "123", "name": "john", "email": "john@example.com", "active": "true"}
+        source = {
+            "id": "123",
+            "name": "john",
+            "email": "john@example.com",
+            "active": "true",
+        }
         # Multiple mappings:
         # id -> ID (to_int)
         # name -> NAME
@@ -265,6 +283,7 @@ class TestTypeConversionScenarios:
     def test_string_to_boolean_conversion(self):
         """Test converting string to boolean."""
         valid_true = ["true", "True", "TRUE", "1", "yes", "Yes", "YES"]
+        valid_false = ["false", "False", "FALSE", "0", "no", "No", "NO"]
         # All should convert properly
         assert len(valid_true) > 0
 

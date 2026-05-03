@@ -5,15 +5,15 @@ Stores connections in an encrypted JSON file using Fernet symmetric encryption.
 File location is configurable via CONNECTIONS_FILE_PATH environment variable.
 """
 
-import json
 import os
+import json
 import uuid
-from datetime import UTC, datetime
 from pathlib import Path
-
+from datetime import datetime, timezone
+from typing import Optional
 from loguru import logger
+from app.core.encryption import encrypt_value, decrypt_value, get_encryption_service
 
-from app.core.encryption import decrypt_value, encrypt_value, get_encryption_service
 
 # Default path (can be overridden via environment variable)
 DEFAULT_CONNECTIONS_PATH = os.getenv("CONNECTIONS_FILE_PATH", "connections.enc")
@@ -125,7 +125,9 @@ class ConnectionStorageService:
 
         return {"version": data.get("version", 1), "connections": masked_connections}
 
-    def get_connection(self, connection_id: str, include_password: bool = False) -> dict | None:
+    def get_connection(
+        self, connection_id: str, include_password: bool = False
+    ) -> Optional[dict]:
         """
         Get a single connection by ID.
 
@@ -158,7 +160,7 @@ class ConnectionStorageService:
             Created connection with masked password
         """
         data = self._read_file()
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         # Generate ID and set metadata
         new_conn = {
@@ -184,7 +186,7 @@ class ConnectionStorageService:
         # Return with masked password
         return {**new_conn, "password": "********"}
 
-    def update_connection(self, connection_id: str, updates: dict) -> dict | None:
+    def update_connection(self, connection_id: str, updates: dict) -> Optional[dict]:
         """
         Update an existing connection.
 
@@ -209,7 +211,7 @@ class ConnectionStorageService:
                 data["connections"][i] = {
                     **conn,
                     **updates,
-                    "updated_at": datetime.now(UTC).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
 
                 self._write_file(data)
@@ -246,7 +248,7 @@ class ConnectionStorageService:
 
         return False
 
-    def get_decrypted_password(self, connection_id: str) -> str | None:
+    def get_decrypted_password(self, connection_id: str) -> Optional[str]:
         """
         Get decrypted password for a connection.
 
@@ -271,7 +273,7 @@ class ConnectionStorageService:
 
 
 # Singleton instance
-_storage_service: ConnectionStorageService | None = None
+_storage_service: Optional[ConnectionStorageService] = None
 
 
 def get_connection_storage() -> ConnectionStorageService:

@@ -1,9 +1,9 @@
 """Pydantic schemas for task scheduling"""
 
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional
 from datetime import datetime
-
 from croniter import croniter
-from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ScheduleCreate(BaseModel):
@@ -34,14 +34,17 @@ class ScheduleCreate(BaseModel):
 class ScheduleUpdate(BaseModel):
     """Schema for updating a schedule"""
 
-    cron_expression: str | None = Field(
-        None, min_length=5, max_length=50, description="Cron expression (e.g., '0 2 * * *')"
+    cron_expression: Optional[str] = Field(
+        None,
+        min_length=5,
+        max_length=50,
+        description="Cron expression (e.g., '0 2 * * *')",
     )
-    is_active: bool | None = Field(None, description="Whether schedule is active")
+    is_active: Optional[bool] = Field(None, description="Whether schedule is active")
 
     @field_validator("cron_expression")
     @classmethod
-    def validate_cron(cls, v: str | None) -> str | None:
+    def validate_cron(cls, v: Optional[str]) -> Optional[str]:
         """Validate cron expression if provided"""
         if v is None:
             return v
@@ -62,20 +65,22 @@ class ScheduleOut(BaseModel):
     task_id: int
     cron_expression: str
     is_active: bool
-    last_run_date: datetime | None = None
-    next_run_date: datetime | None = None
+    last_run_date: Optional[datetime] = None
+    next_run_date: Optional[datetime] = None
     created_at: datetime
-    updated_at: datetime | None = None
+    updated_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        from_attributes = True
 
 
 class ScheduleWithTaskName(ScheduleOut):
     """Schedule response with associated task name"""
 
-    task_name: str | None = None
+    task_name: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        from_attributes = True
 
 
 class ScheduleListOut(BaseModel):
@@ -86,4 +91,5 @@ class ScheduleListOut(BaseModel):
     skip: int
     limit: int
 
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        from_attributes = True

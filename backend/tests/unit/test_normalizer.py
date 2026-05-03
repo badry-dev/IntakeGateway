@@ -1,8 +1,7 @@
 """Unit tests for normalizer service"""
 
 import pytest
-
-from app.services.normalizer import flatten, select_records
+from app.services.normalizer import select_records, flatten
 
 
 class TestSelectRecords:
@@ -73,7 +72,10 @@ class TestFlatten:
 
     def test_flatten_nested_dict(self):
         """Test flattening nested dictionary"""
-        obj = {"user": {"name": "Alice", "email": "alice@example.com"}, "status": "active"}
+        obj = {
+            "user": {"name": "Alice", "email": "alice@example.com"},
+            "status": "active",
+        }
 
         result = flatten(obj)
 
