@@ -1,4 +1,6 @@
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
+
 from jsonpath_ng.ext import parse as jsonpath_parse
 
 

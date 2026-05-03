@@ -1,6 +1,6 @@
-from typing import Any
 import re
-from datetime import datetime, date
+from datetime import date, datetime
+from typing import Any
 
 
 class ValidationError:
@@ -42,7 +42,7 @@ def validate_type(column: str, value: Any, expected_type: str) -> ValidationErro
         "int": lambda v: isinstance(v, int) or (isinstance(v, str) and v.isdigit()),
         "float": lambda v: isinstance(v, (int, float)) or (isinstance(v, str) and is_float(v)),
         "string": lambda v: (
-            isinstance(v, (str, int, float)) or isinstance(v, bool) == False
+            isinstance(v, (str, int, float)) or not isinstance(v, bool)
         ),  # Coerce numbers to string
         "bool": lambda v: (
             isinstance(v, bool)

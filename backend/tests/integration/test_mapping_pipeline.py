@@ -9,10 +9,8 @@ Tests cover:
 - Database integration with mappings
 """
 
+
 import pytest
-from datetime import datetime, date
-from app.services.normalizer import flatten
-from app.services.mapper import apply_transforms
 
 
 class TestNestedJsonFlattening:
@@ -273,7 +271,6 @@ class TestTypeConversionScenarios:
     def test_string_to_boolean_conversion(self):
         """Test converting string to boolean."""
         valid_true = ["true", "True", "TRUE", "1", "yes", "Yes", "YES"]
-        valid_false = ["false", "False", "FALSE", "0", "no", "No", "NO"]
         # All should convert properly
         assert len(valid_true) > 0
 

@@ -1,14 +1,15 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from croniter import croniter
 from loguru import logger
 from sqlalchemy import select
 
-from app.db.session import SessionLocal
 from app.db.models.task import Task
 from app.db.models.task_schedule import TaskSchedule
+from app.db.session import SessionLocal
 from app.workers.tasks import enqueue_run
 
 
@@ -41,8 +42,8 @@ class TaskScheduler:
             stmt = (
                 select(TaskSchedule, Task)
                 .join(Task, TaskSchedule.task_id == Task.id)
-                .where(TaskSchedule.is_active == True)
-                .where(Task.is_active == True)
+                .where(TaskSchedule.is_active)
+                .where(Task.is_active)
             )
 
             results = self.db.execute(stmt).all()
@@ -88,7 +89,7 @@ class TaskScheduler:
             self.scheduled_jobs[task.id] = job.id
 
             # Update next_run_date in database
-            next_run = croniter(task_schedule.cron_expression, datetime.now(timezone.utc)).get_next(
+            next_run = croniter(task_schedule.cron_expression, datetime.now(UTC)).get_next(
                 datetime
             )
             task_schedule.next_run_date = next_run
@@ -125,11 +126,11 @@ class TaskScheduler:
             )
 
             if task_schedule:
-                task_schedule.last_run_date = datetime.now(timezone.utc)
+                task_schedule.last_run_date = datetime.now(UTC)
 
                 # Calculate next run
                 next_run = croniter(
-                    task_schedule.cron_expression, datetime.now(timezone.utc)
+                    task_schedule.cron_expression, datetime.now(UTC)
                 ).get_next(datetime)
                 task_schedule.next_run_date = next_run
 

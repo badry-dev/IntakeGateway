@@ -1,19 +1,20 @@
 """Unit tests for mapper service"""
 
 import pytest
+
+from app.db.models.column_mapping import ColumnMapping
 from app.services.mapper import (
-    trim,
-    upper,
-    lower,
-    to_int,
-    to_float,
-    to_bool,
     apply_transform,
     apply_transforms,
+    lower,
     map_row_with_column_mappings,
     map_rows,
+    to_bool,
+    to_float,
+    to_int,
+    trim,
+    upper,
 )
-from app.db.models.column_mapping import ColumnMapping
 
 
 class TestTransformFunctions:

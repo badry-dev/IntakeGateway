@@ -4,11 +4,12 @@ Integration tests for connection API routes.
 Tests the full API endpoints with mocked database connections.
 """
 
-import pytest
 import os
 import tempfile
+from unittest.mock import patch
+
+import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
 
 # Set test environment before importing app modules
 os.environ["APP_ENV"] = "development"
@@ -112,7 +113,7 @@ class TestConnectionRoutes:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["success"] == False
+        assert not data["success"]
         assert "message" in data
 
     def test_get_connection_not_found(self, client):

@@ -1,14 +1,16 @@
 """Unit tests for database models"""
 
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, timezone
-from app.db.models.task import Task
-from app.db.models.task_run import TaskRun
-from app.db.models.task_schedule import TaskSchedule
-from app.db.models.task_log import TaskLog
-from app.db.models.task_run_log import TaskRunLog
+
 from app.db.models.column_mapping import ColumnMapping
-from app.db.session import Base, SessionLocal
+from app.db.models.task import Task
+from app.db.models.task_log import TaskLog
+from app.db.models.task_run import TaskRun
+from app.db.models.task_run_log import TaskRunLog
+from app.db.models.task_schedule import TaskSchedule
+from app.db.session import Base
 
 
 class TestTaskModel:
@@ -122,7 +124,7 @@ class TestTaskScheduleModel:
 
     def test_task_schedule_with_dates(self):
         """Test TaskSchedule with execution dates"""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         schedule = TaskSchedule(
             task_id=1, cron_expression="0 * * * *", last_run_date=now, next_run_date=now
         )

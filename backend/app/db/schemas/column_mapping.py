@@ -1,8 +1,9 @@
 """Pydantic schemas for Column Mapping operations."""
 
-from pydantic import BaseModel, Field
-from typing import Any, Optional
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class ColumnMappingCreate(BaseModel):
@@ -13,7 +14,7 @@ class ColumnMappingCreate(BaseModel):
         description="API response field name (supports dot notation for nested fields)",
     )
     dest_column: str = Field(..., description="Oracle database column name")
-    transform_rules: Optional[list[str]] = Field(
+    transform_rules: list[str] | None = Field(
         None,
         description="List of transforms to apply: trim, upper, lower, to_int, to_float, to_bool, to_timestamp, to_date, format_date",
     )
@@ -23,10 +24,10 @@ class ColumnMappingCreate(BaseModel):
 class ColumnMappingUpdate(BaseModel):
     """Input schema for updating an existing column mapping."""
 
-    source_field: Optional[str] = Field(None, description="API response field name")
-    dest_column: Optional[str] = Field(None, description="Oracle database column name")
-    transform_rules: Optional[list[str]] = Field(None, description="List of transforms")
-    is_active: Optional[bool] = Field(None, description="Enable/disable this mapping")
+    source_field: str | None = Field(None, description="API response field name")
+    dest_column: str | None = Field(None, description="Oracle database column name")
+    transform_rules: list[str] | None = Field(None, description="List of transforms")
+    is_active: bool | None = Field(None, description="Enable/disable this mapping")
 
 
 class ColumnMappingOut(BaseModel):
@@ -36,10 +37,10 @@ class ColumnMappingOut(BaseModel):
     task_id: int
     source_field: str
     dest_column: str
-    transform_rules: Optional[list[str]] = None
+    transform_rules: list[str] | None = None
     is_active: bool
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -60,9 +61,9 @@ class FieldPreview(BaseModel):
     field_type: str = Field(
         ..., description="Inferred type: string, number, boolean, null, array, object"
     )
-    sample_value: Optional[Any] = Field(None, description="Sample value from the response")
+    sample_value: Any | None = Field(None, description="Sample value from the response")
     is_nested: bool = Field(default=False, description="Whether this is a nested field")
-    parent_path: Optional[str] = Field(None, description="Parent path for nested fields")
+    parent_path: str | None = Field(None, description="Parent path for nested fields")
 
 
 class PreviewFieldsRequest(BaseModel):
@@ -71,26 +72,26 @@ class PreviewFieldsRequest(BaseModel):
     use_auto_fetch: bool = Field(
         False, description="Whether to auto-fetch from API or use manual sample_json"
     )
-    sample_json: Optional[dict] = Field(
+    sample_json: dict | None = Field(
         None, description="Manual sample JSON (required if use_auto_fetch=False)"
     )
     method: str = Field("GET", description="HTTP method for auto-fetch")
-    url: Optional[str] = Field(
+    url: str | None = Field(
         None, description="API URL for auto-fetch (required if use_auto_fetch=True)"
     )
-    headers: Optional[dict] = Field(None, description="HTTP headers for auto-fetch")
-    params: Optional[dict] = Field(None, description="Query parameters for auto-fetch")
-    json_body: Optional[dict] = Field(None, description="Request body for auto-fetch")
-    record_path: Optional[str] = Field(None, description="JSONPath to extract records")
+    headers: dict | None = Field(None, description="HTTP headers for auto-fetch")
+    params: dict | None = Field(None, description="Query parameters for auto-fetch")
+    json_body: dict | None = Field(None, description="Request body for auto-fetch")
+    record_path: str | None = Field(None, description="JSONPath to extract records")
     # Authentication fields (Phase 7)
-    auth_type: Optional[str] = Field(
+    auth_type: str | None = Field(
         None,
         description="Authentication type: 'none', 'bearer', 'api_key', 'basic', 'oauth'",
     )
-    api_key: Optional[str] = Field(None, description="API key (encrypted)")
-    username: Optional[str] = Field(None, description="Username for Basic auth")
-    password: Optional[str] = Field(None, description="Password for Basic auth (encrypted)")
-    oauth_config: Optional[dict] = Field(None, description="OAuth configuration")
+    api_key: str | None = Field(None, description="API key (encrypted)")
+    username: str | None = Field(None, description="Username for Basic auth")
+    password: str | None = Field(None, description="Password for Basic auth (encrypted)")
+    oauth_config: dict | None = Field(None, description="OAuth configuration")
 
 
 class FieldsPreviewResponse(BaseModel):
@@ -112,7 +113,7 @@ class OracleColumn(BaseModel):
         ..., description="Oracle data type (e.g., VARCHAR2, NUMBER, DATE, TIMESTAMP)"
     )
     nullable: bool = Field(..., description="Whether column allows NULL")
-    max_length: Optional[int] = Field(None, description="Max length for string types")
+    max_length: int | None = Field(None, description="Max length for string types")
 
 
 class OracleColumnsResponse(BaseModel):
@@ -142,7 +143,7 @@ class TransformSuggestionsResponse(BaseModel):
     requires_transform: bool = Field(
         ..., description="Whether a transform is necessary for compatibility"
     )
-    warning_message: Optional[str] = Field(None, description="Warning if types are incompatible")
+    warning_message: str | None = Field(None, description="Warning if types are incompatible")
 
 
 class MappingTemplate(BaseModel):
@@ -152,5 +153,5 @@ class MappingTemplate(BaseModel):
     mappings: list[ColumnMappingCreate] = Field(
         ..., description="List of mappings in this template"
     )
-    description: Optional[str] = Field(None, description="Template description")
-    created_at: Optional[datetime] = None
+    description: str | None = Field(None, description="Template description")
+    created_at: datetime | None = None

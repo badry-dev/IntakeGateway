@@ -4,12 +4,13 @@ Analyzes source field types (from API response) and destination column types (fr
 to recommend appropriate transforms for data type compatibility.
 """
 
+import logging
+
 from app.db.schemas.column_mapping import (
     TransformSuggestion,
     TransformSuggestionsResponse,
 )
 from app.services.oracle_metadata import get_oracle_type_category
-import logging
 
 logger = logging.getLogger(__name__)
 

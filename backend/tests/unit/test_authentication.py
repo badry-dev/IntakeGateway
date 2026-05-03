@@ -1,8 +1,10 @@
 """Unit tests for authentication logic"""
 
-import pytest
 import base64
-from app.core.encryption import EncryptionService, encrypt_value, decrypt_value
+
+import pytest
+
+from app.core.encryption import EncryptionService, decrypt_value, encrypt_value
 from app.services.api_connector import apply_authentication
 
 
@@ -210,7 +212,6 @@ class TestAuthenticationIntegration:
 
     def test_bearer_token_with_special_characters(self):
         """Test Bearer token with special characters"""
-        headers = {}
         token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
         encrypted_token = encrypt_value(token)
 
@@ -220,7 +221,6 @@ class TestAuthenticationIntegration:
 
     def test_basic_auth_with_special_characters_in_password(self):
         """Test Basic auth with special characters in password"""
-        headers = {}
         username = "user@domain.com"
         password = "p@$$w0rd!#%&"
         encrypted_password = encrypt_value(password)

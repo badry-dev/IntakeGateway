@@ -4,11 +4,13 @@ Provides utilities to query Oracle's system views for table and column metadata,
 used for field type detection and validation during column mapping configuration.
 """
 
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
-from app.db.schemas.column_mapping import OracleColumn
 import logging
+
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from app.db.schemas.column_mapping import OracleColumn
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,7 @@ def get_table_columns(db: Session, table_name: str) -> list[OracleColumn]:
             raise ValueError(f"Invalid table name: {table_name}")
 
         sql_query = f"""
-            SELECT 
+            SELECT
                 COLUMN_NAME,
                 DATA_TYPE,
                 NULLABLE,
@@ -197,7 +199,7 @@ def get_column_info(db: Session, table_name: str, column_name: str) -> OracleCol
         column_name_upper = column_name.upper()
 
         query = text("""
-            SELECT 
+            SELECT
                 COLUMN_NAME,
                 DATA_TYPE,
                 NULLABLE,

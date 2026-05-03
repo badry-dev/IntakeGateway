@@ -9,28 +9,29 @@ Endpoints:
 - GET /api/v1/oracle/tables/{table_name}/columns - Query Oracle metadata
 """
 
+import json
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from app.db.session import SessionLocal
-from app.db.models.task import Task
+
 from app.db.models.column_mapping import ColumnMapping
+from app.db.models.task import Task
 from app.db.schemas.column_mapping import (
-    ColumnMappingCreate,
+    BulkMappingCreate,
     ColumnMappingOut,
     ColumnMappingUpdate,
-    BulkMappingCreate,
+    FieldPreview,
     FieldsPreviewResponse,
     OracleColumnsResponse,
-    TransformSuggestionsResponse,
     PreviewFieldsRequest,
-    FieldPreview,
+    TransformSuggestionsResponse,
 )
+from app.db.session import SessionLocal
 from app.services.api_connector import fetch_sample_response, get_record_type_info
 from app.services.connection_pool import get_session as get_destination_session
 from app.services.oracle_metadata import get_table_columns
 from app.services.transform_suggester import suggest_transforms
-import json
-import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

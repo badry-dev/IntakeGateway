@@ -1,16 +1,18 @@
 """Unit tests for validator service"""
 
+from datetime import date, datetime
+
 import pytest
-from datetime import datetime, date
+
 from app.services.validator import (
     ValidationError,
-    validate_required,
-    validate_type,
-    validate_length,
     validate_format,
+    validate_length,
     validate_range,
+    validate_required,
     validate_row,
     validate_rows,
+    validate_type,
 )
 
 

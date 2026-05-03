@@ -1,14 +1,15 @@
 """Unit tests for runner service"""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
-from app.services.runner import run_import, insert_batch, log_step, log_row_error
-from app.db.models.task import Task
-from app.db.models.task_run import TaskRun, TaskStatus
-from app.db.models.task_log import TaskLog
-from app.db.models.task_run_log import TaskRunLog
+
+import pytest
+
 from app.db.models.column_mapping import ColumnMapping
+from app.db.models.task import Task
+from app.db.models.task_log import TaskLog
+from app.db.models.task_run import TaskRun, TaskStatus
+from app.db.models.task_run_log import TaskRunLog
+from app.services.runner import insert_batch, log_row_error, log_step, run_import
 
 
 @pytest.fixture

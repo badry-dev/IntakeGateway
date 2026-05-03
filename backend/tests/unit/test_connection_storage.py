@@ -4,11 +4,11 @@ Unit tests for connection storage service.
 Tests encryption, CRUD operations, and file handling.
 """
 
-import pytest
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+
+import pytest
 
 # Set test environment before importing app modules
 os.environ["APP_ENV"] = "development"
@@ -217,13 +217,13 @@ class TestConnectionStorage:
 
         result = storage_service.delete_connection(created["id"])
 
-        assert result == True
+        assert result
         assert storage_service.get_connection(created["id"]) is None
 
     def test_delete_connection_not_found(self, storage_service):
         """Test deleting non-existent connection returns False"""
         result = storage_service.delete_connection("non-existent-id")
-        assert result == False
+        assert not result
 
     def test_delete_one_connection_keeps_the_rest(self, storage_service):
         """Deleting one connection should keep the others intact."""
@@ -410,7 +410,7 @@ class TestConnectionTestFunction:
             }
         )
 
-        assert result["success"] == False
+        assert not result["success"]
         assert "message" in result
         assert result["latency_ms"] is None
         assert result["server_version"] is None

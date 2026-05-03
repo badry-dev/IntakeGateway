@@ -1,5 +1,6 @@
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text  # noqa: F401
 from sqlalchemy.sql import func
+
 from app.db.session import Base
 from app.db.types import ID_TYPE, JSONText
 

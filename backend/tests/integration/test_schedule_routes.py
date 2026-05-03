@@ -1,16 +1,15 @@
 """Integration tests for schedule API routes"""
 
-import pytest
-from datetime import datetime, timezone
-from sqlalchemy.orm import Session
-from fastapi.testclient import TestClient
-from croniter import croniter
+from datetime import UTC, datetime
 
-from app.main import app
-from app.db.session import SessionLocal
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
 from app.db.models.task import Task
 from app.db.models.task_schedule import TaskSchedule
-from app.services.scheduler import get_scheduler
+from app.db.session import SessionLocal
+from app.main import app
 
 client = TestClient(app)
 
@@ -147,8 +146,8 @@ class TestGetSchedule:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=True,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(schedule)
         db.commit()
@@ -185,8 +184,8 @@ class TestUpdateSchedule:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=True,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(schedule)
         db.commit()
@@ -208,8 +207,8 @@ class TestUpdateSchedule:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=True,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(schedule)
         db.commit()
@@ -242,8 +241,8 @@ class TestDeleteSchedule:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=True,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(schedule)
         db.commit()
@@ -296,8 +295,8 @@ class TestListSchedules:
                 task_id=task.id,
                 cron_expression="0 2 * * *",
                 is_active=True,
-                next_run_date=datetime.now(timezone.utc),
-                created_at=datetime.now(timezone.utc),
+                next_run_date=datetime.now(UTC),
+                created_at=datetime.now(UTC),
             )
             db.add(schedule)
             db.commit()
@@ -318,8 +317,8 @@ class TestListSchedules:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=True,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(active_schedule)
         db.commit()
@@ -340,8 +339,8 @@ class TestListSchedules:
             task_id=inactive_task.id,
             cron_expression="0 2 * * *",
             is_active=False,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(inactive_schedule)
         db.commit()
@@ -366,8 +365,8 @@ class TestResumeSchedule:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=False,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(schedule)
         db.commit()

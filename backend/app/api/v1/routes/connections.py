@@ -5,20 +5,21 @@ Provides CRUD operations for database connections with encrypted storage.
 Connections are tested before saving to prevent invalid configurations.
 """
 
-from fastapi import APIRouter, HTTPException
-from loguru import logger
-from app.db.schemas.connection import (
-    ConnectionCreate,
-    ConnectionUpdate,
-    ConnectionOut,
-    ConnectionListOut,
-    ConnectionTestRequest,
-    ConnectionTestResult,
-)
-from app.services.connection_storage import get_connection_storage
-from app.services.connection_pool import test_connection, invalidate_pool
 from datetime import datetime
 
+from fastapi import APIRouter, HTTPException
+from loguru import logger
+
+from app.db.schemas.connection import (
+    ConnectionCreate,
+    ConnectionListOut,
+    ConnectionOut,
+    ConnectionTestRequest,
+    ConnectionTestResult,
+    ConnectionUpdate,
+)
+from app.services.connection_pool import invalidate_pool, test_connection
+from app.services.connection_storage import get_connection_storage
 
 router = APIRouter(prefix="/api/v1/connections", tags=["connections"])
 

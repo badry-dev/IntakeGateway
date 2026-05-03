@@ -1,18 +1,19 @@
 """Unit tests for upsert and skip logic in runner service (Phase 8)"""
 
-import pytest
 from unittest.mock import MagicMock, patch
-from sqlalchemy.exc import IntegrityError, DatabaseError
 
+import pytest
+from sqlalchemy.exc import DatabaseError, IntegrityError
+
+from app.db.models.task import Task
 from app.services.runner import (
-    RowStatus,
     RowResult,
-    _should_skip,
+    RowStatus,
     _get_record_key,
     _process_single_row,
+    _should_skip,
     process_rows_with_upsert,
 )
-from app.db.models.task import Task
 
 
 @pytest.fixture

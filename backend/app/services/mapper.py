@@ -1,9 +1,12 @@
-from typing import Any, Callable
-from sqlalchemy.orm import Session
-from app.db.models.column_mapping import ColumnMapping
 import json
+from collections.abc import Callable
 from datetime import datetime
+from typing import Any
+
 from loguru import logger
+from sqlalchemy.orm import Session
+
+from app.db.models.column_mapping import ColumnMapping
 
 
 # Transform registry for field transformations
@@ -226,7 +229,7 @@ def get_column_mappings(db: Session, task_id: int) -> list[ColumnMapping]:
     """Fetch active column mappings for a task"""
     return (
         db.query(ColumnMapping)
-        .filter(ColumnMapping.task_id == task_id, ColumnMapping.is_active == True)
+        .filter(ColumnMapping.task_id == task_id, ColumnMapping.is_active)
         .all()
     )
 

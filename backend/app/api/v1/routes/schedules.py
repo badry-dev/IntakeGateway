@@ -1,23 +1,23 @@
 """Schedule management API routes"""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from datetime import datetime, timezone
-from typing import Optional
-from croniter import croniter
-from loguru import logger
+from datetime import UTC, datetime
 
-from app.db.session import get_db
-from app.db.models.task_schedule import TaskSchedule
+from croniter import croniter
+from fastapi import APIRouter, Depends, HTTPException, Query
+from loguru import logger
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
 from app.db.models.task import Task
+from app.db.models.task_schedule import TaskSchedule
 from app.db.schemas.schedule import (
     ScheduleCreate,
-    ScheduleUpdate,
-    ScheduleOut,
-    ScheduleWithTaskName,
     ScheduleListOut,
+    ScheduleOut,
+    ScheduleUpdate,
+    ScheduleWithTaskName,
 )
+from app.db.session import get_db
 from app.services.scheduler import get_scheduler
 
 router = APIRouter(prefix="/api/v1", tags=["schedules"])
@@ -55,7 +55,7 @@ def create_schedule(task_id: int, payload: ScheduleCreate, db: Session = Depends
         )
 
     # Calculate next run date
-    cron = croniter(payload.cron_expression, datetime.now(timezone.utc))
+    cron = croniter(payload.cron_expression, datetime.now(UTC))
     next_run = cron.get_next(datetime)
 
     # Create schedule
@@ -64,7 +64,7 @@ def create_schedule(task_id: int, payload: ScheduleCreate, db: Session = Depends
         cron_expression=payload.cron_expression,
         is_active=payload.is_active,
         next_run_date=next_run,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
     db.add(schedule)
@@ -144,13 +144,13 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, db: Session = Dep
     if payload.cron_expression is not None:
         schedule.cron_expression = payload.cron_expression
         # Recalculate next run date
-        cron = croniter(payload.cron_expression, datetime.now(timezone.utc))
+        cron = croniter(payload.cron_expression, datetime.now(UTC))
         schedule.next_run_date = cron.get_next(datetime)
 
     if payload.is_active is not None:
         schedule.is_active = payload.is_active
 
-    schedule.updated_at = datetime.now(timezone.utc)
+    schedule.updated_at = datetime.now(UTC)
 
     db.commit()
     db.refresh(schedule)
@@ -204,7 +204,7 @@ def delete_schedule(schedule_id: int, db: Session = Depends(get_db)):
 def list_schedules(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
-    is_active: Optional[bool] = Query(None),
+    is_active: bool | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """
@@ -265,7 +265,7 @@ def resume_schedule(schedule_id: int, db: Session = Depends(get_db)):
 
     # Reset failure tracking and reactivate
     schedule.is_active = True
-    schedule.updated_at = datetime.now(timezone.utc)
+    schedule.updated_at = datetime.now(UTC)
 
     db.commit()
 

@@ -6,7 +6,7 @@ Encryption key is stored in environment variable for security.
 """
 
 import os
-import base64
+
 from cryptography.fernet import Fernet
 from loguru import logger
 

@@ -4,24 +4,22 @@ Integration tests for API endpoints.
 Tests the HTTP API workflows for task management, run triggering, and result retrieval.
 """
 
-import pytest
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from datetime import datetime, timezone
 
-from app.main import app
-from app.db.session import Base
-from app.db.models.task import Task
-from app.db.models.task_run import TaskRun, TaskStatus
-from app.db.models.task_log import TaskLog
-from app.db.models.task_run_log import TaskRunLog
-from app.db.session import SessionLocal
-from app.api.v1.routes.tasks import get_db
 from app.api.v1.routes.runs import get_db as runs_get_db
-
+from app.api.v1.routes.tasks import get_db
+from app.db.models.task import Task
+from app.db.models.task_log import TaskLog
+from app.db.models.task_run import TaskRun, TaskStatus
+from app.db.session import Base
+from app.main import app
 
 # ============================================================================
 # Test Database Setup
@@ -217,7 +215,7 @@ def test_update_task(client: TestClient, sample_task):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Updated Task"
-    assert data["is_active"] == False
+    assert not data["is_active"]
 
 
 def test_delete_task(client: TestClient, sample_task):
@@ -260,8 +258,8 @@ def test_list_task_runs(client: TestClient, sample_task, test_db):
             status=TaskStatus.SUCCESS.value if i % 2 == 0 else TaskStatus.FAILED.value,
             rows_fetched=100 + i,
             rows_inserted=100 + i,
-            started_at=datetime.now(timezone.utc),
-            ended_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            ended_at=datetime.now(UTC),
         )
         test_db.add(run)
     test_db.commit()
@@ -279,7 +277,7 @@ def test_list_task_runs_with_status_filter(client: TestClient, sample_task, test
         run = TaskRun(
             task_id=sample_task.id,
             status=status.value,
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
         )
         test_db.add(run)
     test_db.commit()
@@ -300,8 +298,8 @@ def test_get_task_run(client: TestClient, sample_task, test_db):
         rows_fetched=100,
         rows_inserted=100,
         error_count=0,
-        started_at=datetime.now(timezone.utc),
-        ended_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        ended_at=datetime.now(UTC),
     )
     test_db.add(run)
     test_db.commit()
@@ -351,8 +349,8 @@ def test_task_stats(client: TestClient, sample_task, test_db):
             rows_fetched=fetched,
             rows_inserted=inserted,
             error_count=failed,
-            started_at=datetime.now(timezone.utc),
-            ended_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            ended_at=datetime.now(UTC),
         )
         test_db.add(run)
     test_db.commit()
@@ -391,8 +389,8 @@ def test_get_run_by_id(client: TestClient, sample_task, test_db):
         status=TaskStatus.SUCCESS.value,
         rows_fetched=100,
         rows_inserted=100,
-        started_at=datetime.now(timezone.utc),
-        ended_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        ended_at=datetime.now(UTC),
     )
     test_db.add(run)
     test_db.commit()
@@ -416,8 +414,8 @@ def test_list_all_runs(client: TestClient, test_db):
             run = TaskRun(
                 task_id=task.id,
                 status=TaskStatus.SUCCESS.value,
-                started_at=datetime.now(timezone.utc),
-                ended_at=datetime.now(timezone.utc),
+                started_at=datetime.now(UTC),
+                ended_at=datetime.now(UTC),
             )
             test_db.add(run)
     test_db.commit()

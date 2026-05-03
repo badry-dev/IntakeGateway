@@ -1,5 +1,6 @@
-from sqlalchemy import Column, DateTime, String, ForeignKey
+from sqlalchemy import Column, DateTime, ForeignKey, String
 from sqlalchemy.sql import func
+
 from app.db.session import Base
 from app.db.types import ID_TYPE, JSONText
 
