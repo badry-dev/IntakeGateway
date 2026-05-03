@@ -31,6 +31,8 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = "dev-secret"
     FRONTEND_URL: str = "http://localhost:3000"
+    ENCRYPTION_KEY: str | None = None
+    CONNECTIONS_FILE_PATH: str = "connections.enc"
 
     @property
     def destination_sqlalchemy_url(self) -> str:

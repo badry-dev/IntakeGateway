@@ -10,6 +10,8 @@ import os
 from cryptography.fernet import Fernet
 from loguru import logger
 
+from app.core.config import settings
+
 
 class EncryptionService:
     """Service for encrypting and decrypting sensitive data"""
@@ -24,7 +26,7 @@ class EncryptionService:
         Raises:
             ValueError: If no encryption key provided
         """
-        key = encryption_key or os.getenv("ENCRYPTION_KEY")
+        key = encryption_key or settings.ENCRYPTION_KEY or os.getenv("ENCRYPTION_KEY")
 
         if not key:
             # For development, generate a temporary key (NOT for production!)

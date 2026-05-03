@@ -19,3 +19,6 @@ frontend/.codex-run/
 *.db
 connections.enc
 backend/connections.enc
+frontend/*.log
+backend/*.log
+backend/intakegateway_app.db.backup-*

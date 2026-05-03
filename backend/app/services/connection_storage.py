@@ -13,10 +13,11 @@ from pathlib import Path
 
 from loguru import logger
 
+from app.core.config import settings
 from app.core.encryption import decrypt_value, encrypt_value, get_encryption_service
 
 # Default path (can be overridden via environment variable)
-DEFAULT_CONNECTIONS_PATH = os.getenv("CONNECTIONS_FILE_PATH", "connections.enc")
+DEFAULT_CONNECTIONS_PATH = os.getenv("CONNECTIONS_FILE_PATH", settings.CONNECTIONS_FILE_PATH)
 
 
 class ConnectionStorageService:
