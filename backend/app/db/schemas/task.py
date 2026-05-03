@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Reusable regex for safe API parameter / column identifiers (cursor injection guard).
 _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
@@ -251,8 +251,7 @@ class TaskOut(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskLogOut(BaseModel):
@@ -265,8 +264,7 @@ class TaskLogOut(BaseModel):
     details: Any | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskRunLogOut(BaseModel):
@@ -281,8 +279,7 @@ class TaskRunLogOut(BaseModel):
     source_value: str | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskRunOut(BaseModel):
@@ -312,8 +309,7 @@ class TaskRunOut(BaseModel):
     execution_logs: list[TaskLogOut] = []
     row_errors: list[TaskRunLogOut] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskWithAuthOut(TaskOut):

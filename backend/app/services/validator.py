@@ -39,8 +39,12 @@ def validate_type(column: str, value: Any, expected_type: str) -> ValidationErro
         return None
 
     type_validators = {
-        "int": lambda v: isinstance(v, int) or (isinstance(v, str) and v.isdigit()),
-        "float": lambda v: isinstance(v, (int, float)) or (isinstance(v, str) and is_float(v)),
+        "int": lambda v: (isinstance(v, int) and not isinstance(v, bool))
+        or (isinstance(v, str) and v.isdigit()),
+        "float": lambda v: (
+            (isinstance(v, (int, float)) and not isinstance(v, bool))
+            or (isinstance(v, str) and is_float(v))
+        ),
         "string": lambda v: (
             isinstance(v, str) or (isinstance(v, (int, float)) and not isinstance(v, bool))
         ),  # Coerce numbers to string, reject booleans

@@ -33,10 +33,10 @@ def on_task_failure(self, exc, task_id, args, kwargs, einfo):
     """Callback for task failure - log to database and dead-letter queue"""
     import_task_id = args[0] if args else kwargs.get("task_id")
 
-    # Escape curly braces in error message to prevent loguru formatting issues
     raw_error_msg = str(exc)
-    error_msg = raw_error_msg.replace("{", "{{").replace("}", "}}")
-    logger.error(f"Task import failed for task_id={import_task_id}: {error_msg}", exc_info=exc)
+    logger.opt(exception=exc).error(
+        "Task import failed for task_id={}: {}", import_task_id, raw_error_msg
+    )
 
     # Update TaskRun status to FAILED if exists
     try:
@@ -54,7 +54,7 @@ def on_task_failure(self, exc, task_id, args, kwargs, einfo):
 
         if task_run:
             task_run.status = TaskStatus.FAILED.value
-            task_run.error_message = raw_error_msg
+            task_run.error_message = raw_error_msg[:2000]
             task_run.ended_at = datetime.now(UTC)
             db.commit()
             logger.info(f"Updated TaskRun {task_run.id} status to FAILED")

@@ -323,7 +323,20 @@ async def preview_fields(
             raw_response = sample_json
 
         # Get field information (flatten and infer types)
-        fields_info, flattened_data = get_record_type_info(raw_response, task.record_path)
+        flattened_data = get_record_type_info(raw_response, task.record_path)
+
+        # Convert dict to list of FieldPreview objects
+        fields_info = []
+        for field_name, field_info in flattened_data.items():
+            fields_info.append(
+                FieldPreview(
+                    field_name=field_name,
+                    field_type=field_info.get("field_type", "string"),
+                    sample_value=field_info.get("sample_value"),
+                    is_nested=field_info.get("parent_path") is not None,
+                    parent_path=field_info.get("parent_path"),
+                )
+            )
 
         logger.info(f"Generated field preview for task {task_id}: {len(fields_info)} fields")
 

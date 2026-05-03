@@ -110,7 +110,7 @@ $ python -m pytest tests/ -q --ignore=tests/unit/test_encryption.py
 327 passed, 60 failed, 21 errors in 26s
 ```
 
-The 60 failures and 21 errors are **pre-existing** issues in integration tests that require live Oracle/Redis, or deeper production-code fixes (OAuth token caching edge cases, runner mock mismatch). They were not introduced by this review. The `test_encryption.py` exclusion is a local environment issue only: the system-installed `cryptography 41.0.7` (Debian) conflicts with pip's `cryptography 42.0.8`; CI (clean Docker environment) will run that suite without error.
+The 60 failures and 21 errors are **pre-existing** issues in integration tests that require live Oracle/Redis, or deeper production-code fixes (OAuth token caching edge cases, runner mock mismatch). They were not introduced by this review. The `test_encryption.py` exclusion is a local environment issue only: the system-installed `cryptography 41.0.7` (Debian) conflicts with pip's `cryptography 46.0.7`; CI (clean Docker environment) will run that suite without error.
 
 ---
 
@@ -149,7 +149,7 @@ All 4 schema files used `class Config: from_attributes = True` (Pydantic V1 styl
 - `croniter` — imported in `app/api/v1/routes/schedules.py`, not declared. Added `croniter==2.0.7`.
 
 **Version pinning**
-- `cryptography` changed from `>=41.0.0` to `==42.0.8` to prevent silent upgrades that could break FIPS-mode environments or introduce API changes.
+- `cryptography` changed from `>=41.0.0` to `==46.0.7` to prevent silent upgrades that could break FIPS-mode environments or introduce API changes.
 
 **Security scanning in CI**
 - `pip-audit` added to `requirements-dev.txt` and wired into `backend-audit` CI job.

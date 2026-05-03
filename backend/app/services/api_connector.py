@@ -112,8 +112,7 @@ def apply_authentication(
         # oauth_token_service.get_access_token() and passed in plaintext via
         # `oauth_config['_already_decrypted']=True` — in that case skip decrypt.
         if not oauth_config or "access_token" not in oauth_config:
-            logger.warning("OAuth auth configured but no access_token available; skipping auth")
-            return headers
+            raise ValueError("OAuth auth configured but no access_token available")
 
         if oauth_config.get("_already_decrypted"):
             access_token = oauth_config["access_token"]

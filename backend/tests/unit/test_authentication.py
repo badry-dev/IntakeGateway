@@ -163,17 +163,12 @@ class TestApplyAuthentication:
         with pytest.raises(ValueError, match="Username and password required"):
             apply_authentication(headers={}, auth_type="basic", username="user", password=None)
 
-    def test_oauth_auth_not_fully_implemented(self):
-        """Test that OAuth auth type is recognized but not fully implemented"""
-        headers = {}
-
-        # Should not raise error, just log warning (Phase 7.5 feature)
-        result = apply_authentication(
-            headers=headers, auth_type="oauth", oauth_config={"client_id": "test"}
-        )
-
-        # Should return unchanged headers (OAuth not implemented yet)
-        assert result == headers
+    def test_oauth_missing_access_token_raises(self):
+        """Test that OAuth auth with no access_token raises ValueError"""
+        with pytest.raises(ValueError, match="no access_token available"):
+            apply_authentication(
+                headers={}, auth_type="oauth", oauth_config={"client_id": "test"}
+            )
 
     def test_unknown_auth_type(self):
         """Test that unknown auth type is handled gracefully"""

@@ -41,6 +41,7 @@ jobs:
       APP_DATABASE_URL: sqlite:///./test_app.db
       APP_ENV: dev
       SECRET_KEY: ${{ secrets.SECRET_KEY || 'ci-test-only-not-for-production' }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || 'GRAuWlz_10CTaEXbPwOUgzBy24TZNJ5CPM2gy-kPeCA=' }}
       REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v4
