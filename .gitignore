@@ -2,6 +2,9 @@
 __pycache__/
 .pytest_cache/
 .mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 .env
 .venv/
 dist/
@@ -13,6 +16,6 @@ build/
 project progress/
 backend/.codex-run/
 frontend/.codex-run/
-backend/intakegateway_app.db
+*.db
 connections.enc
 backend/connections.enc

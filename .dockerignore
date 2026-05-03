@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+coverage.xml
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Encrypted secrets (never include in image)
+connections.enc
+*.enc
+
+# Local DB files
+*.db
+*.sqlite
+
+# Frontend (built separately)
+frontend/node_modules/
+frontend/dist/
+
+# Git and CI
+.git/
+.github/
+
+# Dev files
+docs/
+README.md
+CONTRIBUTING.md
+claude.md
+DOCUMENTATION_INDEX.md
+PROMPT.md
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

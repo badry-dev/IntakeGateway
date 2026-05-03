@@ -10,10 +10,8 @@ Tests cover:
 """
 
 import pytest
-from datetime import datetime, date
-from app.services.normalizer import flatten_nested_json
-from app.services.mapper import apply_transforms
-from app.services.validator import validate_mapping
+
+from app.services.normalizer import flatten
 
 
 class TestNestedJsonFlattening:
@@ -22,24 +20,23 @@ class TestNestedJsonFlattening:
     def test_flatten_single_level_nested(self):
         """Test flattening single-level nested structure."""
         data = {"user": {"name": "John", "email": "john@example.com"}}
-        # Expected: {"user.name": "John", "user.email": "john@example.com"}
-        assert "user" in data
+        result = flatten(data)
+        assert result == {"user.name": "John", "user.email": "john@example.com"}
 
     def test_flatten_two_level_nested(self):
         """Test flattening two-level nested structure."""
         data = {"user": {"address": {"city": "NYC", "state": "NY"}}}
-        # Expected: {"user.address.city": "NYC", "user.address.state": "NY"}
-        assert "user" in data
+        result = flatten(data)
+        assert result == {"user.address.city": "NYC", "user.address.state": "NY"}
 
     def test_flatten_three_level_nested(self):
         """Test flattening three-level nested structure."""
-        data = {
-            "company": {
-                "department": {"team": {"name": "Engineering", "lead": "Alice"}}
-            }
+        data = {"company": {"department": {"team": {"name": "Engineering", "lead": "Alice"}}}}
+        result = flatten(data)
+        assert result == {
+            "company.department.team.name": "Engineering",
+            "company.department.team.lead": "Alice",
         }
-        # Expected: {"company.department.team.name": "Engineering", ...}
-        assert "company" in data
 
     def test_flatten_mixed_types_nested(self):
         """Test flattening nested structure with mixed types."""
@@ -52,26 +49,36 @@ class TestNestedJsonFlattening:
                 "metadata": {"created": "2025-01-29", "updated": "2025-01-29"},
             }
         }
-        # Should handle integers, strings, booleans, arrays, and objects
-        assert isinstance(data["user"]["id"], int)
-        assert isinstance(data["user"]["name"], str)
-        assert isinstance(data["user"]["tags"], list)
-        assert isinstance(data["user"]["metadata"], dict)
+        result = flatten(data)
+        assert result == {
+            "user.id": 123,
+            "user.name": "John",
+            "user.active": True,
+            "user.tags": ["admin", "user"],
+            "user.metadata.created": "2025-01-29",
+            "user.metadata.updated": "2025-01-29",
+        }
 
     def test_flatten_with_null_values(self):
         """Test flattening structure with null values."""
-        data = {
-            "user": {"name": "John", "middleName": None, "email": "john@example.com"}
+        data = {"user": {"name": "John", "middleName": None, "email": "john@example.com"}}
+        result = flatten(data)
+        assert result == {
+            "user.name": "John",
+            "user.middleName": None,
+            "user.email": "john@example.com",
         }
-        # Should preserve null values in flattening
-        assert data["user"]["middleName"] is None
+        assert "user.middleName" in result
+        assert result["user.middleName"] is None
 
     def test_flatten_empty_nested_objects(self):
         """Test flattening with empty nested objects."""
         data = {"user": {"name": "John", "metadata": {}, "tags": []}}
-        # Empty objects and arrays should be handled
-        assert isinstance(data["user"]["metadata"], dict)
-        assert isinstance(data["user"]["tags"], list)
+        result = flatten(data)
+        # Empty dict produces no keys; list is kept as a leaf value
+        assert result["user.name"] == "John"
+        assert result["user.tags"] == []
+        assert "user.metadata" not in result
 
     def test_flatten_special_characters_in_keys(self):
         """Test flattening with special characters in field names."""
@@ -82,34 +89,40 @@ class TestNestedJsonFlattening:
                 "email@address": "john@example.com",
             }
         }
-        # Should handle keys with hyphens, underscores, @
-        assert "user-data" in data
+        result = flatten(data)
+        assert result == {
+            "user-data.first_name": "John",
+            "user-data.last-name": "Doe",
+            "user-data.email@address": "john@example.com",
+        }
 
     def test_flatten_large_nested_structure(self):
         """Test flattening large complex nested structure."""
         data = {
-            "level1": {
-                "level2": {
-                    "level3": {"level4": {"level5": {"value": "deep", "count": 99}}}
-                }
-            }
+            "level1": {"level2": {"level3": {"level4": {"level5": {"value": "deep", "count": 99}}}}}
         }
-        # Should handle 5+ levels of nesting
-        assert "level1" in data
+        result = flatten(data)
+        assert result == {
+            "level1.level2.level3.level4.level5.value": "deep",
+            "level1.level2.level3.level4.level5.count": 99,
+        }
 
     def test_flatten_preserves_all_values(self):
         """Test that flattening doesn't lose data."""
         data = {"a": {"b": "value1"}, "c": {"d": {"e": "value2"}}}
-        # All values should be preserved after flattening
-        assert "a" in data
-        assert "c" in data
+        result = flatten(data)
+        assert result == {"a.b": "value1", "c.d.e": "value2"}
+        assert len(result) == 2
 
     def test_flatten_consistent_dot_notation(self):
         """Test consistent dot notation in flattening."""
         data = {"a": {"b": {"c": "value"}}}
-        # Path should be: a.b.c
-        # Not: a-b-c or a/b/c or a[b][c]
-        assert "a" in data
+        result = flatten(data)
+        assert "a.b.c" in result
+        assert result["a.b.c"] == "value"
+        # Confirm no alternative separator is used
+        assert "a-b-c" not in result
+        assert "a/b/c" not in result
 
 
 class TestMappingPipeline:
@@ -284,7 +297,6 @@ class TestTypeConversionScenarios:
     def test_string_to_boolean_conversion(self):
         """Test converting string to boolean."""
         valid_true = ["true", "True", "TRUE", "1", "yes", "Yes", "YES"]
-        valid_false = ["false", "False", "FALSE", "0", "no", "No", "NO"]
         # All should convert properly
         assert len(valid_true) > 0
 

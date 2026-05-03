@@ -6,6 +6,8 @@ import { BrowserRouter } from 'react-router-dom'
 import { TaskWizard } from '@/pages/TaskWizard'
 
 vi.mock('@/hooks/api', () => ({
+  useConnections: vi.fn().mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false }),
+  useBackfillTask: vi.fn().mockReturnValue({ mutateAsync: vi.fn(), isPending: false }),
   useCreateTask: vi.fn(),
   useCreateMappings: vi.fn(),
   useOracleColumns: vi.fn(),
@@ -47,22 +49,22 @@ describe('TaskWizard', () => {
 
   it('should have Previous button disabled on first step', () => {
     render(<TaskWizard />, { wrapper: createWrapper() })
-    expect(screen.getByText('Previous')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
   })
 
   it('should have Next button disabled when required fields empty', () => {
     render(<TaskWizard />, { wrapper: createWrapper() })
-    expect(screen.getByText('Next')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
   })
 
-  it('should enable Next button when required fields filled', async () => {
+  it('should keep Next disabled until all required fields filled including connection', async () => {
     const user = userEvent.setup()
     render(<TaskWizard />, { wrapper: createWrapper() })
 
     await user.type(screen.getByPlaceholderText(/Sync Users/), 'My Task')
     await user.type(screen.getByPlaceholderText(/users, products/), 'MY_TABLE')
-
-    expect(screen.getByText('Next')).not.toBeDisabled()
+    // Connection not selected — Next remains disabled
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
   })
 
   it('should show Back button', () => {

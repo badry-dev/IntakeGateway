@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { Dashboard } from '@/pages/Dashboard'
 
 vi.mock('@/hooks/api', () => ({
+  useConnections: vi.fn().mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false }),
   useRecentRuns: vi.fn(),
   useTasks: vi.fn(),
 }))

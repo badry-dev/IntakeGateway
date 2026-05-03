@@ -3,7 +3,6 @@ import json
 from sqlalchemy import BigInteger, Integer, Text
 from sqlalchemy.types import TypeDecorator
 
-
 ID_TYPE = BigInteger().with_variant(Integer, "sqlite")
 
 

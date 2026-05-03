@@ -1,4 +1,5 @@
 import oracledb
+
 from app.core.config import settings
 
 pool: oracledb.SessionPool | None = None

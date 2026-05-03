@@ -1,4 +1,5 @@
 """Unit tests for OAuth2 token acquisition and refresh (P0-A)."""
+
 import os
 
 os.environ.setdefault("ENCRYPTION_KEY", "ancg5kTQFZYtqA3LyzV9MrixQ1HyC95gitaGyZ1nDPk=")
@@ -6,13 +7,13 @@ os.environ.setdefault("ENCRYPTION_KEY", "ancg5kTQFZYtqA3LyzV9MrixQ1HyC95gitaGyZ1
 import asyncio
 import datetime as _dt
 from types import SimpleNamespace
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch
 
 import httpx
 import pytest
 
-from app.services import oauth_token_service
 from app.core.encryption import decrypt_value, encrypt_value
+from app.services import oauth_token_service
 
 
 def _make_task(**overrides):
@@ -91,14 +92,14 @@ async def test_client_credentials_fetch_persists_encrypted_token(monkeypatch):
     assert task.oauth_access_token != "ACCESS-1"
     assert decrypt_value(task.oauth_access_token) == "ACCESS-1"
     assert task.oauth_token_expires_at is not None
-    assert task.oauth_token_expires_at > _dt.datetime.now(_dt.timezone.utc)
+    assert task.oauth_token_expires_at > _dt.datetime.now(_dt.UTC)
     assert db.commits == 1
 
 
 @pytest.mark.asyncio
 async def test_token_reused_within_skew_no_new_post():
     """A cached, unexpired token must not trigger another HTTP call."""
-    expires = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=600)
+    expires = _dt.datetime.now(_dt.UTC) + _dt.timedelta(seconds=600)
     task = _make_task(
         oauth_access_token=encrypt_value("CACHED-TOKEN"),
         oauth_token_expires_at=expires,
@@ -124,7 +125,7 @@ async def test_token_reused_within_skew_no_new_post():
 @pytest.mark.asyncio
 async def test_force_refresh_overrides_cache():
     """force_refresh=True must hit the token endpoint even if cache is valid."""
-    expires = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=600)
+    expires = _dt.datetime.now(_dt.UTC) + _dt.timedelta(seconds=600)
     task = _make_task(
         oauth_access_token=encrypt_value("OLD-TOKEN"),
         oauth_token_expires_at=expires,
@@ -185,9 +186,10 @@ def test_lock_registry_keyed_by_loop_id():
     asyncio.run(_one_shot(holder1))
     asyncio.run(_one_shot(holder2))
 
-    assert holder1 and holder2 and holder1[0] != holder2[0]
     # Both invocations should have succeeded without "<Lock> is bound to a
-    # different event loop" raising.
+    # different event loop" raising. We verify both calls completed, not loop IDs
+    # (CPython may reuse memory addresses for short-lived loops).
+    assert holder1 and holder2
 
 
 @pytest.mark.asyncio

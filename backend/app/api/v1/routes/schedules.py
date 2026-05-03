@@ -1,32 +1,30 @@
 """Schedule management API routes"""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from datetime import datetime, timezone
-from typing import Optional
-from croniter import croniter
-from loguru import logger
+from datetime import UTC, datetime
 
-from app.db.session import get_db
-from app.db.models.task_schedule import TaskSchedule
+from croniter import croniter
+from fastapi import APIRouter, Depends, HTTPException, Query
+from loguru import logger
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
 from app.db.models.task import Task
+from app.db.models.task_schedule import TaskSchedule
 from app.db.schemas.schedule import (
     ScheduleCreate,
-    ScheduleUpdate,
-    ScheduleOut,
-    ScheduleWithTaskName,
     ScheduleListOut,
+    ScheduleOut,
+    ScheduleUpdate,
+    ScheduleWithTaskName,
 )
+from app.db.session import get_db
 from app.services.scheduler import get_scheduler
 
 router = APIRouter(prefix="/api/v1", tags=["schedules"])
 
 
 @router.post("/tasks/{task_id}/schedule", response_model=ScheduleOut, status_code=201)
-def create_schedule(
-    task_id: int, payload: ScheduleCreate, db: Session = Depends(get_db)
-):
+def create_schedule(task_id: int, payload: ScheduleCreate, db: Session = Depends(get_db)):
     """
     Create a new cron schedule for a task
 
@@ -48,9 +46,7 @@ def create_schedule(
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
     # Check if schedule already exists for this task
-    existing_schedule = (
-        db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
-    )
+    existing_schedule = db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
     if existing_schedule:
         logger.warning(f"Task {task_id} already has a schedule")
         raise HTTPException(
@@ -59,7 +55,7 @@ def create_schedule(
         )
 
     # Calculate next run date
-    cron = croniter(payload.cron_expression, datetime.now(timezone.utc))
+    cron = croniter(payload.cron_expression, datetime.now(UTC))
     next_run = cron.get_next(datetime)
 
     # Create schedule
@@ -68,7 +64,7 @@ def create_schedule(
         cron_expression=payload.cron_expression,
         is_active=payload.is_active,
         next_run_date=next_run,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
     db.add(schedule)
@@ -118,17 +114,13 @@ def get_schedule(task_id: int, db: Session = Depends(get_db)):
     schedule = db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
 
     if not schedule:
-        raise HTTPException(
-            status_code=404, detail=f"No schedule found for task {task_id}"
-        )
+        raise HTTPException(status_code=404, detail=f"No schedule found for task {task_id}")
 
     return schedule
 
 
 @router.put("/schedules/{schedule_id}", response_model=ScheduleOut)
-def update_schedule(
-    schedule_id: int, payload: ScheduleUpdate, db: Session = Depends(get_db)
-):
+def update_schedule(schedule_id: int, payload: ScheduleUpdate, db: Session = Depends(get_db)):
     """
     Update an existing schedule
 
@@ -152,13 +144,13 @@ def update_schedule(
     if payload.cron_expression is not None:
         schedule.cron_expression = payload.cron_expression
         # Recalculate next run date
-        cron = croniter(payload.cron_expression, datetime.now(timezone.utc))
+        cron = croniter(payload.cron_expression, datetime.now(UTC))
         schedule.next_run_date = cron.get_next(datetime)
 
     if payload.is_active is not None:
         schedule.is_active = payload.is_active
 
-    schedule.updated_at = datetime.now(timezone.utc)
+    schedule.updated_at = datetime.now(UTC)
 
     db.commit()
     db.refresh(schedule)
@@ -212,7 +204,7 @@ def delete_schedule(schedule_id: int, db: Session = Depends(get_db)):
 def list_schedules(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
-    is_active: Optional[bool] = Query(None),
+    is_active: bool | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """
@@ -226,9 +218,7 @@ def list_schedules(
     Returns:
         List of schedules with pagination info
     """
-    query = db.query(TaskSchedule, Task.name).outerjoin(
-        Task, TaskSchedule.task_id == Task.id
-    )
+    query = db.query(TaskSchedule, Task.name).outerjoin(Task, TaskSchedule.task_id == Task.id)
 
     # Filter by active status if provided
     if is_active is not None:
@@ -251,9 +241,7 @@ def list_schedules(
         }
         schedules.append(ScheduleWithTaskName(**schedule_dict))
 
-    return ScheduleListOut(
-        schedules=schedules, total_count=total_count, skip=skip, limit=limit
-    )
+    return ScheduleListOut(schedules=schedules, total_count=total_count, skip=skip, limit=limit)
 
 
 @router.post("/schedules/{schedule_id}/resume", status_code=200)
@@ -277,7 +265,7 @@ def resume_schedule(schedule_id: int, db: Session = Depends(get_db)):
 
     # Reset failure tracking and reactivate
     schedule.is_active = True
-    schedule.updated_at = datetime.now(timezone.utc)
+    schedule.updated_at = datetime.now(UTC)
 
     db.commit()
 

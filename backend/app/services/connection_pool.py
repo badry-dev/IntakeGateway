@@ -8,13 +8,14 @@ Supports Oracle, PostgreSQL, and MySQL databases.
 
 import time
 from urllib.parse import quote_plus
-import oracledb
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.engine import Engine
-from loguru import logger
-from app.services.connection_storage import get_connection_storage
 
+import oracledb
+from loguru import logger
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.services.connection_storage import get_connection_storage
 
 # Cache of engines by connection_id
 _engine_cache: dict[str, Engine] = {}
@@ -69,10 +70,7 @@ def build_connection_url(conn: dict, password: str) -> str:
         )
     elif db_type == "postgresql":
         database = conn.get("database", "postgres")
-        return (
-            f"postgresql+psycopg2://{username}:{encoded_password}"
-            f"@{host}:{port}/{database}"
-        )
+        return f"postgresql+psycopg2://{username}:{encoded_password}@{host}:{port}/{database}"
     elif db_type == "mysql":
         database = conn.get("database", "")
         return f"mysql+pymysql://{username}:{encoded_password}@{host}:{port}/{database}"
@@ -196,9 +194,7 @@ def test_connection(config: dict) -> dict:
             pool_size=1,
             max_overflow=0,
             pool_timeout=10,
-            connect_args={"connect_timeout": 10}
-            if test_config.get("db_type") != "oracle"
-            else {},
+            connect_args={"connect_timeout": 10} if test_config.get("db_type") != "oracle" else {},
         )
 
         start = time.time()
@@ -208,9 +204,7 @@ def test_connection(config: dict) -> dict:
 
             # Get server version based on database type
             if db_type == "oracle":
-                result = conn.execute(
-                    text("SELECT banner FROM v$version WHERE ROWNUM = 1")
-                )
+                result = conn.execute(text("SELECT banner FROM v$version WHERE ROWNUM = 1"))
                 version = result.scalar()
             elif db_type == "postgresql":
                 result = conn.execute(text("SELECT version()"))

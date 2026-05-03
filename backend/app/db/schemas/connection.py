@@ -5,9 +5,10 @@ These schemas handle validation and serialization for the connection management 
 Passwords are excluded from response schemas for security.
 """
 
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Literal
 from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class ConnectionBase(BaseModel):
@@ -21,22 +22,16 @@ class ConnectionBase(BaseModel):
     )
     host: str = Field(..., min_length=1, max_length=500, description="Database host")
     port: int = Field(default=1521, ge=1, le=65535, description="Database port")
-    username: str = Field(
-        ..., min_length=1, max_length=200, description="Database username"
-    )
-    service_name: Optional[str] = Field(
-        None, max_length=100, description="Oracle service name"
-    )
-    database: Optional[str] = Field(
+    username: str = Field(..., min_length=1, max_length=200, description="Database username")
+    service_name: str | None = Field(None, max_length=100, description="Oracle service name")
+    database: str | None = Field(
         None, max_length=200, description="Database name (PostgreSQL/MySQL)"
     )
-    connection_options: Optional[dict] = Field(
-        None, description="Additional driver options"
-    )
+    connection_options: dict | None = Field(None, description="Additional driver options")
 
     @field_validator("service_name")
     @classmethod
-    def validate_service_name(cls, v: Optional[str], info) -> Optional[str]:
+    def validate_service_name(cls, v: str | None, info) -> str | None:
         """Require service_name for Oracle connections"""
         db_type = info.data.get("db_type", "oracle")
         if db_type == "oracle" and not v:
@@ -45,7 +40,7 @@ class ConnectionBase(BaseModel):
 
     @field_validator("database")
     @classmethod
-    def validate_database(cls, v: Optional[str], info) -> Optional[str]:
+    def validate_database(cls, v: str | None, info) -> str | None:
         """Require database for PostgreSQL/MySQL connections"""
         db_type = info.data.get("db_type", "oracle")
         if db_type in ("postgresql", "mysql") and not v:
@@ -62,17 +57,15 @@ class ConnectionCreate(ConnectionBase):
 class ConnectionUpdate(BaseModel):
     """Schema for updating a connection - all fields optional"""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    db_type: Optional[Literal["oracle", "postgresql", "mysql"]] = None
-    host: Optional[str] = Field(None, min_length=1, max_length=500)
-    port: Optional[int] = Field(None, ge=1, le=65535)
-    username: Optional[str] = Field(None, min_length=1, max_length=200)
-    password: Optional[str] = Field(
-        None, min_length=1, description="Only update if provided"
-    )
-    service_name: Optional[str] = Field(None, max_length=100)
-    database: Optional[str] = Field(None, max_length=200)
-    connection_options: Optional[dict] = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    db_type: Literal["oracle", "postgresql", "mysql"] | None = None
+    host: str | None = Field(None, min_length=1, max_length=500)
+    port: int | None = Field(None, ge=1, le=65535)
+    username: str | None = Field(None, min_length=1, max_length=200)
+    password: str | None = Field(None, min_length=1, description="Only update if provided")
+    service_name: str | None = Field(None, max_length=100)
+    database: str | None = Field(None, max_length=200)
+    connection_options: dict | None = None
 
 
 class ConnectionOut(BaseModel):
@@ -84,9 +77,9 @@ class ConnectionOut(BaseModel):
     host: str
     port: int
     username: str
-    service_name: Optional[str] = None
-    database: Optional[str] = None
-    connection_options: Optional[dict] = None
+    service_name: str | None = None
+    database: str | None = None
+    connection_options: dict | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -109,8 +102,8 @@ class ConnectionTestRequest(BaseModel):
     port: int = Field(default=1521, ge=1, le=65535)
     username: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
-    service_name: Optional[str] = None
-    database: Optional[str] = None
+    service_name: str | None = None
+    database: str | None = None
 
 
 class ConnectionTestResult(BaseModel):
@@ -118,5 +111,5 @@ class ConnectionTestResult(BaseModel):
 
     success: bool
     message: str
-    latency_ms: Optional[int] = None
-    server_version: Optional[str] = None
+    latency_ms: int | None = None
+    server_version: str | None = None

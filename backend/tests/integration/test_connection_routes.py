@@ -4,11 +4,12 @@ Integration tests for connection API routes.
 Tests the full API endpoints with mocked database connections.
 """
 
-import pytest
 import os
 import tempfile
+from unittest.mock import patch
+
+import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
 
 # Set test environment before importing app modules
 os.environ["APP_ENV"] = "development"
@@ -112,7 +113,7 @@ class TestConnectionRoutes:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["success"] == False
+        assert not data["success"]
         assert "message" in data
 
     def test_get_connection_not_found(self, client):
@@ -155,9 +156,7 @@ class TestConnectionRoutesWithMockedDB:
             }
             yield mock
 
-    def test_create_connection_success(
-        self, client, mock_test_connection, temp_connections_file
-    ):
+    def test_create_connection_success(self, client, mock_test_connection, temp_connections_file):
         """Test successfully creating a connection"""
         response = client.post(
             "/api/v1/connections/",
@@ -187,9 +186,7 @@ class TestConnectionRoutesWithMockedDB:
         delete_resp = client.delete(f"/api/v1/connections/{conn_id}")
         assert delete_resp.status_code == 204
 
-    def test_create_and_list_connections(
-        self, client, mock_test_connection, temp_connections_file
-    ):
+    def test_create_and_list_connections(self, client, mock_test_connection, temp_connections_file):
         """Test creating multiple connections and listing them"""
         # Create first connection
         resp1 = client.post(
@@ -224,9 +221,7 @@ class TestConnectionRoutesWithMockedDB:
         assert data["total_count"] == 2
         assert len(data["connections"]) == 2
 
-    def test_update_connection(
-        self, client, mock_test_connection, temp_connections_file
-    ):
+    def test_update_connection(self, client, mock_test_connection, temp_connections_file):
         """Test updating a connection"""
         # Create connection
         create_resp = client.post(
@@ -252,9 +247,7 @@ class TestConnectionRoutesWithMockedDB:
         assert update_resp.status_code == 200
         assert update_resp.json()["name"] == "Updated Name"
 
-    def test_delete_connection(
-        self, client, mock_test_connection, temp_connections_file
-    ):
+    def test_delete_connection(self, client, mock_test_connection, temp_connections_file):
         """Test deleting a connection"""
         # Create connection
         create_resp = client.post(
@@ -277,9 +270,7 @@ class TestConnectionRoutesWithMockedDB:
         get_resp = client.get(f"/api/v1/connections/{conn_id}")
         assert get_resp.status_code == 404
 
-    def test_get_single_connection(
-        self, client, mock_test_connection, temp_connections_file
-    ):
+    def test_get_single_connection(self, client, mock_test_connection, temp_connections_file):
         """Test getting a single connection by ID"""
         # Create connection
         create_resp = client.post(

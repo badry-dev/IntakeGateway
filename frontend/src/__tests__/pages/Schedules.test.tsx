@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Schedules } from '@/pages/Schedules'
 
 vi.mock('@/hooks/api', () => ({
+  useConnections: vi.fn().mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false }),
   useListSchedules: vi.fn(),
   useTasks: vi.fn(),
 }))

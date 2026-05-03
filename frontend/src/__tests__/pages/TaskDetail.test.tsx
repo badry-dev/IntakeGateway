@@ -5,6 +5,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { TaskDetail } from '@/pages/TaskDetail'
 
 vi.mock('@/hooks/api', () => ({
+  useConnections: vi.fn().mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false }),
+  useBackfillTask: vi.fn().mockReturnValue({ mutateAsync: vi.fn(), isPending: false }),
   useTask: vi.fn(),
   useUpdateTask: vi.fn(),
   useDeleteTask: vi.fn(),

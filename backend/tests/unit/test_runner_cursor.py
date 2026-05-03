@@ -1,10 +1,12 @@
 """Unit tests for cursor / backfill / replay semantics in runner.run_import (P0-C)."""
+
 import os
 
-os.environ.setdefault("ENCRYPTION_KEY", "ancg5kTQFZYtqA3LyzV9MrixQ1HyC95gitaGyZ1nDPk=")
+os.environ.setdefault(
+    "ENCRYPTION_KEY", "ancg5kTQFZYtqA3LyzV9MrixQ1HyC95gitaGyZ1nDPk="
+)  # test-only key
 
-import asyncio
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -38,8 +40,7 @@ async def test_replay_refused_when_upsert_disabled_and_not_forced():
     fake_db = MagicMock()
     fake_db.get.return_value = fake_task
 
-    with patch.object(runner, "set_task_context"), \
-         patch.object(runner, "clear_task_context"):
+    with patch.object(runner, "set_task_context"), patch.object(runner, "clear_task_context"):
         with pytest.raises(ValueError, match="Replay refused"):
             await runner.run_import(
                 task_id=1,
@@ -62,8 +63,7 @@ async def test_invalid_cursor_param_name_raises_before_run_creation():
     fake_db = MagicMock()
     fake_db.get.return_value = fake_task
 
-    with patch.object(runner, "set_task_context"), \
-         patch.object(runner, "clear_task_context"):
+    with patch.object(runner, "set_task_context"), patch.object(runner, "clear_task_context"):
         with pytest.raises(ValueError, match="cursor_param_name"):
             await runner.run_import(task_id=1, db=fake_db)
 
@@ -80,7 +80,6 @@ async def test_invalid_cursor_field_raises():
     fake_db = MagicMock()
     fake_db.get.return_value = fake_task
 
-    with patch.object(runner, "set_task_context"), \
-         patch.object(runner, "clear_task_context"):
+    with patch.object(runner, "set_task_context"), patch.object(runner, "clear_task_context"):
         with pytest.raises(ValueError, match="cursor_field"):
             await runner.run_import(task_id=1, db=fake_db)

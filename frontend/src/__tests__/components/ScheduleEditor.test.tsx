@@ -17,12 +17,10 @@ describe('ScheduleEditor', () => {
     expect(screen.getByText('Create Schedule')).toBeInTheDocument()
   })
 
-  it('validates required cron expression', async () => {
-    const user = userEvent.setup()
+  it('validates required cron expression', () => {
     render(<ScheduleEditor taskId={1} onSave={mockOnSave} />)
-
-    await user.click(screen.getByText('Create Schedule'))
-    expect(screen.getByText('Cron expression is required')).toBeInTheDocument()
+    // Button disabled when cron is empty — this is the UI validation
+    expect(screen.getByRole('button', { name: 'Create Schedule' })).toBeDisabled()
     expect(mockOnSave).not.toHaveBeenCalled()
   })
 
@@ -80,7 +78,7 @@ describe('ScheduleEditor', () => {
 
   it('disables save button when loading', () => {
     render(<ScheduleEditor taskId={1} onSave={mockOnSave} isLoading />)
-    expect(screen.getByText('Create Schedule')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Create Schedule' })).toBeDisabled()
   })
 
   it('shows crontab.guru link', () => {

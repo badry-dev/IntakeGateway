@@ -1,26 +1,32 @@
 """Integration tests for schedule API routes"""
 
-import pytest
-from datetime import datetime, timezone
-from sqlalchemy.orm import Session
-from fastapi.testclient import TestClient
-from croniter import croniter
+from datetime import UTC, datetime
 
-from app.main import app
-from app.db.session import SessionLocal
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
 from app.db.models.task import Task
 from app.db.models.task_schedule import TaskSchedule
-from app.services.scheduler import get_scheduler
+from app.db.session import SessionLocal
+from app.main import app
 
 client = TestClient(app)
 
 
 @pytest.fixture
 def db():
-    """Create a fresh database session for each test"""
+    """Create a fresh database session for each test, with cleanup after."""
     db = SessionLocal()
     yield db
-    db.close()
+    try:
+        db.query(TaskSchedule).delete()
+        db.query(Task).delete()
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 @pytest.fixture
@@ -82,15 +88,11 @@ class TestCreateSchedule:
         payload = {"cron_expression": "0 2 * * *", "is_active": True}
 
         # Create first schedule
-        response1 = client.post(
-            f"/api/v1/tasks/{sample_task.id}/schedule", json=payload
-        )
+        response1 = client.post(f"/api/v1/tasks/{sample_task.id}/schedule", json=payload)
         assert response1.status_code == 201
 
         # Try to create second schedule for same task
-        response2 = client.post(
-            f"/api/v1/tasks/{sample_task.id}/schedule", json=payload
-        )
+        response2 = client.post(f"/api/v1/tasks/{sample_task.id}/schedule", json=payload)
         assert response2.status_code == 400
         assert "already has" in response2.json()["detail"].lower()
 
@@ -144,8 +146,8 @@ class TestGetSchedule:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=True,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(schedule)
         db.commit()
@@ -182,8 +184,8 @@ class TestUpdateSchedule:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=True,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(schedule)
         db.commit()
@@ -205,8 +207,8 @@ class TestUpdateSchedule:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=True,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(schedule)
         db.commit()
@@ -239,8 +241,8 @@ class TestDeleteSchedule:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=True,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(schedule)
         db.commit()
@@ -252,9 +254,7 @@ class TestDeleteSchedule:
         assert response.status_code == 204
 
         # Verify schedule is deleted
-        deleted_schedule = (
-            db.query(TaskSchedule).filter(TaskSchedule.id == schedule_id).first()
-        )
+        deleted_schedule = db.query(TaskSchedule).filter(TaskSchedule.id == schedule_id).first()
         assert deleted_schedule is None
 
     def test_delete_schedule_not_found(self):
@@ -295,8 +295,8 @@ class TestListSchedules:
                 task_id=task.id,
                 cron_expression="0 2 * * *",
                 is_active=True,
-                next_run_date=datetime.now(timezone.utc),
-                created_at=datetime.now(timezone.utc),
+                next_run_date=datetime.now(UTC),
+                created_at=datetime.now(UTC),
             )
             db.add(schedule)
             db.commit()
@@ -317,8 +317,8 @@ class TestListSchedules:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=True,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(active_schedule)
         db.commit()
@@ -339,8 +339,8 @@ class TestListSchedules:
             task_id=inactive_task.id,
             cron_expression="0 2 * * *",
             is_active=False,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(inactive_schedule)
         db.commit()
@@ -365,8 +365,8 @@ class TestResumeSchedule:
             task_id=sample_task.id,
             cron_expression="0 2 * * *",
             is_active=False,
-            next_run_date=datetime.now(timezone.utc),
-            created_at=datetime.now(timezone.utc),
+            next_run_date=datetime.now(UTC),
+            created_at=datetime.now(UTC),
         )
         db.add(schedule)
         db.commit()

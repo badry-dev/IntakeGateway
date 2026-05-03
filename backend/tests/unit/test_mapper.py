@@ -1,19 +1,20 @@
 """Unit tests for mapper service"""
 
 import pytest
+
+from app.db.models.column_mapping import ColumnMapping
 from app.services.mapper import (
-    trim,
-    upper,
-    lower,
-    to_int,
-    to_float,
-    to_bool,
     apply_transform,
     apply_transforms,
+    lower,
     map_row_with_column_mappings,
     map_rows,
+    to_bool,
+    to_float,
+    to_int,
+    trim,
+    upper,
 )
-from app.db.models.column_mapping import ColumnMapping
 
 
 class TestTransformFunctions:
@@ -162,9 +163,7 @@ class TestMapRowWithColumnMappings:
         source_row = {"field1": "value1", "field2": "value2"}
 
         mappings = [
-            ColumnMapping(
-                task_id=1, source_field="field1", dest_column="FIELD1", is_active=True
-            ),
+            ColumnMapping(task_id=1, source_field="field1", dest_column="FIELD1", is_active=True),
             ColumnMapping(
                 task_id=1,
                 source_field="field2",
@@ -222,9 +221,7 @@ class TestMapRows:
         source_rows = [{"id": "1", "name": "Alice"}, {"id": "2", "name": "Bob"}]
 
         mappings = [
-            ColumnMapping(
-                task_id=1, source_field="id", dest_column="ID", is_active=True
-            ),
+            ColumnMapping(task_id=1, source_field="id", dest_column="ID", is_active=True),
             ColumnMapping(
                 task_id=1,
                 source_field="name",
@@ -242,11 +239,7 @@ class TestMapRows:
 
     def test_map_empty_rows(self):
         """Test mapping empty list"""
-        mappings = [
-            ColumnMapping(
-                task_id=1, source_field="id", dest_column="ID", is_active=True
-            )
-        ]
+        mappings = [ColumnMapping(task_id=1, source_field="id", dest_column="ID", is_active=True)]
 
         results = map_rows([], mappings)
 

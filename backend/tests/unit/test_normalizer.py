@@ -1,7 +1,8 @@
 """Unit tests for normalizer service"""
 
 import pytest
-from app.services.normalizer import select_records, flatten
+
+from app.services.normalizer import flatten, select_records
 
 
 class TestSelectRecords:

@@ -1,14 +1,15 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from croniter import croniter
 from loguru import logger
 from sqlalchemy import select
 
-from app.db.session import SessionLocal
 from app.db.models.task import Task
 from app.db.models.task_schedule import TaskSchedule
+from app.db.session import SessionLocal
 from app.workers.tasks import enqueue_run
 
 
@@ -41,8 +42,8 @@ class TaskScheduler:
             stmt = (
                 select(TaskSchedule, Task)
                 .join(Task, TaskSchedule.task_id == Task.id)
-                .where(TaskSchedule.is_active == True)
-                .where(Task.is_active == True)
+                .where(TaskSchedule.is_active)
+                .where(Task.is_active)
             )
 
             results = self.db.execute(stmt).all()
@@ -52,9 +53,7 @@ class TaskScheduler:
             for task_schedule, task in results:
                 self.add_schedule(task_schedule, task)
 
-            logger.info(
-                f"Successfully loaded {len(self.scheduled_jobs)} task schedules"
-            )
+            logger.info(f"Successfully loaded {len(self.scheduled_jobs)} task schedules")
 
         except Exception as e:
             logger.error(f"Failed to load task schedules: {str(e)}")
@@ -66,8 +65,7 @@ class TaskScheduler:
             # Validate cron expression
             if not croniter.is_valid(task_schedule.cron_expression):
                 logger.error(
-                    f"Invalid cron expression for task {task.id}: "
-                    f"{task_schedule.cron_expression}"
+                    f"Invalid cron expression for task {task.id}: {task_schedule.cron_expression}"
                 )
                 return
 
@@ -91,9 +89,7 @@ class TaskScheduler:
             self.scheduled_jobs[task.id] = job.id
 
             # Update next_run_date in database
-            next_run = croniter(
-                task_schedule.cron_expression, datetime.now(timezone.utc)
-            ).get_next(datetime)
+            next_run = croniter(task_schedule.cron_expression, datetime.now(UTC)).get_next(datetime)
             task_schedule.next_run_date = next_run
             self.db.commit()
 
@@ -124,25 +120,22 @@ class TaskScheduler:
 
             # Update last_run_date and next_run_date
             task_schedule = (
-                self.db.query(TaskSchedule)
-                .filter(TaskSchedule.task_id == task_id)
-                .first()
+                self.db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
             )
 
             if task_schedule:
-                task_schedule.last_run_date = datetime.now(timezone.utc)
+                task_schedule.last_run_date = datetime.now(UTC)
 
                 # Calculate next run
-                next_run = croniter(
-                    task_schedule.cron_expression, datetime.now(timezone.utc)
-                ).get_next(datetime)
+                next_run = croniter(task_schedule.cron_expression, datetime.now(UTC)).get_next(
+                    datetime
+                )
                 task_schedule.next_run_date = next_run
 
                 self.db.commit()
 
                 logger.info(
-                    f"Enqueued task {task_id} to Celery (job_id: {result.id}). "
-                    f"Next run: {next_run}"
+                    f"Enqueued task {task_id} to Celery (job_id: {result.id}). Next run: {next_run}"
                 )
 
         except Exception as e:

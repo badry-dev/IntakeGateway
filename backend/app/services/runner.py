@@ -1,15 +1,22 @@
-
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError, DatabaseError
-from loguru import logger
+from datetime import UTC, datetime
+from enum import StrEnum
 
+from loguru import logger
+from sqlalchemy import text
+from sqlalchemy.exc import DatabaseError, IntegrityError
+from sqlalchemy.orm import Session
+
+from app.core.logging import clear_task_context, set_task_context
+from app.db.models.task import Task
+from app.db.models.task_log import TaskLog
+from app.db.models.task_run import TaskRun, TaskStatus
+from app.db.models.task_run_log import TaskRunLog
+from app.db.session import SessionLocal
+from app.services import api_connector, mapper, normalizer, validator
+from app.services.connection_pool import get_session as get_destination_session
 
 # Cursor identifiers go directly into URL query params; whitelist them strictly.
 _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
@@ -27,17 +34,8 @@ def _redact_cursor(value):
     digest = hashlib.sha256(s.encode("utf-8", errors="replace")).hexdigest()[:8]
     return f"<len={len(s)} sha256={digest}>"
 
-from app.db.session import SessionLocal
-from app.db.models.task import Task
-from app.db.models.task_run import TaskRun, TaskStatus
-from app.db.models.task_log import TaskLog
-from app.db.models.task_run_log import TaskRunLog
-from app.services import api_connector, normalizer, mapper, validator
-from app.services.connection_pool import get_session as get_destination_session
-from app.core.logging import set_task_context, clear_task_context
 
-
-class RowStatus(str, Enum):
+class RowStatus(StrEnum):
     """Status of individual row processing"""
 
     INSERTED = "inserted"
@@ -59,10 +57,10 @@ async def run_import(
     task_id: int,
     db: Session = None,
     destination_db: Session = None,
-    cursor_override_start: Optional[str] = None,
-    cursor_override_end: Optional[str] = None,
+    cursor_override_start: str | None = None,
+    cursor_override_end: str | None = None,
     is_backfill: bool = False,
-    replay_of_run_id: Optional[int] = None,
+    replay_of_run_id: int | None = None,
     force_replay: bool = False,
 ) -> dict:
     """
@@ -150,11 +148,16 @@ async def run_import(
         task_run = TaskRun(
             task_id=task_id,
             status=TaskStatus.RUNNING.value,
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
             cursor_start=cursor_start_value,
             is_backfill=is_backfill,
             is_replay=is_replay,
             replay_of_run_id=replay_of_run_id,
+            rows_fetched=0,
+            rows_inserted=0,
+            rows_updated=0,
+            rows_skipped=0,
+            error_count=0,
         )
         db.add(task_run)
         db.commit()
@@ -186,9 +189,7 @@ async def run_import(
                 # The base param already passed the safe-identifier whitelist;
                 # the derived `_to` suffix preserves it. Re-validate defensively.
                 if not _SAFE_IDENTIFIER_RE.match(end_param):
-                    raise ValueError(
-                        f"Derived cursor end param name {end_param!r} is invalid"
-                    )
+                    raise ValueError(f"Derived cursor end param name {end_param!r} is invalid")
                 request_params[end_param] = cursor_override_end
 
         # Step 3: Fetch data from API (with auth resolution + retries + 429 handling)
@@ -202,19 +203,11 @@ async def run_import(
             headers=task.headers_json,
             params=request_params,
             json_body=task.body_json,
-            auth_type=task.auth_type,
-            api_key=task.api_key,
-            username=task.username,
-            password=task.password,
-            oauth_config=task.oauth_config
         )
 
         # Step 4: Extract records using JSONPath
         log_step(
-            db,
-            task_run_id,
-            "EXTRACT_RECORDS",
-            f"Extracting records with path: {task.record_path}",
+            db, task_run_id, "EXTRACT_RECORDS", f"Extracting records with path: {task.record_path}"
         )
 
         records = list(normalizer.select_records(response_data, task.record_path))
@@ -232,7 +225,7 @@ async def run_import(
             # shape returned by the non-empty success path.
             task_run.status = TaskStatus.SUCCESS.value
             task_run.cursor_end = cursor_override_end
-            task_run.ended_at = datetime.now(timezone.utc)
+            task_run.ended_at = datetime.now(UTC)
             # Watermark advancement on empty windows: skip. With zero rows we
             # have no observed source-side max, and silently advancing to
             # cursor_override_end would create off-by-one drift between what
@@ -260,12 +253,7 @@ async def run_import(
         flattened_records = [normalizer.flatten(record) for record in records]
 
         # Step 6: Map source fields to destination columns
-        log_step(
-            db,
-            task_run_id,
-            "MAP_COLUMNS",
-            "Mapping source fields to destination columns",
-        )
+        log_step(db, task_run_id, "MAP_COLUMNS", "Mapping source fields to destination columns")
 
         column_mappings = mapper.get_column_mappings(db, task_id)
 
@@ -274,27 +262,20 @@ async def run_import(
         else:
             # If no mappings defined, use flattened records as-is
             mapped_records = flattened_records
-            logger.warning(
-                f"No column mappings found for task {task_id}, using direct mapping"
-            )
+            logger.warning(f"No column mappings found for task {task_id}, using direct mapping")
 
         # Step 7: Validate rows
-        log_step(
-            db, task_run_id, "VALIDATE", f"Validating {len(mapped_records)} records"
-        )
+        log_step(db, task_run_id, "VALIDATE", f"Validating {len(mapped_records)} records")
 
         # Build column specs from task configuration (simplified - could be enhanced)
         column_specs = {}  # Empty dict = no validation rules (accept all data as-is)
 
         valid_rows, invalid_rows = validator.validate_rows(mapped_records, column_specs)
 
-        logger.info(
-            f"Validation complete: {len(valid_rows)} valid, {len(invalid_rows)} invalid"
-        )
+        logger.info(f"Validation complete: {len(valid_rows)} valid, {len(invalid_rows)} invalid")
 
         # Step 8: Log validation errors
         for idx, invalid_item in enumerate(invalid_rows):
-            row = invalid_item["row"]
             errors = invalid_item["errors"]
             for error in errors:
                 log_row_error(
@@ -368,9 +349,7 @@ async def run_import(
                 )
 
                 task_run.rows_inserted = rows_inserted
-                logger.info(
-                    f"Successfully inserted {rows_inserted} rows to {task.dest_table}"
-                )
+                logger.info(f"Successfully inserted {rows_inserted} rows to {task.dest_table}")
         else:
             task_run.rows_inserted = 0
             task_run.rows_updated = 0
@@ -412,7 +391,7 @@ async def run_import(
         # cursor_field because column mapping renames keys to destination
         # columns and the field name typically won't survive.
 
-        def _max_cursor(rows: list) -> Optional[str]:
+        def _max_cursor(rows: list) -> str | None:
             try:
                 observed = [
                     r.get(cursor_field)
@@ -421,9 +400,7 @@ async def run_import(
                 ]
                 return str(max(observed)) if observed else None
             except (TypeError, ValueError) as exc:
-                logger.warning(
-                    f"Could not compute cursor max for field={cursor_field!r}: {exc}"
-                )
+                logger.warning(f"Could not compute cursor max for field={cursor_field!r}: {exc}")
                 return None
 
         cursor_end_value = cursor_override_end
@@ -435,7 +412,7 @@ async def run_import(
                 cursor_end_value = run_cursor
 
         task_run.cursor_end = cursor_end_value
-        task_run.ended_at = datetime.now(timezone.utc)
+        task_run.ended_at = datetime.now(UTC)
 
         # Watermark advancement: ONLY on full SUCCESS. PARTIAL_SUCCESS leaves
         # the watermark where it was so any failed row gets re-fetched on the
@@ -478,7 +455,7 @@ async def run_import(
             task_run = db.get(TaskRun, task_run_id)
             if task_run:
                 task_run.status = TaskStatus.FAILED.value
-                task_run.ended_at = datetime.now(timezone.utc)
+                task_run.ended_at = datetime.now(UTC)
                 task_run.error_message = str(e)
                 db.commit()
 
@@ -495,9 +472,7 @@ async def run_import(
             db.close()
 
 
-def insert_batch(
-    db: Session, table_name: str, rows: list[dict], batch_size: int = 500
-) -> int:
+def insert_batch(db: Session, table_name: str, rows: list[dict], batch_size: int = 500) -> int:
     """
     Insert rows into the destination table in batches with transaction handling
 
@@ -526,18 +501,14 @@ def insert_batch(
                 column_str = ", ".join(columns)
                 placeholders = ", ".join([f":{col}" for col in columns])
 
-                insert_sql = (
-                    f"INSERT INTO {table_name} ({column_str}) VALUES ({placeholders})"
-                )
+                insert_sql = f"INSERT INTO {table_name} ({column_str}) VALUES ({placeholders})"
 
                 # Execute batch insert
                 db.execute(text(insert_sql), batch)
                 db.commit()
 
                 total_inserted += len(batch)
-                logger.debug(
-                    f"Inserted batch of {len(batch)} rows ({total_inserted}/{len(rows)})"
-                )
+                logger.debug(f"Inserted batch of {len(batch)} rows ({total_inserted}/{len(rows)})")
 
         except Exception as e:
             logger.error(f"Failed to insert batch: {str(e)}")
@@ -567,22 +538,13 @@ def process_rows_with_upsert(
     Returns:
         Dictionary with processing statistics
     """
-    results = {
-        "inserted": 0,
-        "updated": 0,
-        "skipped": 0,
-        "errors": 0,
-        "error_details": [],
-    }
+    results = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0, "error_details": []}
 
     if not rows:
         return results
 
     if app_db is None:
         app_db = db
-
-    upsert_keys = task.upsert_keys or []
-    table_name = task.dest_table
 
     for idx, row in enumerate(rows):
         try:
@@ -599,11 +561,7 @@ def process_rows_with_upsert(
             elif result.status == RowStatus.ERROR:
                 results["errors"] += 1
                 results["error_details"].append(
-                    {
-                        "row_index": idx,
-                        "record_key": result.record_key,
-                        "error": result.message,
-                    }
+                    {"row_index": idx, "record_key": result.record_key, "error": result.message}
                 )
                 # Log to TaskRunLog
                 log_row_error(
@@ -631,9 +589,7 @@ def process_rows_with_upsert(
     return results
 
 
-def _process_single_row(
-    db: Session, task: Task, row: dict, row_index: int
-) -> RowResult:
+def _process_single_row(db: Session, task: Task, row: dict, row_index: int) -> RowResult:
     """
     Process a single row with upsert and skip logic.
 
@@ -683,18 +639,14 @@ def _process_single_row(
         db.rollback()
         error_msg = f"Constraint violation: {str(e)[:200]}"
         logger.warning(f"Row {row_index} ({record_key}): {error_msg}")
-        return RowResult(
-            status=RowStatus.ERROR, record_key=record_key, message=error_msg
-        )
+        return RowResult(status=RowStatus.ERROR, record_key=record_key, message=error_msg)
 
     except DatabaseError as e:
         # Other database errors
         db.rollback()
         error_msg = f"Database error: {str(e)[:200]}"
         logger.error(f"Row {row_index} ({record_key}): {error_msg}")
-        return RowResult(
-            status=RowStatus.ERROR, record_key=record_key, message=error_msg
-        )
+        return RowResult(status=RowStatus.ERROR, record_key=record_key, message=error_msg)
 
 
 def _get_record_key(row: dict, upsert_keys: list) -> str:
@@ -706,7 +658,7 @@ def _get_record_key(row: dict, upsert_keys: list) -> str:
 
 def _find_existing_record(
     db: Session, table_name: str, row: dict, upsert_keys: list
-) -> Optional[dict]:
+) -> dict | None:
     """Check if a record exists in the database based on upsert keys."""
     if not upsert_keys:
         return None
@@ -728,9 +680,7 @@ def _should_skip(task: Task, existing_record: dict) -> bool:
     if not task.skip_column or not task.skip_value:
         return False
 
-    current_value = existing_record.get(
-        task.skip_column.upper()
-    )  # Oracle returns uppercase
+    current_value = existing_record.get(task.skip_column.upper())  # Oracle returns uppercase
     if current_value is None:
         current_value = existing_record.get(task.skip_column.lower())
     if current_value is None:
@@ -766,9 +716,7 @@ def _update_existing_row(db: Session, table_name: str, row: dict, upsert_keys: l
     db.execute(text(update_sql), row)
 
 
-def log_step(
-    db: Session, task_run_id: int, step_name: str, message: str, details: dict = None
-):
+def log_step(db: Session, task_run_id: int, step_name: str, message: str, details: dict = None):
     """Log execution step to TaskLog table"""
     log_entry = TaskLog(
         task_run_id=task_run_id,

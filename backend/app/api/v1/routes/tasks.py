@@ -1,27 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
-from sqlalchemy.orm import Session
-from datetime import datetime, timezone
 from loguru import logger
+from sqlalchemy.orm import Session
 
-from app.db.session import SessionLocal
+from app.core.encryption import encrypt_value
 from app.db.models.task import Task
-from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task_log import TaskLog
+from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import (
-    TaskCreate,
-    TaskOut,
-    TaskRunOut,
-    TaskStatsOut,
-    TaskLogOut,
-    TaskRunLogOut,
     BackfillRequest,
     BackfillResponse,
+    TaskCreate,
+    TaskLogOut,
+    TaskOut,
+    TaskRunLogOut,
+    TaskRunOut,
+    TaskStatsOut,
 )
-from app.workers.tasks import enqueue_run, enqueue_backfill
-from app.core.encryption import encrypt_value
+from app.db.session import SessionLocal
 from app.services.connection_storage import get_connection_storage
+from app.workers.tasks import enqueue_backfill, enqueue_run
 
 router = APIRouter()
 
@@ -32,9 +30,7 @@ def _require_existing_connection(connection_id: str) -> None:
 
     storage = get_connection_storage()
     if not storage.get_connection(connection_id):
-        raise HTTPException(
-            status_code=400, detail=f"Connection {connection_id} not found"
-        )
+        raise HTTPException(status_code=400, detail=f"Connection {connection_id} not found")
 
 
 def get_db():
@@ -48,6 +44,7 @@ def get_db():
 # ============================================================================
 # Task CRUD Endpoints
 # ============================================================================
+
 
 def _flatten_p0_submodels(task_data: dict, task_name: str) -> dict:
     """
@@ -100,9 +97,7 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
     # Check if task with same name exists
     exists = db.query(Task).filter(Task.name == payload.name).first()
     if exists:
-        raise HTTPException(
-            status_code=400, detail="Task with this name already exists"
-        )
+        raise HTTPException(status_code=400, detail="Task with this name already exists")
 
     _require_existing_connection(payload.connection_id)
 
@@ -143,7 +138,6 @@ def list_tasks(
         query = query.filter(Task.is_active == is_active)
 
     # Apply pagination
-    total = query.count()
     tasks = query.order_by(Task.id.desc()).offset(skip).limit(limit).all()
 
     return tasks
@@ -169,9 +163,7 @@ def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)
     if payload.name != task.name:
         exists = db.query(Task).filter(Task.name == payload.name).first()
         if exists:
-            raise HTTPException(
-                status_code=400, detail="Task with this name already exists"
-            )
+            raise HTTPException(status_code=400, detail="Task with this name already exists")
 
     _require_existing_connection(payload.connection_id)
 
@@ -219,6 +211,8 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
 @router.post("/{task_id}/run", status_code=202)
 def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
     """Trigger a new run for a task (enqueues to Celery)"""
+    from datetime import UTC, datetime
+
     # Verify task exists
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -241,7 +235,7 @@ def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
     task_run = TaskRun(
         task_id=task_id,
         status=TaskStatus.PENDING.value,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
     )
     db.add(task_run)
     db.commit()
@@ -259,7 +253,7 @@ def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         # If enqueueing fails, update run status to FAILED
         task_run.status = TaskStatus.FAILED.value
-        task_run.ended_at = datetime.now(timezone.utc)
+        task_run.ended_at = datetime.now(UTC)
         db.commit()
         raise HTTPException(status_code=500, detail=f"Failed to enqueue task: {str(e)}")
 
@@ -297,7 +291,9 @@ def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depen
     # We only enforce when both endpoints parse — opaque tokens are passed through.
     if payload.cursor_end:
         try:
-            from datetime import datetime as _dt, timedelta
+            from datetime import datetime as _dt
+            from datetime import timedelta
+
             from app.core.config import settings as _settings
 
             def _parse_iso_cursor(value: str) -> _dt:
@@ -319,8 +315,7 @@ def trigger_backfill(task_id: int, payload: BackfillRequest, db: Session = Depen
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        "cursor_start and cursor_end must both be timezone-aware "
-                        "or both be naive"
+                        "cursor_start and cursor_end must both be timezone-aware or both be naive"
                     ),
                 )
 
@@ -395,13 +390,13 @@ def list_task_runs(
             "id": run.id,
             "task_id": run.task_id,
             "status": run.status,
-            "records_fetched": run.records_fetched,
-            "records_inserted": run.records_inserted,
-            "records_failed": run.records_failed,
+            "rows_fetched": run.rows_fetched,
+            "rows_inserted": run.rows_inserted,
+            "error_count": run.error_count,
             "started_at": run.started_at,
-            "completed_at": run.completed_at,
-            "duration_seconds": (run.completed_at - run.started_at).total_seconds()
-            if run.completed_at
+            "ended_at": run.ended_at,
+            "duration_seconds": (run.ended_at - run.started_at).total_seconds()
+            if run.ended_at
             else None,
         }
         for run in runs
@@ -417,11 +412,7 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Task not found")
 
     # Get task run
-    task_run = (
-        db.query(TaskRun)
-        .filter(TaskRun.id == run_id, TaskRun.task_id == task_id)
-        .first()
-    )
+    task_run = db.query(TaskRun).filter(TaskRun.id == run_id, TaskRun.task_id == task_id).first()
     if not task_run:
         raise HTTPException(status_code=404, detail="Run not found")
 
@@ -431,15 +422,13 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
         .order_by(TaskRun.id.desc())
         .first()
     )
-    is_retry = (
-        previous_run is not None and previous_run.status == TaskStatus.FAILED.value
-    )
+    is_retry = previous_run is not None and previous_run.status == TaskStatus.FAILED.value
     retry_of_run_id = previous_run.id if is_retry else None
 
     # Get execution logs
     execution_logs = (
         db.query(TaskLog)
-        .filter(TaskLog.run_id == run_id)
+        .filter(TaskLog.task_run_id == run_id)
         .order_by(TaskLog.created_at.asc())
         .all()
     )
@@ -447,8 +436,8 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
     # Get row errors
     row_errors = (
         db.query(TaskRunLog)
-        .filter(TaskRunLog.run_id == run_id)
-        .order_by(TaskRunLog.row_index.asc())
+        .filter(TaskRunLog.task_run_id == run_id)
+        .order_by(TaskRunLog.row_number.asc())
         .all()
     )
 
@@ -459,19 +448,20 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
         is_retry=is_retry,
         retry_of_run_id=retry_of_run_id,
         status=task_run.status,
-        records_fetched=task_run.records_fetched,
-        records_inserted=task_run.records_inserted,
-        records_failed=task_run.records_failed,
+        rows_fetched=task_run.rows_fetched,
+        rows_inserted=task_run.rows_inserted,
+        rows_updated=task_run.rows_updated,
+        rows_skipped=task_run.rows_skipped,
+        error_count=task_run.error_count,
+        warning_count=task_run.warning_count,
         started_at=task_run.started_at,
-        completed_at=task_run.completed_at,
+        ended_at=task_run.ended_at,
         error_message=task_run.error_message,
         execution_logs=[
             TaskLogOut(
                 id=log.id,
-                task_id=log.task_id,
-                run_id=log.run_id,
+                task_run_id=log.task_run_id,
                 step_name=log.step_name,
-                status=log.status,
                 message=log.message,
                 details=log.details,
                 created_at=log.created_at,
@@ -481,11 +471,12 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
         row_errors=[
             TaskRunLogOut(
                 id=error.id,
-                task_id=error.task_id,
-                run_id=error.run_id,
-                row_index=error.row_index,
-                row_data=error.row_data,
-                errors=error.errors,
+                task_run_id=error.task_run_id,
+                row_number=error.row_number,
+                column_name=error.column_name,
+                error_type=error.error_type,
+                error_message=error.error_message,
+                source_value=error.source_value,
                 created_at=error.created_at,
             )
             for error in row_errors
@@ -516,17 +507,15 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
     success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0.0
 
     # Calculate totals
-    total_records_fetched = sum(r.records_fetched or 0 for r in runs)
-    total_records_inserted = sum(r.records_inserted or 0 for r in runs)
-    total_records_failed = sum(r.records_failed or 0 for r in runs)
+    total_rows_fetched = sum(r.rows_fetched or 0 for r in runs)
+    total_rows_inserted = sum(r.rows_inserted or 0 for r in runs)
+    total_errors = sum(r.error_count or 0 for r in runs)
 
     # Calculate average duration
-    completed_runs = [r for r in runs if r.completed_at]
+    completed_runs = [r for r in runs if r.ended_at]
     avg_duration = 0.0
     if completed_runs:
-        durations = [
-            (r.completed_at - r.started_at).total_seconds() for r in completed_runs
-        ]
+        durations = [(r.ended_at - r.started_at).total_seconds() for r in completed_runs]
         avg_duration = sum(durations) / len(durations)
 
     # Get last run
@@ -538,9 +527,9 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
         successful_runs=successful_runs,
         failed_runs=failed_runs,
         success_rate=success_rate,
-        total_records_fetched=total_records_fetched,
-        total_records_inserted=total_records_inserted,
-        total_records_failed=total_records_failed,
+        total_rows_fetched=total_rows_fetched,
+        total_rows_inserted=total_rows_inserted,
+        total_errors=total_errors,
         avg_duration_seconds=avg_duration,
         last_run_at=last_run.started_at if last_run else None,
         last_run_status=last_run.status if last_run else None,

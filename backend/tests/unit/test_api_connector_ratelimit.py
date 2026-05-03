@@ -1,4 +1,5 @@
 """Unit tests for HTTP 429 / Retry-After handling in api_connector.fetch_json (P0-B)."""
+
 import os
 
 # Tests need a deterministic Fernet key for any code paths that touch encryption.
@@ -6,13 +7,11 @@ os.environ.setdefault("ENCRYPTION_KEY", "ancg5kTQFZYtqA3LyzV9MrixQ1HyC95gitaGyZ1
 
 import datetime as _dt
 import email.utils
-import asyncio
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch
 
 import httpx
 import pytest
 
-from app.services import api_connector
 from app.services.api_connector import _parse_retry_after, fetch_json
 
 
@@ -27,7 +26,7 @@ class TestParseRetryAfter:
         assert _parse_retry_after("-3") == 0.0
 
     def test_http_date_future(self):
-        future = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=10)
+        future = _dt.datetime.now(_dt.UTC) + _dt.timedelta(seconds=10)
         header = email.utils.format_datetime(future)
         result = _parse_retry_after(header)
         assert result is not None
@@ -35,7 +34,7 @@ class TestParseRetryAfter:
         assert 5.0 <= result <= 15.0
 
     def test_http_date_past_clamped_to_zero(self):
-        past = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=60)
+        past = _dt.datetime.now(_dt.UTC) - _dt.timedelta(seconds=60)
         header = email.utils.format_datetime(past)
         assert _parse_retry_after(header) == 0.0
 
@@ -88,8 +87,10 @@ async def test_429_with_integer_retry_after_retries_and_succeeds():
     async def fake_sleep(seconds):
         sleep_calls.append(seconds)
 
-    with patch("app.services.api_connector.httpx.AsyncClient", return_value=sequenced), \
-         patch("app.services.api_connector.asyncio.sleep", side_effect=fake_sleep):
+    with (
+        patch("app.services.api_connector.httpx.AsyncClient", return_value=sequenced),
+        patch("app.services.api_connector.asyncio.sleep", side_effect=fake_sleep),
+    ):
         result = await fetch_json("GET", "https://example.test/data", max_retries=0)
 
     assert result == {"data": "ok"}
@@ -100,7 +101,7 @@ async def test_429_with_integer_retry_after_retries_and_succeeds():
 @pytest.mark.asyncio
 async def test_429_http_date_retry_after_parsed_to_delta():
     """Retry-After as an HTTP-date should be converted to a delta seconds sleep."""
-    future = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=2)
+    future = _dt.datetime.now(_dt.UTC) + _dt.timedelta(seconds=2)
     header = email.utils.format_datetime(future)
 
     sequence = [
@@ -113,8 +114,10 @@ async def test_429_http_date_retry_after_parsed_to_delta():
     async def fake_sleep(seconds):
         sleep_calls.append(seconds)
 
-    with patch("app.services.api_connector.httpx.AsyncClient", return_value=sequenced), \
-         patch("app.services.api_connector.asyncio.sleep", side_effect=fake_sleep):
+    with (
+        patch("app.services.api_connector.httpx.AsyncClient", return_value=sequenced),
+        patch("app.services.api_connector.asyncio.sleep", side_effect=fake_sleep),
+    ):
         result = await fetch_json("GET", "https://example.test/data", max_retries=0)
 
     assert result == {"ok": True}
@@ -133,8 +136,10 @@ async def test_429_wait_above_cap_raises_without_sleeping():
     async def fake_sleep(seconds):
         sleep_calls.append(seconds)
 
-    with patch("app.services.api_connector.httpx.AsyncClient", return_value=sequenced), \
-         patch("app.services.api_connector.asyncio.sleep", side_effect=fake_sleep):
+    with (
+        patch("app.services.api_connector.httpx.AsyncClient", return_value=sequenced),
+        patch("app.services.api_connector.asyncio.sleep", side_effect=fake_sleep),
+    ):
         with pytest.raises(httpx.HTTPStatusError):
             await fetch_json(
                 "GET",
@@ -159,8 +164,10 @@ async def test_429_retries_exhausted_raises():
     async def fake_sleep(_):
         return None
 
-    with patch("app.services.api_connector.httpx.AsyncClient", return_value=sequenced), \
-         patch("app.services.api_connector.asyncio.sleep", side_effect=fake_sleep):
+    with (
+        patch("app.services.api_connector.httpx.AsyncClient", return_value=sequenced),
+        patch("app.services.api_connector.asyncio.sleep", side_effect=fake_sleep),
+    ):
         with pytest.raises(httpx.HTTPStatusError):
             await fetch_json(
                 "GET",

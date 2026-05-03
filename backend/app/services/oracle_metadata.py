@@ -4,11 +4,13 @@ Provides utilities to query Oracle's system views for table and column metadata,
 used for field type detection and validation during column mapping configuration.
 """
 
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
-from app.db.schemas.column_mapping import OracleColumn
 import logging
+
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from app.db.schemas.column_mapping import OracleColumn
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,7 @@ def get_table_columns(db: Session, table_name: str) -> list[OracleColumn]:
             raise ValueError(f"Invalid table name: {table_name}")
 
         sql_query = f"""
-            SELECT 
+            SELECT
                 COLUMN_NAME,
                 DATA_TYPE,
                 NULLABLE,
@@ -56,9 +58,7 @@ def get_table_columns(db: Session, table_name: str) -> list[OracleColumn]:
         result = db.execute(query)
         rows = result.fetchall()
 
-        logger.info(
-            f"Query returned {len(rows) if rows else 0} rows for {table_name_upper}"
-        )
+        logger.info(f"Query returned {len(rows) if rows else 0} rows for {table_name_upper}")
 
         if not rows:
             logger.warning(f"No columns found for table {table_name_upper}")
@@ -103,9 +103,7 @@ def get_table_columns(db: Session, table_name: str) -> list[OracleColumn]:
             "ORA-00904" in error_msg or "ORA-01031" in error_msg
         ):  # Invalid column or insufficient privileges
             logger.warning(f"Permission denied querying {table_name_upper}")
-            raise PermissionError(
-                f"Insufficient privileges to query table '{table_name}'"
-            )
+            raise PermissionError(f"Insufficient privileges to query table '{table_name}'")
         elif "DPY-3010" in error_msg or "DPI-1047" in error_msg:
             # Connection mode not supported - likely needs Oracle Instant Client
             logger.error(
@@ -184,9 +182,7 @@ def get_table_row_count(db: Session, table_name: str) -> int:
         raise ValueError(f"Could not retrieve row count for table '{table_name}'")
 
 
-def get_column_info(
-    db: Session, table_name: str, column_name: str
-) -> OracleColumn | None:
+def get_column_info(db: Session, table_name: str, column_name: str) -> OracleColumn | None:
     """
     Get detailed information about a specific column.
 
@@ -203,7 +199,7 @@ def get_column_info(
         column_name_upper = column_name.upper()
 
         query = text("""
-            SELECT 
+            SELECT
                 COLUMN_NAME,
                 DATA_TYPE,
                 NULLABLE,

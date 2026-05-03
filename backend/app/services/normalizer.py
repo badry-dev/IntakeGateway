@@ -1,11 +1,15 @@
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
+
 from jsonpath_ng.ext import parse as jsonpath_parse
 
 
 def select_records(payload: Any, record_path: str | None) -> Iterable[dict]:
     if record_path:
         jp = jsonpath_parse(record_path)
-        matches = [m.value for m in jp.find(payload)]
+        found = [m.value for m in jp.find(payload)]
+        # Unwrap single match so the value (not the wrapper list) is type-checked
+        matches = found[0] if len(found) == 1 else found
     else:
         matches = payload
     if isinstance(matches, dict):

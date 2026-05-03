@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ConnectionEditor } from '@/components/ConnectionEditor'
 
 vi.mock('@/hooks/api', () => ({
+  useConnections: vi.fn().mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false }),
   useTestConnection: vi.fn(),
 }))
 
