@@ -6,7 +6,11 @@ from app.db.models.task_run import TaskRun, TaskStatus
 from app.db.models.task import Task
 from app.db.models.task_log import TaskLog
 from app.db.models.task_run_log import TaskRunLog
-from app.db.schemas.task import TaskRunOut, TaskLogOut, TaskRunLogOut
+from app.db.schemas.task import (
+    TaskRunOut, TaskLogOut, TaskRunLogOut, ReplayRequest, ReplayResponse,
+)
+from app.workers.tasks import enqueue_replay
+from app.services.connection_storage import get_connection_storage
 
 router = APIRouter()
 
@@ -95,6 +99,69 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
             }
             for error in row_errors
         ],
+    }
+
+@router.post("/{run_id}/replay", status_code=202, response_model=ReplayResponse)
+def replay_run(run_id: int, payload: ReplayRequest, db: Session = Depends(get_db)):
+    """
+    Re-run a prior run with the same cursor window.
+
+    Tagged is_replay=True; will NOT advance task.cursor_last_value. Refused
+    when the task has upsert_enabled=False unless `force=true` is set, since
+    a non-upsert replay would re-insert duplicates.
+    """
+    prior = db.query(TaskRun).filter(TaskRun.id == run_id).first()
+    if not prior:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    task = db.query(Task).filter(Task.id == prior.task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task for this run no longer exists")
+
+    # Mirror trigger_task_run / trigger_backfill: fail fast if the destination
+    # connection has been deleted, instead of silently 202-ing and burning
+    # Celery retries on a run that can never succeed.
+    if not task.connection_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Task requires a destination connection before it can run",
+        )
+    storage = get_connection_storage()
+    if not storage.get_connection(task.connection_id):
+        raise HTTPException(
+            status_code=400,
+            detail="The task's selected destination connection no longer exists",
+        )
+
+    if not task.upsert_enabled and not payload.force:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Task has upsert_enabled=False; replay would re-insert duplicates. "
+                "Pass force=true to override."
+            ),
+        )
+
+    try:
+        celery_task = enqueue_replay(
+            task_id=task.id,
+            cursor_start=prior.cursor_start,
+            cursor_end=prior.cursor_end,
+            replay_of_run_id=prior.id,
+            force=payload.force,
+        )
+    except Exception as e:
+        # `from e` preserves the original Celery / broker traceback for diagnostics.
+        raise HTTPException(status_code=500, detail=f"Failed to enqueue replay: {e}") from e
+
+    return {
+        "status": "enqueued",
+        "task_id": task.id,
+        "replay_of_run_id": prior.id,
+        "cursor_start": prior.cursor_start,
+        "cursor_end": prior.cursor_end,
+        "force": payload.force,
+        "celery_task_id": celery_task.id if celery_task else None,
     }
 
 

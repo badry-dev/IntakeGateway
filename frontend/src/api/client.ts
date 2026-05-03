@@ -21,6 +21,8 @@ import {
   ConnectionTestRequest,
   ConnectionTestResult,
   ConnectionListResponse,
+  BackfillResponse,
+  ReplayResponse,
 } from '@/types'
 
 const API_BASE_URL = '/api/v1'
@@ -100,6 +102,24 @@ class ApiClient {
 
   async getRun(runId: number): Promise<TaskRun> {
     const response = await this.client.get(`/runs/${runId}`)
+    return response.data
+  }
+
+  // Backfill / replay (P0-C)
+  async triggerBackfill(
+    taskId: number,
+    cursorStart: string,
+    cursorEnd?: string,
+  ): Promise<BackfillResponse> {
+    const response = await this.client.post(`/tasks/${taskId}/backfill`, {
+      cursor_start: cursorStart,
+      cursor_end: cursorEnd,
+    })
+    return response.data
+  }
+
+  async replayRun(runId: number, force: boolean = false): Promise<ReplayResponse> {
+    const response = await this.client.post(`/runs/${runId}/replay`, { force })
     return response.data
   }
 

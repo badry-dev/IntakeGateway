@@ -1,5 +1,5 @@
 from enum import Enum
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from app.db.session import Base
 from app.db.types import ID_TYPE
 
@@ -28,3 +28,10 @@ class TaskRun(Base):
     error_count = Column(Integer, default=0)
     warning_count = Column(Integer, default=0)
     error_message = Column(String(2000), nullable=True)
+
+    # Cursor + replay tracking (P0-C)
+    cursor_start = Column(String(500), nullable=True)
+    cursor_end = Column(String(500), nullable=True)
+    is_backfill = Column(Boolean, nullable=False, default=False)
+    is_replay = Column(Boolean, nullable=False, default=False)
+    replay_of_run_id = Column(Integer, nullable=True)

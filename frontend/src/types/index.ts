@@ -1,6 +1,10 @@
 // Authentication types
 export type AuthType = 'none' | 'bearer' | 'api_key' | 'basic' | 'oauth'
 
+// HTTP methods accepted by the task fetch pipeline (mirrors backend regex
+// "^(GET|POST|PUT|PATCH)$").
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH'
+
 export interface TaskAuth {
   auth_type: AuthType
   username?: string
@@ -31,6 +35,22 @@ export interface Task extends TaskAuth, UpsertConfig {
   dest_table: string
   batch_size: number
   is_active: boolean
+  // Safe-to-expose OAuth metadata (P0-A); secrets are NEVER returned
+  oauth_grant_type?: OAuthGrantType
+  oauth_token_url?: string
+  oauth_client_id?: string
+  oauth_scope?: string
+  oauth_audience?: string
+  oauth_token_expires_at?: string
+  // Rate-limit tuning (P0-B)
+  rate_limit_max_retries?: number
+  rate_limit_max_wait_seconds?: number
+  rate_limit_rps?: number
+  // Cursor watermark (P0-C); cursor_last_value is the high-water mark
+  cursor_field?: string
+  cursor_param_name?: string
+  cursor_initial_value?: string
+  cursor_last_value?: string
   created_at?: string
   updated_at?: string
 }
@@ -43,10 +63,106 @@ export interface TaskCreateAuth {
   oauth_config?: Record<string, any>
 }
 
-export interface TaskCreate extends Omit<Task, 'id' | 'auth_type' | 'username' | 'connection_id'>, TaskCreateAuth {
-  connection_id: string
+// OAuth2 structured config (P0-A). client_secret/access_token/refresh_token are
+// plaintext on the wire and are encrypted server-side; never returned in TaskOut.
+export type OAuthGrantType = 'static' | 'client_credentials' | 'refresh_token'
+export interface OAuthConfig {
+  grant_type?: OAuthGrantType
+  token_url?: string
+  client_id?: string
+  client_secret?: string
+  scope?: string
+  audience?: string
+  access_token?: string
+  refresh_token?: string
 }
-export interface TaskUpdate extends Partial<Omit<Task, 'id'>> {}
+
+// Per-task rate-limit / 429 retry tuning (P0-B).
+export interface RateLimitConfig {
+  max_retries?: number
+  max_wait_seconds?: number
+  rps?: number
+}
+
+// Cursor / incremental fetch config (P0-C).
+export interface CursorConfig {
+  field?: string
+  param_name?: string
+  initial_value?: string
+}
+
+export interface BackfillRequest {
+  cursor_start: string
+  cursor_end?: string
+}
+
+export interface ReplayRequest {
+  force?: boolean
+}
+
+// 202 response shapes from the backend backfill / replay endpoints.
+// Mirror BackfillResponse / ReplayResponse in backend/app/db/schemas/task.py.
+export interface BackfillResponse {
+  status: string
+  task_id: number
+  is_backfill: boolean
+  cursor_start: string
+  cursor_end?: string | null
+  celery_task_id?: string | null
+}
+
+export interface ReplayResponse {
+  status: string
+  task_id: number
+  replay_of_run_id: number
+  cursor_start?: string | null
+  cursor_end?: string | null
+  force: boolean
+  celery_task_id?: string | null
+}
+
+// Narrow shape used by axios error handling — keeps catch blocks typed
+// without depending on the full AxiosError surface.
+export interface ApiErrorLike {
+  response?: { data?: { detail?: string } }
+}
+
+// Explicit writable task payload shape. Do NOT derive from Task — Task includes
+// response-only / server-managed fields (id, created_at, updated_at,
+// oauth_token_expires_at, cursor_last_value, etc.) that the backend rejects
+// or silently ignores on write. Mirroring backend TaskCreate keeps the wire
+// contract honest and surfaces shape mismatches as TypeScript errors instead
+// of runtime 422s.
+export interface TaskInput extends TaskCreateAuth {
+  name: string
+  description?: string
+  connection_id: string
+  http_method: HttpMethod
+  endpoint_path: string
+  query_params_json?: Record<string, any>
+  headers_json?: Record<string, any>
+  body_json?: Record<string, any>
+  record_path?: string
+  dest_table: string
+  // Defaults on the backend (batch_size=500, is_active=true,
+  // upsert_enabled=false, continue_on_error=true), so all optional on the wire.
+  // Defining the upsert fields inline (rather than extending UpsertConfig) so
+  // they stay optional here while UpsertConfig keeps required semantics on
+  // response types.
+  batch_size?: number
+  is_active?: boolean
+  upsert_enabled?: boolean
+  upsert_keys?: string[]
+  skip_column?: string
+  skip_value?: string
+  continue_on_error?: boolean
+  oauth?: OAuthConfig
+  rate_limit?: RateLimitConfig
+  cursor?: CursorConfig
+}
+
+export type TaskCreate = TaskInput
+export type TaskUpdate = Partial<TaskInput>
 
 // Column Mapping types
 export interface ColumnMapping {
@@ -140,6 +256,12 @@ export interface TaskRun {
   warning_count?: number
   started_at: string
   ended_at?: string
+  // Cursor / replay tracking (P0-C)
+  cursor_start?: string | null
+  cursor_end?: string | null
+  is_backfill?: boolean
+  is_replay?: boolean
+  replay_of_run_id?: number | null
   execution_logs?: TaskLog[]
   row_errors?: TaskRunLog[]
 }
@@ -216,6 +338,11 @@ export interface TaskFormData {
   username?: string
   password?: string
   oauth_config?: Record<string, any>
+  // P0 structured submodels — kept here so the wizard can build payloads
+  // without `as any` casts. Optional because most steps don't touch them.
+  oauth?: OAuthConfig
+  rate_limit?: RateLimitConfig
+  cursor?: CursorConfig
   // Upsert fields (Phase 8)
   upsert_enabled?: boolean
   upsert_keys?: string[]

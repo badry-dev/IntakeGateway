@@ -1,3 +1,6 @@
+
+import hashlib
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -6,6 +9,23 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, DatabaseError
 from loguru import logger
+
+
+# Cursor identifiers go directly into URL query params; whitelist them strictly.
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
+
+
+def _redact_cursor(value):
+    """Same redaction policy as workers.tasks._redact_cursor — see that
+    function for rationale. Duplicated here to avoid a circular import
+    (runner imported by worker)."""
+    if value is None:
+        return "<none>"
+    s = str(value)
+    if not s:
+        return "<empty>"
+    digest = hashlib.sha256(s.encode("utf-8", errors="replace")).hexdigest()[:8]
+    return f"<len={len(s)} sha256={digest}>"
 
 from app.db.session import SessionLocal
 from app.db.models.task import Task
@@ -36,25 +56,32 @@ class RowResult:
 
 
 async def run_import(
-    task_id: int, db: Session = None, destination_db: Session = None
+    task_id: int,
+    db: Session = None,
+    destination_db: Session = None,
+    cursor_override_start: Optional[str] = None,
+    cursor_override_end: Optional[str] = None,
+    is_backfill: bool = False,
+    replay_of_run_id: Optional[int] = None,
+    force_replay: bool = False,
 ) -> dict:
     """
-    Execute complete data import pipeline for a task
+    Execute complete data import pipeline for a task.
 
     Pipeline flow:
     1. Fetch task configuration from database
-    2. Create TaskRun record with RUNNING status
-    3. Fetch data from external API
-    4. Extract records using JSONPath
-    5. Flatten nested structures
-    6. Map source fields to destination columns
-    7. Validate each row
-    8. Insert valid rows to the destination database in batches
-    9. Log errors for invalid rows
-    10. Update TaskRun with results
+    2. Resolve cursor window (override > task.cursor_last_value > task.cursor_initial_value)
+    3. Create TaskRun record with RUNNING status (tagging is_backfill / is_replay)
+    4. Fetch data from external API (cursor injected as query param if configured)
+    5. Extract records using JSONPath; flatten and map; validate
+    6. Insert valid rows to the destination DB
+    7. Compute cursor_end and persist on TaskRun
+    8. For non-backfill, non-replay successful runs: advance task.cursor_last_value
 
-    Returns:
-        Dictionary with execution results
+    Replay semantics: if `replay_of_run_id` is set, the prior run's cursor window
+    is reused (deduped via existing upsert logic). Replay is refused when the
+    task has `upsert_enabled=False` and `force_replay=False`, since non-upsert
+    replays would re-insert duplicates.
     """
     if db is None:
         db = SessionLocal()
@@ -65,6 +92,7 @@ async def run_import(
     close_destination_db = False
 
     task_run_id = None
+    is_replay = replay_of_run_id is not None
 
     try:
         # Set logging context
@@ -81,11 +109,52 @@ async def run_import(
         if not task.connection_id:
             raise ValueError(f"Task {task_id} requires a destination connection")
 
+        # Replay safety: refuse replays for non-upsert tasks unless forced.
+        # Upsert is what makes a replay safely idempotent — without it we'd
+        # double-insert on every replay.
+        if is_replay and not task.upsert_enabled and not force_replay:
+            raise ValueError(
+                f"Replay refused: task {task_id} has upsert_enabled=False. "
+                "Replays require upsert to be safely idempotent. "
+                "Pass force=true to override (will likely insert duplicates)."
+            )
+
+        # Resolve cursor window. Override has highest precedence (used by backfill /
+        # replay endpoints); otherwise fall back to the persisted watermark, then
+        # to the configured initial value, then to None (cursor disabled).
+        # Only treat string values as configured cursor identifiers — older tests
+        # use MagicMock fixtures that would otherwise fail the regex check.
+        cursor_field = task.cursor_field if isinstance(task.cursor_field, str) else None
+        cursor_param_name = (
+            task.cursor_param_name if isinstance(task.cursor_param_name, str) else None
+        )
+        if cursor_param_name and not _SAFE_IDENTIFIER_RE.match(cursor_param_name):
+            raise ValueError(
+                f"cursor_param_name {cursor_param_name!r} is invalid; "
+                "must match ^[A-Za-z_][A-Za-z0-9_]{0,99}$"
+            )
+        if cursor_field and not _SAFE_IDENTIFIER_RE.match(cursor_field):
+            raise ValueError(
+                f"cursor_field {cursor_field!r} is invalid; "
+                "must match ^[A-Za-z_][A-Za-z0-9_]{0,99}$"
+            )
+
+        if cursor_override_start is not None:
+            cursor_start_value = cursor_override_start
+        elif cursor_field:
+            cursor_start_value = task.cursor_last_value or task.cursor_initial_value
+        else:
+            cursor_start_value = None
+
         # Step 2: Create TaskRun record
         task_run = TaskRun(
             task_id=task_id,
             status=TaskStatus.RUNNING.value,
             started_at=datetime.now(timezone.utc),
+            cursor_start=cursor_start_value,
+            is_backfill=is_backfill,
+            is_replay=is_replay,
+            replay_of_run_id=replay_of_run_id,
         )
         db.add(task_run)
         db.commit()
@@ -95,22 +164,49 @@ async def run_import(
         # Update logging context with run_id
         set_task_context(task_id=task_id, run_id=task_run_id)
 
-        logger.info(f"Starting import for task {task_id}, run {task_run_id}")
+        logger.info(
+            f"Starting import for task {task_id}, run {task_run_id} "
+            f"(backfill={is_backfill}, replay={is_replay}, "
+            f"cursor_start={_redact_cursor(cursor_start_value)}, "
+            f"cursor_end={_redact_cursor(cursor_override_end)})"
+        )
 
-        # Step 3: Fetch data from API
+        # Inject cursor bounds into query params if configured. We copy
+        # task.query_params_json rather than mutating it so the persisted task
+        # config is untouched. The upper-bound is exposed via a derived
+        # `<cursor_param_name>_to` convention so backfills and replays actually
+        # constrain the upstream fetch (otherwise a "fixed window" backfill
+        # would silently fetch beyond the requested end).
+        request_params = dict(task.query_params_json or {})
+        if cursor_param_name:
+            if cursor_start_value is not None:
+                request_params[cursor_param_name] = cursor_start_value
+            if cursor_override_end is not None:
+                end_param = f"{cursor_param_name}_to"
+                # The base param already passed the safe-identifier whitelist;
+                # the derived `_to` suffix preserves it. Re-validate defensively.
+                if not _SAFE_IDENTIFIER_RE.match(end_param):
+                    raise ValueError(
+                        f"Derived cursor end param name {end_param!r} is invalid"
+                    )
+                request_params[end_param] = cursor_override_end
+
+        # Step 3: Fetch data from API (with auth resolution + retries + 429 handling)
         log_step(db, task_run_id, "FETCH_API", f"Fetching from {task.endpoint_path}")
 
-        response_data = await api_connector.fetch_json(
+        response_data = await api_connector.fetch_with_auth(
+            task=task,
+            db=db,
             method=task.http_method,
             url=task.endpoint_path,
             headers=task.headers_json,
-            params=task.query_params_json,
+            params=request_params,
             json_body=task.body_json,
             auth_type=task.auth_type,
             api_key=task.api_key,
             username=task.username,
             password=task.password,
-            oauth_config=task.oauth_config,
+            oauth_config=task.oauth_config
         )
 
         # Step 4: Extract records using JSONPath
@@ -128,15 +224,35 @@ async def run_import(
         logger.info(f"Extracted {len(records)} records from API response")
 
         if not records:
+            # Empty fetch is still a successful run for cursor purposes.
+            # We MUST persist cursor_end (and is_backfill / is_replay) here, or
+            # backfill / replay history loses its requested upper bound — and
+            # a later replay of this run reads prior.cursor_end as None,
+            # silently dropping the fixed-window semantics. Match the metadata
+            # shape returned by the non-empty success path.
             task_run.status = TaskStatus.SUCCESS.value
+            task_run.cursor_end = cursor_override_end
             task_run.ended_at = datetime.now(timezone.utc)
+            # Watermark advancement on empty windows: skip. With zero rows we
+            # have no observed source-side max, and silently advancing to
+            # cursor_override_end would create off-by-one drift between what
+            # the upstream actually emitted and what we record.
             db.commit()
             log_step(db, task_run_id, "COMPLETE", "No records to process")
             return {
                 "task_id": task_id,
                 "run_id": task_run_id,
-                "inserted": 0,
-                "errors": 0,
+                "status": task_run.status,
+                "rows_fetched": 0,
+                "rows_inserted": 0,
+                "rows_updated": 0,
+                "rows_skipped": 0,
+                "error_count": 0,
+                "cursor_start": task_run.cursor_start,
+                "cursor_end": task_run.cursor_end,
+                "is_backfill": task_run.is_backfill,
+                "is_replay": task_run.is_replay,
+                "replay_of_run_id": task_run.replay_of_run_id,
             }
 
         # Step 5: Flatten nested structures
@@ -270,15 +386,73 @@ async def run_import(
         else:
             task_run.status = TaskStatus.SUCCESS.value
 
+        # Cursor advancement (P0-C):
+        # Cursor bookkeeping splits into two distinct values with different
+        # safety requirements:
+        #
+        #   task_run.cursor_end          — the upper bound of THIS run's window,
+        #                                  used by replay to reconstruct the
+        #                                  same fetch. Must reflect what the
+        #                                  upstream actually returned, including
+        #                                  rows that later failed validation or
+        #                                  DB write — replay needs to see those
+        #                                  again.
+        #
+        #   task.cursor_last_value       — the high-water mark used to compute
+        #                                  the NEXT incremental run's start.
+        #                                  Advancing past a row that did NOT
+        #                                  land would skip it forever, so we
+        #                                  only advance on full SUCCESS (zero
+        #                                  errors at any pipeline stage).
+        #                                  PARTIAL_SUCCESS persists cursor_end
+        #                                  on the run row but holds the
+        #                                  watermark steady.
+        #
+        # We prefer pre-mapping source records (flattened_records) when reading
+        # cursor_field because column mapping renames keys to destination
+        # columns and the field name typically won't survive.
+
+        def _max_cursor(rows: list) -> Optional[str]:
+            try:
+                observed = [
+                    r.get(cursor_field)
+                    for r in rows
+                    if isinstance(r, dict) and r.get(cursor_field) is not None
+                ]
+                return str(max(observed)) if observed else None
+            except (TypeError, ValueError) as exc:
+                logger.warning(
+                    f"Could not compute cursor max for field={cursor_field!r}: {exc}"
+                )
+                return None
+
+        cursor_end_value = cursor_override_end
+        if cursor_field:
+            run_cursor = _max_cursor(flattened_records)
+            if run_cursor is None:
+                run_cursor = _max_cursor(valid_rows)
+            if run_cursor is not None:
+                cursor_end_value = run_cursor
+
+        task_run.cursor_end = cursor_end_value
         task_run.ended_at = datetime.now(timezone.utc)
+
+        # Watermark advancement: ONLY on full SUCCESS. PARTIAL_SUCCESS leaves
+        # the watermark where it was so any failed row gets re-fetched on the
+        # next incremental run instead of being silently skipped forever
+        # (CodeRabbit-flagged correctness bug). Backfill / replay never advance.
+        if (
+            cursor_end_value is not None
+            and not is_backfill
+            and not is_replay
+            and task_run.status == TaskStatus.SUCCESS.value
+        ):
+            task.cursor_last_value = cursor_end_value
+            db.add(task)
+
         db.commit()
 
-        log_step(
-            db,
-            task_run_id,
-            "COMPLETE",
-            f"Import completed with status {task_run.status}",
-        )
+        log_step(db, task_run_id, "COMPLETE", f"Import completed with status {task_run.status}")
 
         return {
             "task_id": task_id,
@@ -289,6 +463,11 @@ async def run_import(
             "rows_updated": task_run.rows_updated,
             "rows_skipped": task_run.rows_skipped,
             "error_count": task_run.error_count,
+            "cursor_start": task_run.cursor_start,
+            "cursor_end": task_run.cursor_end,
+            "is_backfill": task_run.is_backfill,
+            "is_replay": task_run.is_replay,
+            "replay_of_run_id": task_run.replay_of_run_id,
         }
 
     except Exception as e:

@@ -317,6 +317,8 @@ async def preview_fields(
                 username=task.username,
                 password=task.password,
                 oauth_config=task.oauth_config,
+                task=task,
+                db=db,
             )
         else:
             if not sample_json:
