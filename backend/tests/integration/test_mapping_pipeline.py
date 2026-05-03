@@ -50,12 +50,14 @@ class TestNestedJsonFlattening:
             }
         }
         result = flatten(data)
-        assert result["user.id"] == 123
-        assert result["user.name"] == "John"
-        assert result["user.active"] is True
-        assert result["user.tags"] == ["admin", "user"]
-        assert result["user.metadata.created"] == "2025-01-29"
-        assert result["user.metadata.updated"] == "2025-01-29"
+        assert result == {
+            "user.id": 123,
+            "user.name": "John",
+            "user.active": True,
+            "user.tags": ["admin", "user"],
+            "user.metadata.created": "2025-01-29",
+            "user.metadata.updated": "2025-01-29",
+        }
 
     def test_flatten_with_null_values(self):
         """Test flattening structure with null values."""
