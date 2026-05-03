@@ -75,9 +75,7 @@ class TestApplyAuthentication:
         token = "my-bearer-token-123"
         encrypted_token = encrypt_value(token)
 
-        result = apply_authentication(
-            headers=headers, auth_type="bearer", api_key=encrypted_token
-        )
+        result = apply_authentication(headers=headers, auth_type="bearer", api_key=encrypted_token)
 
         assert "Authorization" in result
         assert result["Authorization"] == f"Bearer {token}"
@@ -93,9 +91,7 @@ class TestApplyAuthentication:
         api_key = "my-api-key-xyz"
         encrypted_key = encrypt_value(api_key)
 
-        result = apply_authentication(
-            headers=headers, auth_type="api_key", api_key=encrypted_key
-        )
+        result = apply_authentication(headers=headers, auth_type="api_key", api_key=encrypted_key)
 
         assert "X-API-Key" in result
         assert result["X-API-Key"] == api_key
@@ -146,9 +142,7 @@ class TestApplyAuthentication:
     def test_basic_auth_requires_credentials(self):
         """Test that Basic auth requires both username and password"""
         with pytest.raises(ValueError, match="Username and password required"):
-            apply_authentication(
-                headers={}, auth_type="basic", username=None, password=None
-            )
+            apply_authentication(headers={}, auth_type="basic", username=None, password=None)
 
     def test_basic_auth_requires_username(self):
         """Test that Basic auth requires username"""
@@ -165,9 +159,7 @@ class TestApplyAuthentication:
     def test_basic_auth_requires_password(self):
         """Test that Basic auth requires password"""
         with pytest.raises(ValueError, match="Username and password required"):
-            apply_authentication(
-                headers={}, auth_type="basic", username="user", password=None
-            )
+            apply_authentication(headers={}, auth_type="basic", username="user", password=None)
 
     def test_oauth_auth_not_fully_implemented(self):
         """Test that OAuth auth type is recognized but not fully implemented"""
@@ -204,9 +196,7 @@ class TestApplyAuthentication:
         token = "my-token"
         encrypted_token = encrypt_value(token)
 
-        result = apply_authentication(
-            headers=headers, auth_type="bearer", api_key=encrypted_token
-        )
+        result = apply_authentication(headers=headers, auth_type="bearer", api_key=encrypted_token)
 
         # Check that original headers are preserved
         assert result["User-Agent"] == "MyApp/1.0"
@@ -224,9 +214,7 @@ class TestAuthenticationIntegration:
         token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
         encrypted_token = encrypt_value(token)
 
-        result = apply_authentication(
-            headers={}, auth_type="bearer", api_key=encrypted_token
-        )
+        result = apply_authentication(headers={}, auth_type="bearer", api_key=encrypted_token)
 
         assert result["Authorization"] == f"Bearer {token}"
 

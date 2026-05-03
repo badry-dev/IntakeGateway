@@ -22,9 +22,7 @@ else:
     engine_kwargs["max_overflow"] = 5
 
 engine = create_engine(settings.APP_DATABASE_URL, **engine_kwargs)
-SessionLocal = sessionmaker(
-    autocommit=False, autoflush=False, bind=engine, expire_on_commit=False
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 
 
 def init_app_database() -> None:

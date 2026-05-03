@@ -1,4 +1,3 @@
-
 import re
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Any, Optional, Literal
@@ -11,7 +10,8 @@ _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
 
 class OAuthConfigIn(BaseModel):
     """OAuth2 configuration for client_credentials / refresh_token grants."""
-    grant_type: Literal['static', 'client_credentials', 'refresh_token'] = 'static'
+
+    grant_type: Literal["static", "client_credentials", "refresh_token"] = "static"
     token_url: Optional[str] = None
     client_id: Optional[str] = None
     client_secret: Optional[str] = None  # Encrypted before storage
@@ -28,27 +28,27 @@ class OAuthConfigIn(BaseModel):
         required fields per RFC 6749."""
         if self.grant_type == "client_credentials":
             missing = [
-                f for f, v in (
+                f
+                for f, v in (
                     ("token_url", self.token_url),
                     ("client_id", self.client_id),
                     ("client_secret", self.client_secret),
-                ) if not v
+                )
+                if not v
             ]
             if missing:
-                raise ValueError(
-                    f"grant_type=client_credentials requires: {', '.join(missing)}"
-                )
+                raise ValueError(f"grant_type=client_credentials requires: {', '.join(missing)}")
         elif self.grant_type == "refresh_token":
             missing = [
-                f for f, v in (
+                f
+                for f, v in (
                     ("token_url", self.token_url),
                     ("refresh_token", self.refresh_token),
-                ) if not v
+                )
+                if not v
             ]
             if missing:
-                raise ValueError(
-                    f"grant_type=refresh_token requires: {', '.join(missing)}"
-                )
+                raise ValueError(f"grant_type=refresh_token requires: {', '.join(missing)}")
         elif self.grant_type == "static":
             # Static needs an access_token via this submodel OR via the legacy
             # oauth_config dict. We only enforce when the submodel is provided
@@ -63,6 +63,7 @@ class OAuthConfigIn(BaseModel):
 
 class RateLimitConfigIn(BaseModel):
     """Per-task rate-limit / 429 retry tuning."""
+
     max_retries: Optional[int] = Field(default=None, ge=0, le=20)
     max_wait_seconds: Optional[int] = Field(default=None, ge=0, le=3600)
     rps: Optional[int] = Field(default=None, ge=0, le=1000)
@@ -70,11 +71,12 @@ class RateLimitConfigIn(BaseModel):
 
 class CursorConfigIn(BaseModel):
     """Cursor / incremental fetch configuration."""
+
     field: Optional[str] = None
     param_name: Optional[str] = None
     initial_value: Optional[str] = None
 
-    @field_validator('field', 'param_name')
+    @field_validator("field", "param_name")
     @classmethod
     def validate_identifier(cls, v: Optional[str]):
         if v is not None and not _SAFE_IDENTIFIER_RE.match(v):
@@ -96,25 +98,26 @@ class CursorConfigIn(BaseModel):
                 "(or both omitted to disable cursor support)"
             )
         if self.initial_value is not None and not self.field:
-            raise ValueError(
-                "cursor.initial_value requires cursor.field and cursor.param_name"
-            )
+            raise ValueError("cursor.initial_value requires cursor.field and cursor.param_name")
         return self
 
 
 class BackfillRequest(BaseModel):
     """Request body for POST /tasks/{id}/backfill."""
+
     cursor_start: str = Field(..., min_length=1, max_length=500)
     cursor_end: Optional[str] = Field(default=None, max_length=500)
 
 
 class ReplayRequest(BaseModel):
     """Request body for POST /runs/{run_id}/replay."""
+
     force: bool = False
 
 
 class BackfillResponse(BaseModel):
     """202 response shape for POST /tasks/{id}/backfill."""
+
     status: str
     task_id: int
     is_backfill: bool = True
@@ -125,6 +128,7 @@ class BackfillResponse(BaseModel):
 
 class ReplayResponse(BaseModel):
     """202 response shape for POST /runs/{run_id}/replay."""
+
     status: str
     task_id: int
     replay_of_run_id: int
@@ -173,9 +177,7 @@ class TaskCreate(BaseModel):
         """Validate that upsert_keys is provided when upsert is enabled"""
         upsert_enabled = info.data.get("upsert_enabled")
         if upsert_enabled and (not v or len(v) == 0):
-            raise ValueError(
-                "upsert_enabled requires at least one column in upsert_keys"
-            )
+            raise ValueError("upsert_enabled requires at least one column in upsert_keys")
         return v
 
     @field_validator("api_key")

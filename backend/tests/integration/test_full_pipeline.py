@@ -349,10 +349,7 @@ async def test_error_message_on_api_failure(test_db, sample_task):
             await run_import(sample_task.id, db=test_db)
 
     task_run = (
-        test_db.query(TaskRun)
-        .filter_by(task_id=sample_task.id)
-        .order_by(TaskRun.id.desc())
-        .first()
+        test_db.query(TaskRun).filter_by(task_id=sample_task.id).order_by(TaskRun.id.desc()).first()
     )
     if task_run:
         assert task_run.status == TaskStatus.FAILED.value or task_run.error_message is not None
@@ -398,7 +395,9 @@ async def test_retry_logic_by_status_code(status_code: int, should_retry: bool):
     if should_retry:
         mock_client.request = AsyncMock(side_effect=[error_response, success_response])
         with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await fetch_json("GET", "http://test.api/data", max_retries=3, initial_backoff=0)
+            result = await fetch_json(
+                "GET", "http://test.api/data", max_retries=3, initial_backoff=0
+            )
         assert result == []
     else:
         mock_client.request = AsyncMock(return_value=error_response)

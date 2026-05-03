@@ -22,9 +22,7 @@ class ConnectionFileService:
     """Service for managing encrypted database connection configurations."""
 
     # Connection file location (in app data directory)
-    DEFAULT_CONNECTION_FILE = (
-        Path(__file__).parent.parent.parent / "data" / "connections.enc"
-    )
+    DEFAULT_CONNECTION_FILE = Path(__file__).parent.parent.parent / "data" / "connections.enc"
 
     def __init__(self, connection_file: Optional[Path] = None):
         """
@@ -229,9 +227,7 @@ class ConnectionFileService:
         if new_name:
             for conn in data.get("connections", []):
                 if conn.get("name") == new_name and conn.get("name") != name:
-                    raise ValueError(
-                        f"Connection with name '{new_name}' already exists"
-                    )
+                    raise ValueError(f"Connection with name '{new_name}' already exists")
 
         updated_conn = None
         for conn in data.get("connections", []):
@@ -302,9 +298,7 @@ class ConnectionFileService:
         """
         return self.update_connection(name, is_active=True)
 
-    def get_sqlalchemy_url(
-        self, connection_name: Optional[str] = None
-    ) -> Optional[str]:
+    def get_sqlalchemy_url(self, connection_name: Optional[str] = None) -> Optional[str]:
         """
         Get SQLAlchemy connection URL for a specific or the active connection.
 
@@ -354,9 +348,7 @@ class ConnectionFileService:
             List of connection dictionaries without passwords.
         """
         connections = self.get_all_connections()
-        return [
-            {k: v for k, v in conn.items() if k != "password"} for conn in connections
-        ]
+        return [{k: v for k, v in conn.items() if k != "password"} for conn in connections]
 
 
 # Singleton instance for use across the application

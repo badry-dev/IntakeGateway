@@ -48,9 +48,7 @@ class ColumnMappingOut(BaseModel):
 class BulkMappingCreate(BaseModel):
     """Input schema for bulk creating multiple column mappings."""
 
-    mappings: list[ColumnMappingCreate] = Field(
-        ..., description="List of mappings to create"
-    )
+    mappings: list[ColumnMappingCreate] = Field(..., description="List of mappings to create")
 
 
 class FieldPreview(BaseModel):
@@ -62,13 +60,9 @@ class FieldPreview(BaseModel):
     field_type: str = Field(
         ..., description="Inferred type: string, number, boolean, null, array, object"
     )
-    sample_value: Optional[Any] = Field(
-        None, description="Sample value from the response"
-    )
+    sample_value: Optional[Any] = Field(None, description="Sample value from the response")
     is_nested: bool = Field(default=False, description="Whether this is a nested field")
-    parent_path: Optional[str] = Field(
-        None, description="Parent path for nested fields"
-    )
+    parent_path: Optional[str] = Field(None, description="Parent path for nested fields")
 
 
 class PreviewFieldsRequest(BaseModel):
@@ -95,24 +89,18 @@ class PreviewFieldsRequest(BaseModel):
     )
     api_key: Optional[str] = Field(None, description="API key (encrypted)")
     username: Optional[str] = Field(None, description="Username for Basic auth")
-    password: Optional[str] = Field(
-        None, description="Password for Basic auth (encrypted)"
-    )
+    password: Optional[str] = Field(None, description="Password for Basic auth (encrypted)")
     oauth_config: Optional[dict] = Field(None, description="OAuth configuration")
 
 
 class FieldsPreviewResponse(BaseModel):
     """Response schema for field preview endpoint."""
 
-    fields: list[FieldPreview] = Field(
-        ..., description="Available fields from the sample response"
-    )
+    fields: list[FieldPreview] = Field(..., description="Available fields from the sample response")
     sample_response: dict = Field(
         ..., description="The raw sample response (for tree view construction)"
     )
-    flattened_response: dict = Field(
-        ..., description="Flattened version of the sample response"
-    )
+    flattened_response: dict = Field(..., description="Flattened version of the sample response")
     field_count: int = Field(..., description="Total number of fields")
 
 
@@ -154,9 +142,7 @@ class TransformSuggestionsResponse(BaseModel):
     requires_transform: bool = Field(
         ..., description="Whether a transform is necessary for compatibility"
     )
-    warning_message: Optional[str] = Field(
-        None, description="Warning if types are incompatible"
-    )
+    warning_message: Optional[str] = Field(None, description="Warning if types are incompatible")
 
 
 class MappingTemplate(BaseModel):

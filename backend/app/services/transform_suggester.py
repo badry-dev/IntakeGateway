@@ -27,9 +27,7 @@ API_TYPES = {
 }
 
 
-def suggest_transforms(
-    source_type: str, dest_type: str
-) -> TransformSuggestionsResponse:
+def suggest_transforms(source_type: str, dest_type: str) -> TransformSuggestionsResponse:
     """
     Generate transform suggestions for a source-destination type pair.
 
@@ -49,8 +47,7 @@ def suggest_transforms(
     # Validate source type
     if source_type_lower not in API_TYPES:
         raise ValueError(
-            f"Invalid source type '{source_type}'. "
-            f"Valid types: {', '.join(API_TYPES.keys())}"
+            f"Invalid source type '{source_type}'. Valid types: {', '.join(API_TYPES.keys())}"
         )
 
     # Get destination type category
@@ -157,9 +154,7 @@ def suggest_transforms(
             )
             requires_transform = True
         else:
-            warning_message = (
-                f"Boolean to {dest_type_upper} conversion is not straightforward"
-            )
+            warning_message = f"Boolean to {dest_type_upper} conversion is not straightforward"
 
     # ===================================================================
     # DATE → * mappings
@@ -177,9 +172,7 @@ def suggest_transforms(
             # Date to DATE/TIMESTAMP is straightforward
             pass
         else:
-            warning_message = (
-                f"Date to {dest_type_upper} conversion requires custom logic"
-            )
+            warning_message = f"Date to {dest_type_upper} conversion requires custom logic"
 
     # ===================================================================
     # TIMESTAMP → * mappings
@@ -197,9 +190,7 @@ def suggest_transforms(
             # Timestamp to TIMESTAMP is straightforward
             pass
         else:
-            warning_message = (
-                f"Timestamp to {dest_type_upper} conversion requires custom logic"
-            )
+            warning_message = f"Timestamp to {dest_type_upper} conversion requires custom logic"
 
     # ===================================================================
     # ARRAY / OBJECT → * mappings
@@ -215,9 +206,7 @@ def suggest_transforms(
     # NULL → * mappings
     # ===================================================================
     elif source_type_lower == "null":
-        warning_message = (
-            "Source field contains only null values. No transformation possible."
-        )
+        warning_message = "Source field contains only null values. No transformation possible."
         requires_transform = True
 
     logger.info(

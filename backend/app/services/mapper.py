@@ -180,11 +180,7 @@ def apply_transforms(value: Any, transform_rules: str | None) -> Any:
         return value
 
     try:
-        rules = (
-            json.loads(transform_rules)
-            if isinstance(transform_rules, str)
-            else transform_rules
-        )
+        rules = json.loads(transform_rules) if isinstance(transform_rules, str) else transform_rules
     except json.JSONDecodeError:
         return value
 

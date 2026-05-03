@@ -125,9 +125,7 @@ class ConnectionStorageService:
 
         return {"version": data.get("version", 1), "connections": masked_connections}
 
-    def get_connection(
-        self, connection_id: str, include_password: bool = False
-    ) -> Optional[dict]:
+    def get_connection(self, connection_id: str, include_password: bool = False) -> Optional[dict]:
         """
         Get a single connection by ID.
 

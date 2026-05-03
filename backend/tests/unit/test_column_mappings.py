@@ -327,9 +327,7 @@ class TestNestedJsonHandling:
 
     def test_mixed_types_nested(self):
         """Test nested structure with mixed types."""
-        data = {
-            "user": {"id": 123, "name": "John", "active": True, "joined": "2025-01-29"}
-        }
+        data = {"user": {"id": 123, "name": "John", "active": True, "joined": "2025-01-29"}}
         # Should handle mixed types properly
         assert isinstance(data["user"]["id"], int)
         assert isinstance(data["user"]["name"], str)

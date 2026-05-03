@@ -21,6 +21,7 @@ def _redact_cursor(value: str | None) -> str:
     digest = hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:8]
     return f"<len={len(value)} sha256={digest}>"
 
+
 from app.workers.celery_app import celery_app
 from app.services.runner import run_import
 from app.db.session import SessionLocal
@@ -34,9 +35,7 @@ def on_task_failure(self, exc, task_id, args, kwargs, einfo):
 
     # Escape curly braces in error message to prevent loguru formatting issues
     error_msg = str(exc).replace("{", "{{").replace("}", "}}")
-    logger.error(
-        f"Task import failed for task_id={import_task_id}: {error_msg}", exc_info=exc
-    )
+    logger.error(f"Task import failed for task_id={import_task_id}: {error_msg}", exc_info=exc)
 
     # Update TaskRun status to FAILED if exists
     try:

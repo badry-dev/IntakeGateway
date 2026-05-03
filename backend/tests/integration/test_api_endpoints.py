@@ -59,13 +59,9 @@ def test_db():
 def mock_connection_dependencies(monkeypatch):
     storage = MagicMock()
     storage.get_connection.side_effect = lambda connection_id, include_password=False: (
-        {"id": connection_id, "name": f"Connection {connection_id}"}
-        if connection_id
-        else None
+        {"id": connection_id, "name": f"Connection {connection_id}"} if connection_id else None
     )
-    monkeypatch.setattr(
-        "app.api.v1.routes.tasks.get_connection_storage", lambda: storage
-    )
+    monkeypatch.setattr("app.api.v1.routes.tasks.get_connection_storage", lambda: storage)
     monkeypatch.setattr(
         "app.api.v1.routes.tasks.enqueue_run",
         lambda task_id: MagicMock(id=f"task-{task_id}"),
@@ -288,9 +284,7 @@ def test_list_task_runs_with_status_filter(client: TestClient, sample_task, test
         test_db.add(run)
     test_db.commit()
 
-    response = client.get(
-        f"/api/v1/tasks/{sample_task.id}/runs?status={TaskStatus.SUCCESS.value}"
-    )
+    response = client.get(f"/api/v1/tasks/{sample_task.id}/runs?status={TaskStatus.SUCCESS.value}")
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
@@ -414,9 +408,7 @@ def test_list_all_runs(client: TestClient, test_db):
     """Test listing all runs across all tasks"""
     # Create 2 tasks with runs
     for t in range(2):
-        task = Task(
-            name=f"Task {t}", endpoint_path=f"/api/data{t}", dest_table=f"table{t}"
-        )
+        task = Task(name=f"Task {t}", endpoint_path=f"/api/data{t}", dest_table=f"table{t}")
         test_db.add(task)
         test_db.flush()
 

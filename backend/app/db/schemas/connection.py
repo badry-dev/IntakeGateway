@@ -21,18 +21,12 @@ class ConnectionBase(BaseModel):
     )
     host: str = Field(..., min_length=1, max_length=500, description="Database host")
     port: int = Field(default=1521, ge=1, le=65535, description="Database port")
-    username: str = Field(
-        ..., min_length=1, max_length=200, description="Database username"
-    )
-    service_name: Optional[str] = Field(
-        None, max_length=100, description="Oracle service name"
-    )
+    username: str = Field(..., min_length=1, max_length=200, description="Database username")
+    service_name: Optional[str] = Field(None, max_length=100, description="Oracle service name")
     database: Optional[str] = Field(
         None, max_length=200, description="Database name (PostgreSQL/MySQL)"
     )
-    connection_options: Optional[dict] = Field(
-        None, description="Additional driver options"
-    )
+    connection_options: Optional[dict] = Field(None, description="Additional driver options")
 
     @field_validator("service_name")
     @classmethod
@@ -67,9 +61,7 @@ class ConnectionUpdate(BaseModel):
     host: Optional[str] = Field(None, min_length=1, max_length=500)
     port: Optional[int] = Field(None, ge=1, le=65535)
     username: Optional[str] = Field(None, min_length=1, max_length=200)
-    password: Optional[str] = Field(
-        None, min_length=1, description="Only update if provided"
-    )
+    password: Optional[str] = Field(None, min_length=1, description="Only update if provided")
     service_name: Optional[str] = Field(None, max_length=100)
     database: Optional[str] = Field(None, max_length=200)
     connection_options: Optional[dict] = None

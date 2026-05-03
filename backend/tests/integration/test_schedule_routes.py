@@ -89,15 +89,11 @@ class TestCreateSchedule:
         payload = {"cron_expression": "0 2 * * *", "is_active": True}
 
         # Create first schedule
-        response1 = client.post(
-            f"/api/v1/tasks/{sample_task.id}/schedule", json=payload
-        )
+        response1 = client.post(f"/api/v1/tasks/{sample_task.id}/schedule", json=payload)
         assert response1.status_code == 201
 
         # Try to create second schedule for same task
-        response2 = client.post(
-            f"/api/v1/tasks/{sample_task.id}/schedule", json=payload
-        )
+        response2 = client.post(f"/api/v1/tasks/{sample_task.id}/schedule", json=payload)
         assert response2.status_code == 400
         assert "already has" in response2.json()["detail"].lower()
 
@@ -259,9 +255,7 @@ class TestDeleteSchedule:
         assert response.status_code == 204
 
         # Verify schedule is deleted
-        deleted_schedule = (
-            db.query(TaskSchedule).filter(TaskSchedule.id == schedule_id).first()
-        )
+        deleted_schedule = db.query(TaskSchedule).filter(TaskSchedule.id == schedule_id).first()
         assert deleted_schedule is None
 
     def test_delete_schedule_not_found(self):

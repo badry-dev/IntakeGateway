@@ -56,9 +56,7 @@ def mock_task_run():
 def mock_column_mappings():
     """Mock ColumnMapping objects"""
     return [
-        ColumnMapping(
-            task_id=1, source_field="id", dest_column="CUSTOMER_ID", is_active=True
-        ),
+        ColumnMapping(task_id=1, source_field="id", dest_column="CUSTOMER_ID", is_active=True),
         ColumnMapping(
             task_id=1,
             source_field="name",
@@ -66,9 +64,7 @@ def mock_column_mappings():
             transform_rules='["trim", "upper"]',
             is_active=True,
         ),
-        ColumnMapping(
-            task_id=1, source_field="email", dest_column="EMAIL", is_active=True
-        ),
+        ColumnMapping(task_id=1, source_field="email", dest_column="EMAIL", is_active=True),
     ]
 
 

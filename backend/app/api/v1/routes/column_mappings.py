@@ -97,12 +97,8 @@ def list_mappings(
 # ============================================================================
 
 
-@router.post(
-    "/{task_id}/mappings", response_model=list[ColumnMappingOut], status_code=201
-)
-def create_mappings(
-    task_id: int, payload: BulkMappingCreate, db: Session = Depends(get_db)
-):
+@router.post("/{task_id}/mappings", response_model=list[ColumnMappingOut], status_code=201)
+def create_mappings(task_id: int, payload: BulkMappingCreate, db: Session = Depends(get_db)):
     """
     Create multiple column mappings for a task (bulk operation).
 
@@ -175,9 +171,7 @@ def create_mappings(
 
 
 @router.put("/{mapping_id}", response_model=ColumnMappingOut)
-def update_mapping(
-    mapping_id: int, payload: ColumnMappingUpdate, db: Session = Depends(get_db)
-):
+def update_mapping(mapping_id: int, payload: ColumnMappingUpdate, db: Session = Depends(get_db)):
     """
     Update an existing column mapping.
 
@@ -218,9 +212,7 @@ def update_mapping(
     # Handle transform_rules JSON serialization
     if "transform_rules" in update_data:
         transform_rules = update_data["transform_rules"]
-        update_data["transform_rules"] = (
-            json.dumps(transform_rules) if transform_rules else None
-        )
+        update_data["transform_rules"] = json.dumps(transform_rules) if transform_rules else None
 
     for key, value in update_data.items():
         setattr(mapping, key, value)
@@ -329,13 +321,9 @@ async def preview_fields(
             raw_response = sample_json
 
         # Get field information (flatten and infer types)
-        fields_info, flattened_data = get_record_type_info(
-            raw_response, task.record_path
-        )
+        fields_info, flattened_data = get_record_type_info(raw_response, task.record_path)
 
-        logger.info(
-            f"Generated field preview for task {task_id}: {len(fields_info)} fields"
-        )
+        logger.info(f"Generated field preview for task {task_id}: {len(fields_info)} fields")
 
         return FieldsPreviewResponse(
             fields=fields_info,
@@ -362,9 +350,7 @@ async def preview_fields(
 @router.get("/oracle/tables/{table_name}/columns", response_model=OracleColumnsResponse)
 def get_columns(
     table_name: str,
-    connection_id: str = Query(
-        ..., min_length=1, description="Required destination connection ID"
-    ),
+    connection_id: str = Query(..., min_length=1, description="Required destination connection ID"),
 ):
     """
     Query Oracle database for table column information.
@@ -555,6 +541,4 @@ def suggest_transforms_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error suggesting transforms: {str(e)}")
-        raise HTTPException(
-            status_code=400, detail=f"Error generating suggestions: {str(e)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Error generating suggestions: {str(e)}")

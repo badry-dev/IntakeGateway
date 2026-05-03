@@ -30,10 +30,7 @@ def _require_existing_connection(connection_id: str) -> None:
 
     storage = get_connection_storage()
     if not storage.get_connection(connection_id):
-        raise HTTPException(
-            status_code=400, detail=f"Connection {connection_id} not found"
-        )
-
+        raise HTTPException(status_code=400, detail=f"Connection {connection_id} not found")
 
 
 def get_db():
@@ -100,9 +97,7 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
     # Check if task with same name exists
     exists = db.query(Task).filter(Task.name == payload.name).first()
     if exists:
-        raise HTTPException(
-            status_code=400, detail="Task with this name already exists"
-        )
+        raise HTTPException(status_code=400, detail="Task with this name already exists")
 
     _require_existing_connection(payload.connection_id)
 
@@ -168,9 +163,7 @@ def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)
     if payload.name != task.name:
         exists = db.query(Task).filter(Task.name == payload.name).first()
         if exists:
-            raise HTTPException(
-                status_code=400, detail="Task with this name already exists"
-            )
+            raise HTTPException(status_code=400, detail="Task with this name already exists")
 
     _require_existing_connection(payload.connection_id)
 
@@ -419,11 +412,7 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Task not found")
 
     # Get task run
-    task_run = (
-        db.query(TaskRun)
-        .filter(TaskRun.id == run_id, TaskRun.task_id == task_id)
-        .first()
-    )
+    task_run = db.query(TaskRun).filter(TaskRun.id == run_id, TaskRun.task_id == task_id).first()
     if not task_run:
         raise HTTPException(status_code=404, detail="Run not found")
 
@@ -433,9 +422,7 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
         .order_by(TaskRun.id.desc())
         .first()
     )
-    is_retry = (
-        previous_run is not None and previous_run.status == TaskStatus.FAILED.value
-    )
+    is_retry = previous_run is not None and previous_run.status == TaskStatus.FAILED.value
     retry_of_run_id = previous_run.id if is_retry else None
 
     # Get execution logs

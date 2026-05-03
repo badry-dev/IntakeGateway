@@ -191,9 +191,7 @@ class TestProcessSingleRow:
 
     @patch("app.services.runner._insert_single_row")
     @patch("app.services.runner._find_existing_record")
-    def test_insert_when_record_not_exists(
-        self, mock_find, mock_insert, mock_db, mock_task_upsert
-    ):
+    def test_insert_when_record_not_exists(self, mock_find, mock_insert, mock_db, mock_task_upsert):
         """Test INSERT when record doesn't exist"""
         mock_find.return_value = None
         row = {"employee_id": 1, "name": "John"}
@@ -205,9 +203,7 @@ class TestProcessSingleRow:
 
     @patch("app.services.runner._update_existing_row")
     @patch("app.services.runner._find_existing_record")
-    def test_update_when_record_exists(
-        self, mock_find, mock_update, mock_db, mock_task_upsert
-    ):
+    def test_update_when_record_exists(self, mock_find, mock_update, mock_db, mock_task_upsert):
         """Test UPDATE when record exists"""
         mock_find.return_value = {"employee_id": 1, "name": "Old Name"}
         row = {"employee_id": 1, "name": "New Name"}
@@ -218,9 +214,7 @@ class TestProcessSingleRow:
         mock_update.assert_called_once()
 
     @patch("app.services.runner._find_existing_record")
-    def test_skip_when_condition_met(
-        self, mock_find, mock_db, mock_task_upsert_with_skip
-    ):
+    def test_skip_when_condition_met(self, mock_find, mock_db, mock_task_upsert_with_skip):
         """Test SKIP when skip condition is met"""
         mock_find.return_value = {"employee_id": 1, "processed": "Y"}
         row = {"employee_id": 1, "name": "John"}
@@ -233,9 +227,7 @@ class TestProcessSingleRow:
 
     @patch("app.services.runner._insert_single_row")
     @patch("app.services.runner._find_existing_record")
-    def test_error_on_integrity_error(
-        self, mock_find, mock_insert, mock_db, mock_task_upsert
-    ):
+    def test_error_on_integrity_error(self, mock_find, mock_insert, mock_db, mock_task_upsert):
         """Test ERROR on IntegrityError (constraint violation)"""
         mock_find.return_value = None
         mock_insert.side_effect = IntegrityError(
@@ -251,9 +243,7 @@ class TestProcessSingleRow:
 
     @patch("app.services.runner._insert_single_row")
     @patch("app.services.runner._find_existing_record")
-    def test_error_on_database_error(
-        self, mock_find, mock_insert, mock_db, mock_task_upsert
-    ):
+    def test_error_on_database_error(self, mock_find, mock_insert, mock_db, mock_task_upsert):
         """Test ERROR on DatabaseError"""
         mock_find.return_value = None
         mock_insert.side_effect = DatabaseError(
@@ -273,9 +263,7 @@ class TestProcessRowsWithUpsert:
 
     @patch("app.services.runner._process_single_row")
     @patch("app.services.runner.log_row_error")
-    def test_process_all_inserted(
-        self, mock_log_error, mock_process, mock_db, mock_task_upsert
-    ):
+    def test_process_all_inserted(self, mock_log_error, mock_process, mock_db, mock_task_upsert):
         """Test all rows inserted successfully"""
         rows = [
             {"employee_id": 1, "name": "Alice"},
@@ -324,9 +312,7 @@ class TestProcessRowsWithUpsert:
 
     @patch("app.services.runner._process_single_row")
     @patch("app.services.runner.log_row_error")
-    def test_continue_on_error(
-        self, mock_log_error, mock_process, mock_db, mock_task_upsert
-    ):
+    def test_continue_on_error(self, mock_log_error, mock_process, mock_db, mock_task_upsert):
         """Test processing continues when error occurs (continue_on_error=True)"""
         rows = [
             {"employee_id": 1, "name": "Alice"},
@@ -411,21 +397,15 @@ class TestProcessRowsWithUpsert:
 
     @patch("app.services.runner._process_single_row")
     @patch("app.services.runner.log_row_error")
-    def test_all_rows_error(
-        self, mock_log_error, mock_process, mock_db, mock_task_upsert
-    ):
+    def test_all_rows_error(self, mock_log_error, mock_process, mock_db, mock_task_upsert):
         """Test all rows have errors but processing continues"""
         rows = [
             {"employee_id": 1, "name": "Alice"},
             {"employee_id": 2, "name": "Bob"},
         ]
         mock_process.side_effect = [
-            RowResult(
-                status=RowStatus.ERROR, record_key="employee_id=1", message="Error 1"
-            ),
-            RowResult(
-                status=RowStatus.ERROR, record_key="employee_id=2", message="Error 2"
-            ),
+            RowResult(status=RowStatus.ERROR, record_key="employee_id=1", message="Error 1"),
+            RowResult(status=RowStatus.ERROR, record_key="employee_id=2", message="Error 2"),
         ]
 
         results = process_rows_with_upsert(mock_db, mock_task_upsert, 1, rows)

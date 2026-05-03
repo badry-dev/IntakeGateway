@@ -141,10 +141,7 @@ class TestValidateType:
     def test_validate_type_datetime_valid(self):
         """Test datetime type validation"""
         assert validate_type("created_at", "2024-01-15T10:30:00", "datetime") is None
-        assert (
-            validate_type("created_at", datetime(2024, 1, 15, 10, 30), "datetime")
-            is None
-        )
+        assert validate_type("created_at", datetime(2024, 1, 15, 10, 30), "datetime") is None
 
     def test_validate_type_datetime_invalid(self):
         """Test datetime type validation fails"""
@@ -230,10 +227,7 @@ class TestValidateFormat:
 
     def test_validate_format_uuid_valid(self):
         """Test UUID format validation"""
-        assert (
-            validate_format("id", "550e8400-e29b-41d4-a716-446655440000", "uuid")
-            is None
-        )
+        assert validate_format("id", "550e8400-e29b-41d4-a716-446655440000", "uuid") is None
 
     def test_validate_format_uuid_invalid(self):
         """Test UUID format validation fails"""

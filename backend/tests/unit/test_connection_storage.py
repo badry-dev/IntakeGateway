@@ -373,9 +373,7 @@ class TestConnectionPool:
         url = build_connection_url(conn, "pass@word/with?special=chars")
 
         # Special chars should be URL encoded
-        assert (
-            "@" not in url.split("@")[0].split(":")[-1]
-        )  # @ in password should be encoded
+        assert "@" not in url.split("@")[0].split(":")[-1]  # @ in password should be encoded
         assert "%40" in url or "%2F" in url or "%3F" in url  # Some encoding present
 
     def test_unsupported_db_type_raises(self):

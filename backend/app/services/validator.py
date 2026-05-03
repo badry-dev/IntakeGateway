@@ -33,27 +33,20 @@ def validate_required(column: str, value: Any) -> ValidationError | None:
     return None
 
 
-def validate_type(
-    column: str, value: Any, expected_type: str
-) -> ValidationError | None:
+def validate_type(column: str, value: Any, expected_type: str) -> ValidationError | None:
     """Validate value matches expected type"""
     if value is None:
         return None
 
     type_validators = {
         "int": lambda v: isinstance(v, int) or (isinstance(v, str) and v.isdigit()),
-        "float": lambda v: (
-            isinstance(v, (int, float)) or (isinstance(v, str) and is_float(v))
-        ),
+        "float": lambda v: isinstance(v, (int, float)) or (isinstance(v, str) and is_float(v)),
         "string": lambda v: (
             isinstance(v, (str, int, float)) or isinstance(v, bool) == False
         ),  # Coerce numbers to string
         "bool": lambda v: (
             isinstance(v, bool)
-            or (
-                isinstance(v, str)
-                and v.lower() in ("true", "false", "1", "0", "yes", "no")
-            )
+            or (isinstance(v, str) and v.lower() in ("true", "false", "1", "0", "yes", "no"))
             or isinstance(v, int)
         ),
         "date": lambda v: is_valid_date(v),
@@ -86,9 +79,7 @@ def validate_length(column: str, value: Any, max_length: int) -> ValidationError
     return None
 
 
-def validate_format(
-    column: str, value: Any, format_type: str
-) -> ValidationError | None:
+def validate_format(column: str, value: Any, format_type: str) -> ValidationError | None:
     """Validate value matches expected format (email, phone, etc.)"""
     if value is None:
         return None
@@ -110,9 +101,7 @@ def validate_format(
     }
 
     pattern = format_patterns.get(format_type, format_type)  # Allow custom regex
-    if pattern and not re.match(
-        pattern, value, re.IGNORECASE if format_type == "uuid" else 0
-    ):
+    if pattern and not re.match(pattern, value, re.IGNORECASE if format_type == "uuid" else 0):
         return ValidationError(
             column=column,
             error_type="format",
@@ -188,9 +177,7 @@ def is_valid_datetime(value: Any) -> bool:
     return False
 
 
-def validate_row(
-    row: dict[str, Any], column_specs: dict[str, dict]
-) -> list[ValidationError]:
+def validate_row(row: dict[str, Any], column_specs: dict[str, dict]) -> list[ValidationError]:
     """
     Validate a row against column specifications
 
@@ -243,9 +230,7 @@ def validate_row(
 
         # Range validation
         if "min" in col_spec or "max" in col_spec:
-            error = validate_range(
-                column, value, col_spec.get("min"), col_spec.get("max")
-            )
+            error = validate_range(column, value, col_spec.get("min"), col_spec.get("max"))
             if error:
                 errors.append(error)
 

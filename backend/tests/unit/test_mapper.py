@@ -162,9 +162,7 @@ class TestMapRowWithColumnMappings:
         source_row = {"field1": "value1", "field2": "value2"}
 
         mappings = [
-            ColumnMapping(
-                task_id=1, source_field="field1", dest_column="FIELD1", is_active=True
-            ),
+            ColumnMapping(task_id=1, source_field="field1", dest_column="FIELD1", is_active=True),
             ColumnMapping(
                 task_id=1,
                 source_field="field2",
@@ -222,9 +220,7 @@ class TestMapRows:
         source_rows = [{"id": "1", "name": "Alice"}, {"id": "2", "name": "Bob"}]
 
         mappings = [
-            ColumnMapping(
-                task_id=1, source_field="id", dest_column="ID", is_active=True
-            ),
+            ColumnMapping(task_id=1, source_field="id", dest_column="ID", is_active=True),
             ColumnMapping(
                 task_id=1,
                 source_field="name",
@@ -242,11 +238,7 @@ class TestMapRows:
 
     def test_map_empty_rows(self):
         """Test mapping empty list"""
-        mappings = [
-            ColumnMapping(
-                task_id=1, source_field="id", dest_column="ID", is_active=True
-            )
-        ]
+        mappings = [ColumnMapping(task_id=1, source_field="id", dest_column="ID", is_active=True)]
 
         results = map_rows([], mappings)
 

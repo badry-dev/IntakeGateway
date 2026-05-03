@@ -24,9 +24,7 @@ app.add_middleware(
 
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 app.include_router(runs.router, prefix="/api/v1/runs", tags=["runs"])
-app.include_router(
-    column_mappings.router, prefix="/api/v1/tasks", tags=["column_mappings"]
-)
+app.include_router(column_mappings.router, prefix="/api/v1/tasks", tags=["column_mappings"])
 app.include_router(schedules.router, tags=["schedules"])
 app.include_router(connections.router, tags=["connections"])
 # Also include oracle metadata routes without /tasks prefix

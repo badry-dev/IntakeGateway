@@ -24,9 +24,7 @@ router = APIRouter(prefix="/api/v1", tags=["schedules"])
 
 
 @router.post("/tasks/{task_id}/schedule", response_model=ScheduleOut, status_code=201)
-def create_schedule(
-    task_id: int, payload: ScheduleCreate, db: Session = Depends(get_db)
-):
+def create_schedule(task_id: int, payload: ScheduleCreate, db: Session = Depends(get_db)):
     """
     Create a new cron schedule for a task
 
@@ -48,9 +46,7 @@ def create_schedule(
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
     # Check if schedule already exists for this task
-    existing_schedule = (
-        db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
-    )
+    existing_schedule = db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
     if existing_schedule:
         logger.warning(f"Task {task_id} already has a schedule")
         raise HTTPException(
@@ -118,17 +114,13 @@ def get_schedule(task_id: int, db: Session = Depends(get_db)):
     schedule = db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
 
     if not schedule:
-        raise HTTPException(
-            status_code=404, detail=f"No schedule found for task {task_id}"
-        )
+        raise HTTPException(status_code=404, detail=f"No schedule found for task {task_id}")
 
     return schedule
 
 
 @router.put("/schedules/{schedule_id}", response_model=ScheduleOut)
-def update_schedule(
-    schedule_id: int, payload: ScheduleUpdate, db: Session = Depends(get_db)
-):
+def update_schedule(schedule_id: int, payload: ScheduleUpdate, db: Session = Depends(get_db)):
     """
     Update an existing schedule
 
@@ -226,9 +218,7 @@ def list_schedules(
     Returns:
         List of schedules with pagination info
     """
-    query = db.query(TaskSchedule, Task.name).outerjoin(
-        Task, TaskSchedule.task_id == Task.id
-    )
+    query = db.query(TaskSchedule, Task.name).outerjoin(Task, TaskSchedule.task_id == Task.id)
 
     # Filter by active status if provided
     if is_active is not None:
@@ -251,9 +241,7 @@ def list_schedules(
         }
         schedules.append(ScheduleWithTaskName(**schedule_dict))
 
-    return ScheduleListOut(
-        schedules=schedules, total_count=total_count, skip=skip, limit=limit
-    )
+    return ScheduleListOut(schedules=schedules, total_count=total_count, skip=skip, limit=limit)
 
 
 @router.post("/schedules/{schedule_id}/resume", status_code=200)
