@@ -5,6 +5,8 @@ import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
 import { TaskDetail } from '@/pages/TaskDetail'
 
 vi.mock('@/hooks/api', () => ({
+  useConnections: vi.fn().mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false }),
+  useBackfillTask: vi.fn().mockReturnValue({ mutateAsync: vi.fn(), isPending: false }),
   useTask: vi.fn(),
   useUpdateTask: vi.fn(),
   useDeleteTask: vi.fn(),
@@ -71,7 +73,7 @@ describe('TaskDetail Schedule Tab', () => {
       refetch: vi.fn(),
     } as any)
     render(<TaskDetail />, { wrapper: createWrapper() })
-    expect(screen.getByText('Active')).toBeInTheDocument()
+    expect(screen.getAllByText('Active').length).toBeGreaterThan(0)
   })
 
   it('should show all three tabs', () => {

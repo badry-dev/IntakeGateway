@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { TaskList } from '@/pages/TaskList'
 
 vi.mock('@/hooks/api', () => ({
+  useConnections: vi.fn().mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false }),
   useTasks: vi.fn(),
   useTriggerRun: vi.fn(),
   useDeleteTask: vi.fn(),

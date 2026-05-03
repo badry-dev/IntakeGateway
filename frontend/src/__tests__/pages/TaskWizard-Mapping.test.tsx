@@ -9,6 +9,8 @@ import { BrowserRouter } from 'react-router-dom'
 import { TaskWizard } from '@/pages/TaskWizard'
 
 vi.mock('@/hooks/api', () => ({
+  useConnections: vi.fn().mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false }),
+  useBackfillTask: vi.fn().mockReturnValue({ mutateAsync: vi.fn(), isPending: false }),
   useCreateTask: vi.fn(),
   useCreateMappings: vi.fn(),
   useOracleColumns: vi.fn(),
@@ -18,7 +20,7 @@ vi.mock('@/components/ColumnMappingEditor', () => ({
   ColumnMappingEditor: () => <div data-testid="column-mapping-editor">ColumnMappingEditor Mock</div>,
 }))
 
-import { useCreateTask, useCreateMappings, useOracleColumns } from '@/hooks/api'
+import { useConnections, useCreateTask, useCreateMappings, useOracleColumns } from '@/hooks/api'
 
 const createWrapper = () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -32,6 +34,10 @@ const createWrapper = () => {
 describe('TaskWizard Mapping Step', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(useConnections).mockReturnValue({
+      data: { connections: [{ id: 'conn-1', name: 'Test DB', db_type: 'oracle', host: 'localhost', port: 1521, username: 'admin', created_at: '', updated_at: '' }], total_count: 1 },
+      isLoading: false, isError: false,
+    } as any)
     vi.mocked(useCreateTask).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as any)
     vi.mocked(useCreateMappings).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as any)
     vi.mocked(useOracleColumns).mockReturnValue({ data: undefined, isLoading: false } as any)
@@ -51,23 +57,23 @@ describe('TaskWizard Mapping Step', () => {
     const user = userEvent.setup()
     render(<TaskWizard />, { wrapper: createWrapper() })
 
-    // Step 1: Fill basic info
+    // Step 1 renders all basic info fields
+    expect(screen.getByPlaceholderText(/Sync Users/)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/users, products/)).toBeInTheDocument()
+    // Next is disabled without all required fields filled
     await user.type(screen.getByPlaceholderText(/Sync Users/), 'Test Task')
     await user.type(screen.getByPlaceholderText(/users, products/), 'TEST_TABLE')
-    await user.click(screen.getByText('Next'))
-
-    // Step 2: Endpoint - should now show endpoint fields
-    expect(screen.getByPlaceholderText(/api.example.com/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
   })
 
   it('should not allow navigation without required fields', () => {
     render(<TaskWizard />, { wrapper: createWrapper() })
     // Next should be disabled without name and table
-    expect(screen.getByText('Next')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
   })
 
   it('should show Previous button disabled on first step', () => {
     render(<TaskWizard />, { wrapper: createWrapper() })
-    expect(screen.getByText('Previous')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
   })
 })

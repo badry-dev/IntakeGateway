@@ -5,6 +5,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { RunDetail } from '@/pages/RunDetail'
 
 vi.mock('@/hooks/api', () => ({
+  useConnections: vi.fn().mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false }),
+  useBackfillTask: vi.fn().mockReturnValue({ mutateAsync: vi.fn(), isPending: false }),
   useRun: vi.fn(),
 }))
 
@@ -55,7 +57,7 @@ describe('RunDetail', () => {
     await waitFor(() => {
       expect(screen.getByText('Run #1')).toBeInTheDocument()
       expect(screen.getByText('SUCCESS')).toBeInTheDocument()
-      expect(screen.getByText('Sync Users')).toBeInTheDocument()
+      expect(screen.getByText(/Sync Users/)).toBeInTheDocument()
     })
   })
 

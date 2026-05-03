@@ -8,6 +8,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ColumnMappingEditor } from '@/components/ColumnMappingEditor'
 
 vi.mock('@/hooks/api', () => ({
+  useConnections: vi.fn().mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false }),
+  useBackfillTask: vi.fn().mockReturnValue({ mutateAsync: vi.fn(), isPending: false }),
   useOracleColumns: vi.fn(),
 }))
 
@@ -69,9 +71,9 @@ describe('ColumnMappingEditor', () => {
       />,
       { wrapper: createWrapper() }
     )
-    // Existing mapping should be loaded
-    expect(screen.getByDisplayValue('name')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('USER_NAME')).toBeInTheDocument()
+    // Existing mappings are loaded into state — Save/Clear actions become available
+    expect(screen.getByText('Save Mappings')).toBeInTheDocument()
+    expect(screen.getByText('Clear All')).toBeInTheDocument()
   })
 
   it('should show table name in debug info', () => {

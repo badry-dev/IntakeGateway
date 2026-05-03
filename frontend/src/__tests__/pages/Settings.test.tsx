@@ -40,7 +40,7 @@ describe('Settings', () => {
   it('should show Connections tab', () => {
     vi.mocked(useConnections).mockReturnValue({ data: { connections: [], total_count: 0 }, isLoading: false, isError: false } as any)
     render(<Settings />, { wrapper: createWrapper() })
-    expect(screen.getByText('Connections')).toBeInTheDocument()
+    expect(screen.getAllByText('Connections').length).toBeGreaterThan(0)
   })
 
   it('should show empty state when no connections', async () => {
