@@ -89,9 +89,7 @@ class TaskScheduler:
             self.scheduled_jobs[task.id] = job.id
 
             # Update next_run_date in database
-            next_run = croniter(task_schedule.cron_expression, datetime.now(UTC)).get_next(
-                datetime
-            )
+            next_run = croniter(task_schedule.cron_expression, datetime.now(UTC)).get_next(datetime)
             task_schedule.next_run_date = next_run
             self.db.commit()
 
@@ -129,9 +127,9 @@ class TaskScheduler:
                 task_schedule.last_run_date = datetime.now(UTC)
 
                 # Calculate next run
-                next_run = croniter(
-                    task_schedule.cron_expression, datetime.now(UTC)
-                ).get_next(datetime)
+                next_run = croniter(task_schedule.cron_expression, datetime.now(UTC)).get_next(
+                    datetime
+                )
                 task_schedule.next_run_date = next_run
 
                 self.db.commit()

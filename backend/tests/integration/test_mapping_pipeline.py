@@ -9,7 +9,6 @@ Tests cover:
 - Database integration with mappings
 """
 
-
 import pytest
 
 

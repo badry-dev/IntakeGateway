@@ -166,9 +166,7 @@ class TestApplyAuthentication:
     def test_oauth_missing_access_token_raises(self):
         """Test that OAuth auth with no access_token raises ValueError"""
         with pytest.raises(ValueError, match="no access_token available"):
-            apply_authentication(
-                headers={}, auth_type="oauth", oauth_config={"client_id": "test"}
-            )
+            apply_authentication(headers={}, auth_type="oauth", oauth_config={"client_id": "test"})
 
     def test_unknown_auth_type(self):
         """Test that unknown auth type is handled gracefully"""
