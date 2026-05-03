@@ -1,4 +1,3 @@
-
 import sys
 from contextvars import ContextVar
 from loguru import logger
@@ -28,7 +27,7 @@ logger.add(
         "{extra[task_id]!s} | {extra[run_id]!s} | "
         "<level>{message}</level>"
     ),
-    filter=context_filter
+    filter=context_filter,
 )
 
 
@@ -40,7 +39,7 @@ def get_logger():
 def set_task_context(task_id: int | None, run_id: int | None = None):
     """
     Set task and run ID context for current execution
-    
+
     Args:
         task_id: Task identifier
         run_id: Task run identifier (optional)
@@ -58,7 +57,7 @@ def clear_task_context():
 def get_task_context() -> tuple[int | None, int | None]:
     """
     Get current task and run ID context
-    
+
     Returns:
         Tuple of (task_id, run_id)
     """

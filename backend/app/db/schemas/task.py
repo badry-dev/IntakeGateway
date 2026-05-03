@@ -1,7 +1,7 @@
-
 from pydantic import BaseModel, Field, field_validator
 from typing import Any, Optional, Literal
 from datetime import datetime
+
 
 class TaskCreate(BaseModel):
     name: str
@@ -16,9 +16,9 @@ class TaskCreate(BaseModel):
     dest_table: str
     batch_size: int = 500
     is_active: bool = True
-    
+
     # Authentication fields (Phase 7)
-    auth_type: Literal['none', 'bearer', 'api_key', 'basic', 'oauth'] = 'none'
+    auth_type: Literal["none", "bearer", "api_key", "basic", "oauth"] = "none"
     api_key: Optional[str] = None  # Will be encrypted before storage
     username: Optional[str] = None  # For Basic auth
     password: Optional[str] = None  # Will be encrypted before storage
@@ -31,35 +31,39 @@ class TaskCreate(BaseModel):
     skip_value: Optional[str] = None  # Value that triggers skip (e.g., 'Y')
     continue_on_error: bool = True  # Continue processing on row errors
 
-    @field_validator('upsert_keys')
+    @field_validator("upsert_keys")
     @classmethod
     def validate_upsert_keys(cls, v: Optional[list[str]], info):
         """Validate that upsert_keys is provided when upsert is enabled"""
-        upsert_enabled = info.data.get('upsert_enabled')
+        upsert_enabled = info.data.get("upsert_enabled")
         if upsert_enabled and (not v or len(v) == 0):
-            raise ValueError("upsert_enabled requires at least one column in upsert_keys")
+            raise ValueError(
+                "upsert_enabled requires at least one column in upsert_keys"
+            )
         return v
 
-    @field_validator('api_key')
+    @field_validator("api_key")
     @classmethod
     def validate_api_key_with_auth_type(cls, v: Optional[str], info):
         """Validate that api_key is provided when needed"""
-        auth_type = info.data.get('auth_type')
-        if auth_type in ('bearer', 'api_key') and not v:
+        auth_type = info.data.get("auth_type")
+        if auth_type in ("bearer", "api_key") and not v:
             raise ValueError(f"{auth_type} authentication requires api_key")
         return v
-    
-    @field_validator('username', 'password')
+
+    @field_validator("username", "password")
     @classmethod
     def validate_basic_auth(cls, v: Optional[str], info):
         """Validate that username/password are provided for basic auth"""
-        auth_type = info.data.get('auth_type')
-        if auth_type == 'basic' and not v:
+        auth_type = info.data.get("auth_type")
+        if auth_type == "basic" and not v:
             raise ValueError("basic authentication requires both username and password")
         return v
 
+
 class TaskOut(BaseModel):
     """Task response model - excludes sensitive authentication data"""
+
     id: int
     name: str
     description: Optional[str] = None
@@ -73,9 +77,9 @@ class TaskOut(BaseModel):
     dest_table: str
     batch_size: int
     is_active: bool
-    
+
     # Authentication fields (safe ones only - no passwords/keys in response)
-    auth_type: str = 'none'
+    auth_type: str = "none"
     username: Optional[str] = None  # Safe to expose
     # api_key and password are NOT included in response
 
@@ -88,24 +92,28 @@ class TaskOut(BaseModel):
 
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     class Config:
         from_attributes = True
 
+
 class TaskLogOut(BaseModel):
     """Task execution log entry"""
+
     id: int
     task_run_id: int
     step_name: str
     message: str
     details: Optional[Any] = None
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
+
 class TaskRunLogOut(BaseModel):
     """Row-level error log entry"""
+
     id: int
     task_run_id: int
     row_number: int
@@ -114,12 +122,14 @@ class TaskRunLogOut(BaseModel):
     error_message: str
     source_value: Optional[str] = None
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
+
 class TaskRunOut(BaseModel):
     """Complete task run with all logs and results"""
+
     id: int
     task_id: int
     task_name: Optional[str] = None
@@ -137,17 +147,21 @@ class TaskRunOut(BaseModel):
     ended_at: Optional[datetime] = None
     execution_logs: list[TaskLogOut] = []
     row_errors: list[TaskRunLogOut] = []
-    
+
     class Config:
         from_attributes = True
 
+
 class TaskWithAuthOut(TaskOut):
     """Task with authentication fields (for internal use only, don't expose api_key/password)"""
+
     # For internal endpoints that need auth info but still exclude sensitive fields
     pass
 
+
 class TaskStatsOut(BaseModel):
     """Task execution statistics"""
+
     task_id: int
     total_runs: int
     successful_runs: int

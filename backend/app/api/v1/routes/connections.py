@@ -4,6 +4,7 @@ Database connection management API routes.
 Provides CRUD operations for database connections with encrypted storage.
 Connections are tested before saving to prevent invalid configurations.
 """
+
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 from app.db.schemas.connection import (
@@ -26,8 +27,8 @@ def _parse_datetime(dt_value) -> datetime:
     """Parse datetime from string or return as-is if already datetime"""
     if isinstance(dt_value, str):
         # Handle ISO format with or without timezone
-        if dt_value.endswith('Z'):
-            dt_value = dt_value[:-1] + '+00:00'
+        if dt_value.endswith("Z"):
+            dt_value = dt_value[:-1] + "+00:00"
         return datetime.fromisoformat(dt_value)
     return dt_value
 
@@ -45,7 +46,7 @@ def _connection_to_out(conn: dict) -> ConnectionOut:
         database=conn.get("database"),
         connection_options=conn.get("connection_options"),
         created_at=_parse_datetime(conn["created_at"]),
-        updated_at=_parse_datetime(conn["updated_at"])
+        updated_at=_parse_datetime(conn["updated_at"]),
     )
 
 
@@ -62,10 +63,7 @@ def list_connections():
 
     connections = [_connection_to_out(c) for c in data.get("connections", [])]
 
-    return ConnectionListOut(
-        connections=connections,
-        total_count=len(connections)
-    )
+    return ConnectionListOut(connections=connections, total_count=len(connections))
 
 
 @router.get("/{connection_id}", response_model=ConnectionOut)
@@ -87,8 +85,7 @@ def get_connection(connection_id: str):
 
     if not conn:
         raise HTTPException(
-            status_code=404,
-            detail=f"Connection {connection_id} not found"
+            status_code=404, detail=f"Connection {connection_id} not found"
         )
 
     return _connection_to_out(conn)
@@ -112,21 +109,24 @@ def create_connection(payload: ConnectionCreate):
         400: Connection test failed
     """
     # Test connection before saving
-    test_result = test_connection({
-        "db_type": payload.db_type,
-        "host": payload.host,
-        "port": payload.port,
-        "username": payload.username,
-        "password": payload.password,
-        "service_name": payload.service_name,
-        "database": payload.database,
-    })
+    test_result = test_connection(
+        {
+            "db_type": payload.db_type,
+            "host": payload.host,
+            "port": payload.port,
+            "username": payload.username,
+            "password": payload.password,
+            "service_name": payload.service_name,
+            "database": payload.database,
+        }
+    )
 
     if not test_result["success"]:
-        logger.warning(f"Connection test failed for {payload.name}: {test_result['message']}")
+        logger.warning(
+            f"Connection test failed for {payload.name}: {test_result['message']}"
+        )
         raise HTTPException(
-            status_code=400,
-            detail=f"Connection test failed: {test_result['message']}"
+            status_code=400, detail=f"Connection test failed: {test_result['message']}"
         )
 
     storage = get_connection_storage()
@@ -162,14 +162,21 @@ def update_connection(connection_id: str, payload: ConnectionUpdate):
     existing = storage.get_connection(connection_id, include_password=True)
     if not existing:
         raise HTTPException(
-            status_code=404,
-            detail=f"Connection {connection_id} not found"
+            status_code=404, detail=f"Connection {connection_id} not found"
         )
 
     updates = payload.model_dump(exclude_unset=True)
 
     # If connection details changed, test new connection
-    connection_fields = {"host", "port", "username", "password", "service_name", "database", "db_type"}
+    connection_fields = {
+        "host",
+        "port",
+        "username",
+        "password",
+        "service_name",
+        "database",
+        "db_type",
+    }
     if any(k in updates for k in connection_fields):
         # Merge with existing for test
         test_config = {
@@ -177,17 +184,20 @@ def update_connection(connection_id: str, payload: ConnectionUpdate):
             "host": updates.get("host", existing["host"]),
             "port": updates.get("port", existing.get("port", 1521)),
             "username": updates.get("username", existing["username"]),
-            "password": updates.get("password") or storage.get_decrypted_password(connection_id),
+            "password": updates.get("password")
+            or storage.get_decrypted_password(connection_id),
             "service_name": updates.get("service_name", existing.get("service_name")),
             "database": updates.get("database", existing.get("database")),
         }
 
         test_result = test_connection(test_config)
         if not test_result["success"]:
-            logger.warning(f"Connection test failed during update for {connection_id}: {test_result['message']}")
+            logger.warning(
+                f"Connection test failed during update for {connection_id}: {test_result['message']}"
+            )
             raise HTTPException(
                 status_code=400,
-                detail=f"Connection test failed: {test_result['message']}"
+                detail=f"Connection test failed: {test_result['message']}",
             )
 
         # Invalidate cached pool since connection details changed
@@ -196,8 +206,7 @@ def update_connection(connection_id: str, payload: ConnectionUpdate):
     conn = storage.update_connection(connection_id, updates)
     if not conn:
         raise HTTPException(
-            status_code=404,
-            detail=f"Connection {connection_id} not found"
+            status_code=404, detail=f"Connection {connection_id} not found"
         )
 
     logger.info(f"Updated connection: {conn['name']} ({conn['id']})")
@@ -219,8 +228,7 @@ def delete_connection(connection_id: str):
 
     if not storage.delete_connection(connection_id):
         raise HTTPException(
-            status_code=404,
-            detail=f"Connection {connection_id} not found"
+            status_code=404, detail=f"Connection {connection_id} not found"
         )
 
     invalidate_pool(connection_id)

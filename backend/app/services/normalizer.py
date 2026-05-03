@@ -1,6 +1,6 @@
-
 from typing import Any, Iterable
 from jsonpath_ng.ext import parse as jsonpath_parse
+
 
 def select_records(payload: Any, record_path: str | None) -> Iterable[dict]:
     if record_path:
@@ -14,6 +14,7 @@ def select_records(payload: Any, record_path: str | None) -> Iterable[dict]:
         raise ValueError("Record path did not resolve to a list or object")
     return matches
 
+
 def flatten(obj: dict | Any, parent_key: str = "", sep: str = ".") -> dict:
     """
     Flatten a nested dictionary structure.
@@ -22,7 +23,7 @@ def flatten(obj: dict | Any, parent_key: str = "", sep: str = ".") -> dict:
     # Handle primitive types by wrapping in a dict
     if not isinstance(obj, dict):
         return {"value": obj}
-    
+
     items = []
     for k, v in obj.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k

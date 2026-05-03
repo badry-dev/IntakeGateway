@@ -5,6 +5,7 @@ Manages SQLAlchemy engines per connection configuration.
 Pools are created on-demand and cached for performance.
 Supports Oracle, PostgreSQL, and MySQL databases.
 """
+
 import time
 from urllib.parse import quote_plus
 import oracledb
@@ -74,10 +75,7 @@ def build_connection_url(conn: dict, password: str) -> str:
         )
     elif db_type == "mysql":
         database = conn.get("database", "")
-        return (
-            f"mysql+pymysql://{username}:{encoded_password}"
-            f"@{host}:{port}/{database}"
-        )
+        return f"mysql+pymysql://{username}:{encoded_password}@{host}:{port}/{database}"
     else:
         raise ValueError(f"Unsupported database type: {db_type}")
 
@@ -122,7 +120,7 @@ def get_engine(connection_id: str) -> Engine:
         pool_size=5,
         max_overflow=5,
         pool_pre_ping=True,  # Check connection health before use
-        future=True
+        future=True,
     )
 
     _engine_cache[connection_id] = engine
@@ -146,10 +144,7 @@ def get_session(connection_id: str) -> Session:
     # Cache session factory
     if connection_id not in _session_factories:
         _session_factories[connection_id] = sessionmaker(
-            autocommit=False,
-            autoflush=False,
-            bind=engine,
-            expire_on_commit=False
+            autocommit=False, autoflush=False, bind=engine, expire_on_commit=False
         )
 
     return _session_factories[connection_id]()
@@ -201,7 +196,9 @@ def test_connection(config: dict) -> dict:
             pool_size=1,
             max_overflow=0,
             pool_timeout=10,
-            connect_args={"connect_timeout": 10} if test_config.get("db_type") != "oracle" else {}
+            connect_args={"connect_timeout": 10}
+            if test_config.get("db_type") != "oracle"
+            else {},
         )
 
         start = time.time()
@@ -211,7 +208,9 @@ def test_connection(config: dict) -> dict:
 
             # Get server version based on database type
             if db_type == "oracle":
-                result = conn.execute(text("SELECT banner FROM v$version WHERE ROWNUM = 1"))
+                result = conn.execute(
+                    text("SELECT banner FROM v$version WHERE ROWNUM = 1")
+                )
                 version = result.scalar()
             elif db_type == "postgresql":
                 result = conn.execute(text("SELECT version()"))
@@ -227,13 +226,15 @@ def test_connection(config: dict) -> dict:
         # Cleanup
         test_engine.dispose()
 
-        logger.info(f"Connection test successful: {test_config.get('host')}:{test_config.get('port')}")
+        logger.info(
+            f"Connection test successful: {test_config.get('host')}:{test_config.get('port')}"
+        )
 
         return {
             "success": True,
             "message": "Connection successful",
             "latency_ms": latency,
-            "server_version": str(version) if version else None
+            "server_version": str(version) if version else None,
         }
 
     except Exception as e:
@@ -248,7 +249,7 @@ def test_connection(config: dict) -> dict:
             "success": False,
             "message": error_msg,
             "latency_ms": None,
-            "server_version": None
+            "server_version": None,
         }
 
 

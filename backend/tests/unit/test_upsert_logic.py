@@ -1,4 +1,5 @@
 """Unit tests for upsert and skip logic in runner service (Phase 8)"""
+
 import pytest
 from unittest.mock import MagicMock, patch
 from sqlalchemy.exc import IntegrityError, DatabaseError
@@ -97,9 +98,7 @@ class TestRowResult:
     def test_row_result_creation(self):
         """Test RowResult dataclass creation"""
         result = RowResult(
-            status=RowStatus.INSERTED,
-            record_key="employee_id=123",
-            message="Success"
+            status=RowStatus.INSERTED, record_key="employee_id=123", message="Success"
         )
         assert result.status == RowStatus.INSERTED
         assert result.record_key == "employee_id=123"
@@ -176,8 +175,8 @@ class TestGetRecordKey:
 class TestProcessSingleRow:
     """Tests for _process_single_row function"""
 
-    @patch('app.services.runner._insert_single_row')
-    @patch('app.services.runner._find_existing_record')
+    @patch("app.services.runner._insert_single_row")
+    @patch("app.services.runner._find_existing_record")
     def test_insert_when_upsert_disabled(
         self, mock_find, mock_insert, mock_db, mock_task_insert_only
     ):
@@ -190,8 +189,8 @@ class TestProcessSingleRow:
         mock_insert.assert_called_once()
         mock_find.assert_not_called()
 
-    @patch('app.services.runner._insert_single_row')
-    @patch('app.services.runner._find_existing_record')
+    @patch("app.services.runner._insert_single_row")
+    @patch("app.services.runner._find_existing_record")
     def test_insert_when_record_not_exists(
         self, mock_find, mock_insert, mock_db, mock_task_upsert
     ):
@@ -204,8 +203,8 @@ class TestProcessSingleRow:
         assert result.status == RowStatus.INSERTED
         mock_insert.assert_called_once()
 
-    @patch('app.services.runner._update_existing_row')
-    @patch('app.services.runner._find_existing_record')
+    @patch("app.services.runner._update_existing_row")
+    @patch("app.services.runner._find_existing_record")
     def test_update_when_record_exists(
         self, mock_find, mock_update, mock_db, mock_task_upsert
     ):
@@ -218,7 +217,7 @@ class TestProcessSingleRow:
         assert result.status == RowStatus.UPDATED
         mock_update.assert_called_once()
 
-    @patch('app.services.runner._find_existing_record')
+    @patch("app.services.runner._find_existing_record")
     def test_skip_when_condition_met(
         self, mock_find, mock_db, mock_task_upsert_with_skip
     ):
@@ -232,8 +231,8 @@ class TestProcessSingleRow:
         assert "Skip condition met" in result.message
         mock_db.commit.assert_not_called()
 
-    @patch('app.services.runner._insert_single_row')
-    @patch('app.services.runner._find_existing_record')
+    @patch("app.services.runner._insert_single_row")
+    @patch("app.services.runner._find_existing_record")
     def test_error_on_integrity_error(
         self, mock_find, mock_insert, mock_db, mock_task_upsert
     ):
@@ -250,8 +249,8 @@ class TestProcessSingleRow:
         assert "Constraint violation" in result.message
         mock_db.rollback.assert_called_once()
 
-    @patch('app.services.runner._insert_single_row')
-    @patch('app.services.runner._find_existing_record')
+    @patch("app.services.runner._insert_single_row")
+    @patch("app.services.runner._find_existing_record")
     def test_error_on_database_error(
         self, mock_find, mock_insert, mock_db, mock_task_upsert
     ):
@@ -272,8 +271,8 @@ class TestProcessSingleRow:
 class TestProcessRowsWithUpsert:
     """Tests for process_rows_with_upsert function"""
 
-    @patch('app.services.runner._process_single_row')
-    @patch('app.services.runner.log_row_error')
+    @patch("app.services.runner._process_single_row")
+    @patch("app.services.runner.log_row_error")
     def test_process_all_inserted(
         self, mock_log_error, mock_process, mock_db, mock_task_upsert
     ):
@@ -295,8 +294,8 @@ class TestProcessRowsWithUpsert:
         assert results["errors"] == 0
         mock_log_error.assert_not_called()
 
-    @patch('app.services.runner._process_single_row')
-    @patch('app.services.runner.log_row_error')
+    @patch("app.services.runner._process_single_row")
+    @patch("app.services.runner.log_row_error")
     def test_process_mixed_results(
         self, mock_log_error, mock_process, mock_db, mock_task_upsert_with_skip
     ):
@@ -309,7 +308,11 @@ class TestProcessRowsWithUpsert:
         mock_process.side_effect = [
             RowResult(status=RowStatus.INSERTED, record_key="employee_id=1"),
             RowResult(status=RowStatus.UPDATED, record_key="employee_id=2"),
-            RowResult(status=RowStatus.SKIPPED, record_key="employee_id=3", message="Already processed"),
+            RowResult(
+                status=RowStatus.SKIPPED,
+                record_key="employee_id=3",
+                message="Already processed",
+            ),
         ]
 
         results = process_rows_with_upsert(mock_db, mock_task_upsert_with_skip, 1, rows)
@@ -319,8 +322,8 @@ class TestProcessRowsWithUpsert:
         assert results["skipped"] == 1
         assert results["errors"] == 0
 
-    @patch('app.services.runner._process_single_row')
-    @patch('app.services.runner.log_row_error')
+    @patch("app.services.runner._process_single_row")
+    @patch("app.services.runner.log_row_error")
     def test_continue_on_error(
         self, mock_log_error, mock_process, mock_db, mock_task_upsert
     ):
@@ -332,7 +335,11 @@ class TestProcessRowsWithUpsert:
         ]
         mock_process.side_effect = [
             RowResult(status=RowStatus.INSERTED, record_key="employee_id=1"),
-            RowResult(status=RowStatus.ERROR, record_key="employee_id=2", message="Constraint error"),
+            RowResult(
+                status=RowStatus.ERROR,
+                record_key="employee_id=2",
+                message="Constraint error",
+            ),
             RowResult(status=RowStatus.INSERTED, record_key="employee_id=3"),
         ]
 
@@ -345,8 +352,8 @@ class TestProcessRowsWithUpsert:
         assert results["error_details"][0]["row_index"] == 1
         mock_log_error.assert_called_once()
 
-    @patch('app.services.runner._process_single_row')
-    @patch('app.services.runner.log_row_error')
+    @patch("app.services.runner._process_single_row")
+    @patch("app.services.runner.log_row_error")
     def test_stop_on_error_when_disabled(
         self, mock_log_error, mock_process, mock_db, mock_task_no_continue
     ):
@@ -360,11 +367,9 @@ class TestProcessRowsWithUpsert:
         with pytest.raises(Exception, match="Unexpected error"):
             process_rows_with_upsert(mock_db, mock_task_no_continue, 1, rows)
 
-    @patch('app.services.runner._process_single_row')
-    @patch('app.services.runner.log_row_error')
-    def test_empty_rows(
-        self, mock_log_error, mock_process, mock_db, mock_task_upsert
-    ):
+    @patch("app.services.runner._process_single_row")
+    @patch("app.services.runner.log_row_error")
+    def test_empty_rows(self, mock_log_error, mock_process, mock_db, mock_task_upsert):
         """Test processing empty rows list"""
         results = process_rows_with_upsert(mock_db, mock_task_upsert, 1, [])
 
@@ -374,8 +379,8 @@ class TestProcessRowsWithUpsert:
         assert results["errors"] == 0
         mock_process.assert_not_called()
 
-    @patch('app.services.runner._process_single_row')
-    @patch('app.services.runner.log_row_error')
+    @patch("app.services.runner._process_single_row")
+    @patch("app.services.runner.log_row_error")
     def test_all_rows_skipped(
         self, mock_log_error, mock_process, mock_db, mock_task_upsert_with_skip
     ):
@@ -385,8 +390,16 @@ class TestProcessRowsWithUpsert:
             {"employee_id": 2, "name": "Bob"},
         ]
         mock_process.side_effect = [
-            RowResult(status=RowStatus.SKIPPED, record_key="employee_id=1", message="processed=Y"),
-            RowResult(status=RowStatus.SKIPPED, record_key="employee_id=2", message="processed=Y"),
+            RowResult(
+                status=RowStatus.SKIPPED,
+                record_key="employee_id=1",
+                message="processed=Y",
+            ),
+            RowResult(
+                status=RowStatus.SKIPPED,
+                record_key="employee_id=2",
+                message="processed=Y",
+            ),
         ]
 
         results = process_rows_with_upsert(mock_db, mock_task_upsert_with_skip, 1, rows)
@@ -396,8 +409,8 @@ class TestProcessRowsWithUpsert:
         assert results["skipped"] == 2
         assert results["errors"] == 0
 
-    @patch('app.services.runner._process_single_row')
-    @patch('app.services.runner.log_row_error')
+    @patch("app.services.runner._process_single_row")
+    @patch("app.services.runner.log_row_error")
     def test_all_rows_error(
         self, mock_log_error, mock_process, mock_db, mock_task_upsert
     ):
@@ -407,8 +420,12 @@ class TestProcessRowsWithUpsert:
             {"employee_id": 2, "name": "Bob"},
         ]
         mock_process.side_effect = [
-            RowResult(status=RowStatus.ERROR, record_key="employee_id=1", message="Error 1"),
-            RowResult(status=RowStatus.ERROR, record_key="employee_id=2", message="Error 2"),
+            RowResult(
+                status=RowStatus.ERROR, record_key="employee_id=1", message="Error 1"
+            ),
+            RowResult(
+                status=RowStatus.ERROR, record_key="employee_id=2", message="Error 2"
+            ),
         ]
 
         results = process_rows_with_upsert(mock_db, mock_task_upsert, 1, rows)
@@ -423,25 +440,39 @@ class TestProcessRowsWithUpsert:
 class TestUpsertIntegration:
     """Integration tests for upsert flow"""
 
-    @patch('app.services.runner._find_existing_record')
-    @patch('app.services.runner._insert_single_row')
-    @patch('app.services.runner._update_existing_row')
-    @patch('app.services.runner.log_row_error')
+    @patch("app.services.runner._find_existing_record")
+    @patch("app.services.runner._insert_single_row")
+    @patch("app.services.runner._update_existing_row")
+    @patch("app.services.runner.log_row_error")
     def test_full_upsert_flow(
-        self, mock_log_error, mock_update, mock_insert, mock_find, mock_db, mock_task_upsert_with_skip
+        self,
+        mock_log_error,
+        mock_update,
+        mock_insert,
+        mock_find,
+        mock_db,
+        mock_task_upsert_with_skip,
     ):
         """Test complete upsert flow with mixed scenarios"""
         rows = [
-            {"employee_id": 1, "name": "New Employee"},      # Will INSERT
+            {"employee_id": 1, "name": "New Employee"},  # Will INSERT
             {"employee_id": 2, "name": "Updated Employee"},  # Will UPDATE
-            {"employee_id": 3, "name": "Processed Employee"}, # Will SKIP
+            {"employee_id": 3, "name": "Processed Employee"},  # Will SKIP
         ]
 
         # Mock find results
         mock_find.side_effect = [
-            None,                                          # Row 1: not found -> INSERT
-            {"employee_id": 2, "name": "Old", "processed": "N"},  # Row 2: found, not processed -> UPDATE
-            {"employee_id": 3, "name": "Old", "processed": "Y"},  # Row 3: found, processed -> SKIP
+            None,  # Row 1: not found -> INSERT
+            {
+                "employee_id": 2,
+                "name": "Old",
+                "processed": "N",
+            },  # Row 2: found, not processed -> UPDATE
+            {
+                "employee_id": 3,
+                "name": "Old",
+                "processed": "Y",
+            },  # Row 3: found, processed -> SKIP
         ]
 
         results = process_rows_with_upsert(mock_db, mock_task_upsert_with_skip, 1, rows)

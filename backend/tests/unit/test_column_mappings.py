@@ -142,7 +142,7 @@ class TestOracleMetadataService:
             "CLOB": "string",
             "BLOB": "binary",
         }
-        
+
         # These mappings should be available in the service
         for oracle_type, expected_python_type in type_mappings.items():
             # This would test that the mapping logic works
@@ -246,19 +246,13 @@ class TestColumnMappingDataValidation:
     def test_mapping_source_field_required(self):
         """Test that source_field is required."""
         # Mapping without source_field should fail validation
-        invalid_mapping = {
-            "dest_column": "USER_ID",
-            "transforms": ["to_int"]
-        }
+        invalid_mapping = {"dest_column": "USER_ID", "transforms": ["to_int"]}
         assert "source_field" not in invalid_mapping
 
     def test_mapping_dest_column_required(self):
         """Test that dest_column is required."""
         # Mapping without dest_column should fail validation
-        invalid_mapping = {
-            "source_field": "userId",
-            "transforms": ["to_int"]
-        }
+        invalid_mapping = {"source_field": "userId", "transforms": ["to_int"]}
         assert "dest_column" not in invalid_mapping
 
     def test_mapping_valid_structure(self):
@@ -266,7 +260,7 @@ class TestColumnMappingDataValidation:
         valid_mapping = {
             "source_field": "user.id",
             "dest_column": "USER_ID",
-            "transforms": ["to_int"]
+            "transforms": ["to_int"],
         }
         assert "source_field" in valid_mapping
         assert "dest_column" in valid_mapping
@@ -289,11 +283,7 @@ class TestColumnMappingDataValidation:
 
     def test_mapping_transform_list_empty_allowed(self):
         """Test that mappings can have empty transforms list."""
-        mapping = {
-            "source_field": "name",
-            "dest_column": "NAME",
-            "transforms": []
-        }
+        mapping = {"source_field": "name", "dest_column": "NAME", "transforms": []}
         assert isinstance(mapping["transforms"], list)
         assert len(mapping["transforms"]) == 0
 
@@ -302,7 +292,7 @@ class TestColumnMappingDataValidation:
         mapping = {
             "source_field": "value",
             "dest_column": "VALUE",
-            "transforms": ["trim", "to_int"]
+            "transforms": ["trim", "to_int"],
         }
         assert len(mapping["transforms"]) == 2
         assert "trim" in mapping["transforms"]
@@ -331,6 +321,7 @@ class TestTypeInference:
     def test_infer_date_type(self):
         """Test inferring date type from sample."""
         from datetime import date
+
         value = date(2025, 1, 29)
         assert isinstance(value, date)
 
@@ -355,65 +346,38 @@ class TestNestedJsonHandling:
 
     def test_simple_nested_object(self):
         """Test flattening simple nested object."""
-        data = {
-            "user": {
-                "name": "John"
-            }
-        }
+        data = {"user": {"name": "John"}}
         # Should flatten to user.name: "John"
         assert "user" in data
 
     def test_deep_nested_object(self):
         """Test flattening deeply nested object."""
-        data = {
-            "user": {
-                "address": {
-                    "country": {
-                        "code": "US"
-                    }
-                }
-            }
-        }
+        data = {"user": {"address": {"country": {"code": "US"}}}}
         # Should flatten to user.address.country.code: "US"
         assert "user" in data
 
     def test_nested_with_array(self):
         """Test handling nested objects with arrays."""
-        data = {
-            "user": {
-                "tags": ["admin", "user"]
-            }
-        }
+        data = {"user": {"tags": ["admin", "user"]}}
         # Arrays should be preserved or handled specially
         assert "user" in data
         assert isinstance(data["user"]["tags"], list)
 
     def test_empty_nested_object(self):
         """Test handling empty nested objects."""
-        data = {
-            "user": {}
-        }
+        data = {"user": {}}
         assert "user" in data
         assert isinstance(data["user"], dict)
 
     def test_null_nested_value(self):
         """Test handling null values in nested paths."""
-        data = {
-            "user": {
-                "name": None
-            }
-        }
+        data = {"user": {"name": None}}
         assert data["user"]["name"] is None
 
     def test_mixed_types_nested(self):
         """Test nested structure with mixed types."""
         data = {
-            "user": {
-                "id": 123,
-                "name": "John",
-                "active": True,
-                "joined": "2025-01-29"
-            }
+            "user": {"id": 123, "name": "John", "active": True, "joined": "2025-01-29"}
         }
         # Should handle mixed types properly
         assert isinstance(data["user"]["id"], int)
@@ -434,11 +398,7 @@ class TestMappingApplication:
 
     def test_apply_multiple_mappings(self):
         """Test applying multiple mappings."""
-        source = {
-            "id": "456",
-            "name": "JOHN",
-            "active": "true"
-        }
+        source = {"id": "456", "name": "JOHN", "active": "true"}
         # Should apply mappings for each field
         assert len(source) == 3
 
@@ -464,13 +424,7 @@ class TestMappingApplication:
 
     def test_apply_mapping_nested_field(self):
         """Test mapping from nested field."""
-        source = {
-            "user": {
-                "address": {
-                    "city": "NYC"
-                }
-            }
-        }
+        source = {"user": {"address": {"city": "NYC"}}}
         # Mapping: user.address.city -> CITY
         assert "user" in source
 
@@ -488,7 +442,7 @@ class TestValidationScenarios:
         """Test handling of duplicate destination columns."""
         mappings = [
             {"source_field": "id", "dest_column": "ID"},
-            {"source_field": "userId", "dest_column": "ID"}  # Duplicate
+            {"source_field": "userId", "dest_column": "ID"},  # Duplicate
         ]
         # Should detect or handle duplicates
         assert len(mappings) == 2
@@ -516,6 +470,7 @@ class TestValidationScenarios:
 
 # Integration test scenarios (basic checks)
 
+
 class TestIntegrationScenarios:
     """Basic integration test scenarios for unit test coverage."""
 
@@ -528,14 +483,7 @@ class TestIntegrationScenarios:
 
     def test_nested_json_to_flat_mapping(self):
         """Test converting nested JSON to flat structure with mapping."""
-        nested = {
-            "user": {
-                "id": "123",
-                "profile": {
-                    "name": "JOHN"
-                }
-            }
-        }
+        nested = {"user": {"id": "123", "profile": {"name": "JOHN"}}}
         # After mapping with transforms:
         # USER_ID: 123 (integer)
         # USER_NAME: john (lowercase)

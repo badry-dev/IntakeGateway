@@ -4,6 +4,7 @@ Encrypted file storage service for database connections.
 Stores connections in an encrypted JSON file using Fernet symmetric encryption.
 File location is configurable via CONNECTIONS_FILE_PATH environment variable.
 """
+
 import os
 import json
 import uuid
@@ -33,10 +34,7 @@ class ConnectionStorageService:
 
     @staticmethod
     def _empty_data() -> dict:
-        return {
-            "version": 1,
-            "connections": []
-        }
+        return {"version": 1, "connections": []}
 
     @classmethod
     def _normalize_data(cls, data: dict) -> dict:
@@ -63,17 +61,21 @@ class ConnectionStorageService:
     def _read_file(self) -> dict:
         """Read and decrypt connections file"""
         if not self.file_path.exists():
-            logger.debug(f"Connections file not found at {self.file_path}, returning empty structure")
+            logger.debug(
+                f"Connections file not found at {self.file_path}, returning empty structure"
+            )
             return self._empty_data()
 
         try:
-            encrypted_content = self.file_path.read_text(encoding='utf-8')
-            
+            encrypted_content = self.file_path.read_text(encoding="utf-8")
+
             # Handle empty file
-            if not encrypted_content or encrypted_content.strip() == '':
-                logger.debug(f"Empty connections file at {self.file_path}, returning empty structure")
+            if not encrypted_content or encrypted_content.strip() == "":
+                logger.debug(
+                    f"Empty connections file at {self.file_path}, returning empty structure"
+                )
                 return self._empty_data()
-            
+
             decrypted = self._encryption.decrypt(encrypted_content)
             return self._normalize_data(json.loads(decrypted))
         except Exception as e:
@@ -93,10 +95,10 @@ class ConnectionStorageService:
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Write file
-            self.file_path.write_text(encrypted, encoding='utf-8')
+            self.file_path.write_text(encrypted, encoding="utf-8")
 
             # Set secure permissions on Unix systems
-            if os.name != 'nt':
+            if os.name != "nt":
                 os.chmod(self.file_path, 0o600)
                 logger.debug(f"Set file permissions to 600 for {self.file_path}")
 
@@ -121,12 +123,11 @@ class ConnectionStorageService:
             masked_conn["password"] = "********"
             masked_connections.append(masked_conn)
 
-        return {
-            "version": data.get("version", 1),
-            "connections": masked_connections
-        }
+        return {"version": data.get("version", 1), "connections": masked_connections}
 
-    def get_connection(self, connection_id: str, include_password: bool = False) -> Optional[dict]:
+    def get_connection(
+        self, connection_id: str, include_password: bool = False
+    ) -> Optional[dict]:
         """
         Get a single connection by ID.
 
@@ -174,7 +175,7 @@ class ConnectionStorageService:
             "database": connection_data.get("database"),
             "connection_options": connection_data.get("connection_options"),
             "created_at": now,
-            "updated_at": now
+            "updated_at": now,
         }
 
         data["connections"].append(new_conn)
@@ -210,11 +211,13 @@ class ConnectionStorageService:
                 data["connections"][i] = {
                     **conn,
                     **updates,
-                    "updated_at": datetime.now(timezone.utc).isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
 
                 self._write_file(data)
-                logger.info(f"Updated connection: {data['connections'][i]['name']} ({connection_id})")
+                logger.info(
+                    f"Updated connection: {data['connections'][i]['name']} ({connection_id})"
+                )
 
                 # Return with masked password
                 return {**data["connections"][i], "password": "********"}
@@ -235,8 +238,7 @@ class ConnectionStorageService:
 
         initial_count = len(data.get("connections", []))
         data["connections"] = [
-            c for c in data.get("connections", [])
-            if c.get("id") != connection_id
+            c for c in data.get("connections", []) if c.get("id") != connection_id
         ]
 
         if len(data["connections"]) < initial_count:

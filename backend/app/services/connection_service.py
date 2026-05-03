@@ -22,7 +22,9 @@ class ConnectionFileService:
     """Service for managing encrypted database connection configurations."""
 
     # Connection file location (in app data directory)
-    DEFAULT_CONNECTION_FILE = Path(__file__).parent.parent.parent / "data" / "connections.enc"
+    DEFAULT_CONNECTION_FILE = (
+        Path(__file__).parent.parent.parent / "data" / "connections.enc"
+    )
 
     def __init__(self, connection_file: Optional[Path] = None):
         """
@@ -72,7 +74,7 @@ class ConnectionFileService:
         try:
             encrypted_data = self.connection_file.read_bytes()
             decrypted_data = self._fernet.decrypt(encrypted_data)
-            return json.loads(decrypted_data.decode('utf-8'))
+            return json.loads(decrypted_data.decode("utf-8"))
         except Exception as e:
             # If decryption fails (wrong key, corrupted file), start fresh
             # Log this in production
@@ -88,7 +90,7 @@ class ConnectionFileService:
         """
         data["updated_at"] = datetime.utcnow().isoformat()
         json_data = json.dumps(data, indent=2)
-        encrypted_data = self._fernet.encrypt(json_data.encode('utf-8'))
+        encrypted_data = self._fernet.encrypt(json_data.encode("utf-8"))
         self.connection_file.write_bytes(encrypted_data)
 
     def get_connection(self, name: str = "default") -> Optional[dict]:
@@ -141,7 +143,7 @@ class ConnectionFileService:
         username: str,
         password: str,
         is_active: bool = False,
-        description: Optional[str] = None
+        description: Optional[str] = None,
     ) -> dict:
         """
         Create a new connection configuration.
@@ -184,7 +186,7 @@ class ConnectionFileService:
             "is_active": is_active,
             "description": description,
             "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.utcnow().isoformat(),
         }
 
         data.setdefault("connections", []).append(new_connection)
@@ -202,7 +204,7 @@ class ConnectionFileService:
         password: Optional[str] = None,
         is_active: Optional[bool] = None,
         description: Optional[str] = None,
-        new_name: Optional[str] = None
+        new_name: Optional[str] = None,
     ) -> Optional[dict]:
         """
         Update an existing connection configuration.
@@ -227,7 +229,9 @@ class ConnectionFileService:
         if new_name:
             for conn in data.get("connections", []):
                 if conn.get("name") == new_name and conn.get("name") != name:
-                    raise ValueError(f"Connection with name '{new_name}' already exists")
+                    raise ValueError(
+                        f"Connection with name '{new_name}' already exists"
+                    )
 
         updated_conn = None
         for conn in data.get("connections", []):
@@ -277,8 +281,7 @@ class ConnectionFileService:
         original_count = len(data.get("connections", []))
 
         data["connections"] = [
-            conn for conn in data.get("connections", [])
-            if conn.get("name") != name
+            conn for conn in data.get("connections", []) if conn.get("name") != name
         ]
 
         if len(data["connections"]) < original_count:
@@ -299,7 +302,9 @@ class ConnectionFileService:
         """
         return self.update_connection(name, is_active=True)
 
-    def get_sqlalchemy_url(self, connection_name: Optional[str] = None) -> Optional[str]:
+    def get_sqlalchemy_url(
+        self, connection_name: Optional[str] = None
+    ) -> Optional[str]:
         """
         Get SQLAlchemy connection URL for a specific or the active connection.
 
@@ -350,8 +355,7 @@ class ConnectionFileService:
         """
         connections = self.get_all_connections()
         return [
-            {k: v for k, v in conn.items() if k != "password"}
-            for conn in connections
+            {k: v for k, v in conn.items() if k != "password"} for conn in connections
         ]
 
 

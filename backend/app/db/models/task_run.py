@@ -1,4 +1,3 @@
-
 from enum import Enum
 from sqlalchemy import Column, DateTime, Integer, String
 from app.db.session import Base
@@ -7,6 +6,7 @@ from app.db.types import ID_TYPE
 
 class TaskStatus(str, Enum):
     """Task run status enum"""
+
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     SUCCESS = "SUCCESS"
