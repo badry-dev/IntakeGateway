@@ -20,6 +20,7 @@ from app.services.connection_pool import get_session as get_destination_session
 
 # Cursor identifiers go directly into URL query params; whitelist them strictly.
 _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
+_SAFE_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$#]{0,127}$")
 
 
 def _redact_cursor(value):
@@ -257,12 +258,13 @@ async def run_import(
 
         column_mappings = mapper.get_column_mappings(db, task_id)
 
-        if column_mappings:
-            mapped_records = mapper.map_rows(flattened_records, column_mappings)
-        else:
-            # If no mappings defined, use flattened records as-is
-            mapped_records = flattened_records
-            logger.warning(f"No column mappings found for task {task_id}, using direct mapping")
+        if not column_mappings:
+            raise ValueError(
+                f"No active column mappings configured for task {task_id}. "
+                "Configure mappings before running the task; direct API-field inserts are disabled."
+            )
+
+        mapped_records = mapper.map_rows(flattened_records, column_mappings)
 
         # Step 7: Validate rows
         log_step(db, task_run_id, "VALIDATE", f"Validating {len(mapped_records)} records")
@@ -472,6 +474,40 @@ async def run_import(
             db.close()
 
 
+def _clean_identifier(identifier: str) -> str:
+    """Normalize a user/API-provided identifier before validating it."""
+    cleaned = str(identifier).strip()
+    if len(cleaned) >= 2 and cleaned[0] == '"' and cleaned[-1] == '"':
+        cleaned = cleaned[1:-1].replace('""', '"')
+    if not _SAFE_SQL_IDENTIFIER_RE.match(cleaned):
+        raise ValueError(f"Invalid SQL identifier: {identifier!r}")
+    return cleaned
+
+
+def _format_table_name(table_name: str) -> str:
+    """Validate schema-qualified table names while preserving unquoted Oracle semantics."""
+    parts = str(table_name).split(".")
+    return ".".join(_clean_identifier(part) for part in parts)
+
+
+def _quote_column_name(column_name: str) -> str:
+    """Quote column identifiers so reserved words like CHECK/MODE are valid columns."""
+    cleaned = _clean_identifier(column_name)
+    return f'"{cleaned.replace(chr(34), chr(34) * 2)}"'
+
+
+def _build_insert_statement(table_name: str, columns: list[str]) -> tuple[str, list[str], dict[str, str]]:
+    bind_names = [f"p{idx}" for idx in range(len(columns))]
+    column_str = ", ".join(_quote_column_name(column) for column in columns)
+    placeholders = ", ".join(f":{bind_name}" for bind_name in bind_names)
+    insert_sql = f"INSERT INTO {_format_table_name(table_name)} ({column_str}) VALUES ({placeholders})"
+    return insert_sql, columns, dict(zip(columns, bind_names, strict=True))
+
+
+def _rows_for_bind_aliases(rows: list[dict], columns: list[str], bind_map: dict[str, str]) -> list[dict]:
+    return [{bind_map[column]: row.get(column) for column in columns} for row in rows]
+
+
 def insert_batch(db: Session, table_name: str, rows: list[dict], batch_size: int = 500) -> int:
     """
     Insert rows into the destination table in batches with transaction handling
@@ -498,13 +534,11 @@ def insert_batch(db: Session, table_name: str, rows: list[dict], batch_size: int
             # Build dynamic INSERT statement
             if batch:
                 columns = list(batch[0].keys())
-                column_str = ", ".join(columns)
-                placeholders = ", ".join([f":{col}" for col in columns])
-
-                insert_sql = f"INSERT INTO {table_name} ({column_str}) VALUES ({placeholders})"
+                insert_sql, columns, bind_map = _build_insert_statement(table_name, columns)
+                bind_rows = _rows_for_bind_aliases(batch, columns, bind_map)
 
                 # Execute batch insert
-                db.execute(text(insert_sql), batch)
+                db.execute(text(insert_sql), bind_rows)
                 db.commit()
 
                 total_inserted += len(batch)
@@ -663,10 +697,13 @@ def _find_existing_record(
     if not upsert_keys:
         return None
 
-    where_clauses = " AND ".join([f"{key} = :{key}" for key in upsert_keys])
-    params = {key: row.get(key) for key in upsert_keys}
+    bind_map = {key: f"k{idx}" for idx, key in enumerate(upsert_keys)}
+    where_clauses = " AND ".join(
+        f"{_quote_column_name(key)} = :{bind_map[key]}" for key in upsert_keys
+    )
+    params = {bind_map[key]: row.get(key) for key in upsert_keys}
 
-    query = f"SELECT * FROM {table_name} WHERE {where_clauses}"
+    query = f"SELECT * FROM {_format_table_name(table_name)} WHERE {where_clauses}"
     result = db.execute(text(query), params).fetchone()
 
     if result:
@@ -695,11 +732,9 @@ def _should_skip(task: Task, existing_record: dict) -> bool:
 def _insert_single_row(db: Session, table_name: str, row: dict):
     """Insert a single row into the table."""
     columns = list(row.keys())
-    column_str = ", ".join(columns)
-    placeholders = ", ".join([f":{col}" for col in columns])
-
-    insert_sql = f"INSERT INTO {table_name} ({column_str}) VALUES ({placeholders})"
-    db.execute(text(insert_sql), row)
+    insert_sql, columns, bind_map = _build_insert_statement(table_name, columns)
+    bind_row = _rows_for_bind_aliases([row], columns, bind_map)[0]
+    db.execute(text(insert_sql), bind_row)
 
 
 def _update_existing_row(db: Session, table_name: str, row: dict, upsert_keys: list):
@@ -709,11 +744,21 @@ def _update_existing_row(db: Session, table_name: str, row: dict, upsert_keys: l
     if not update_cols:
         return  # Nothing to update
 
-    set_clause = ", ".join([f"{col} = :{col}" for col in update_cols])
-    where_clause = " AND ".join([f"{key} = :{key}" for key in upsert_keys])
+    update_bind_map = {col: f"u{idx}" for idx, col in enumerate(update_cols)}
+    key_bind_map = {key: f"k{idx}" for idx, key in enumerate(upsert_keys)}
+    set_clause = ", ".join(
+        f"{_quote_column_name(col)} = :{update_bind_map[col]}" for col in update_cols
+    )
+    where_clause = " AND ".join(
+        f"{_quote_column_name(key)} = :{key_bind_map[key]}" for key in upsert_keys
+    )
+    params = {
+        **{update_bind_map[col]: row.get(col) for col in update_cols},
+        **{key_bind_map[key]: row.get(key) for key in upsert_keys},
+    }
 
-    update_sql = f"UPDATE {table_name} SET {set_clause} WHERE {where_clause}"
-    db.execute(text(update_sql), row)
+    update_sql = f"UPDATE {_format_table_name(table_name)} SET {set_clause} WHERE {where_clause}"
+    db.execute(text(update_sql), params)
 
 
 def log_step(db: Session, task_run_id: int, step_name: str, message: str, details: dict = None):

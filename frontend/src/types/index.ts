@@ -179,7 +179,7 @@ export interface ColumnMapping {
 export interface ColumnMappingCreate {
   source_field: string
   dest_column: string
-  transform_rules?: string | Record<string, any>
+  transform_rules?: string[]
   is_active?: boolean
 }
 

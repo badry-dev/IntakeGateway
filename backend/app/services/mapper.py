@@ -1,6 +1,7 @@
 import json
 from collections.abc import Callable
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from loguru import logger
@@ -53,18 +54,44 @@ def to_bool(x):
     return bool(x)
 
 
+def _parse_datetime_value(x: str) -> datetime:
+    x_clean = x.strip()
+    if x_clean.endswith("Z"):
+        x_clean = x_clean.replace("Z", "+00:00")
+
+    try:
+        return datetime.fromisoformat(x_clean)
+    except ValueError:
+        pass
+
+    date_formats = [
+        "%Y-%m-%d",
+        "%m/%d/%Y",
+        "%d-%m-%Y",
+        "%Y/%m/%d",
+        "%d/%m/%Y",
+        "%Y%m%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+    ]
+    for fmt in date_formats:
+        try:
+            return datetime.strptime(x_clean, fmt)
+        except ValueError:
+            continue
+
+    # Handles HTTP/RFC 1123 dates like: Sun, 03 May 2026 00:00:00 GMT
+    return parsedate_to_datetime(x_clean)
+
+
 def to_timestamp(x):
-    """Convert ISO 8601 string to Oracle TIMESTAMP format"""
+    """Convert common date/time strings to Oracle TIMESTAMP format."""
     if x is None or x == "":
         return None
 
     try:
         if isinstance(x, str):
-            # Try to parse ISO 8601 format
-            # Handles: 2024-01-15T10:30:45Z, 2024-01-15T10:30:45.123Z, 2024-01-15 10:30:45
-            # Remove 'Z' if present and parse
-            x_clean = x.replace("Z", "+00:00") if x.endswith("Z") else x
-            dt = datetime.fromisoformat(x_clean)
+            dt = _parse_datetime_value(x)
             # Return Oracle TIMESTAMP format: YYYY-MM-DD HH:MM:SS.ffffff
             return dt.strftime("%Y-%m-%d %H:%M:%S.%f")
         elif isinstance(x, datetime):
@@ -77,34 +104,13 @@ def to_timestamp(x):
 
 
 def to_date(x):
-    """Convert string to Oracle DATE format (YYYY-MM-DD)"""
+    """Convert common date/time strings to Oracle DATE format (YYYY-MM-DD)."""
     if x is None or x == "":
         return None
 
     try:
         if isinstance(x, str):
-            # Try common date formats: YYYY-MM-DD, MM/DD/YYYY, DD-MM-YYYY
-            date_formats = [
-                "%Y-%m-%d",  # 2024-01-15
-                "%m/%d/%Y",  # 01/15/2024
-                "%d-%m-%Y",  # 15-01-2024
-                "%Y/%m/%d",  # 2024/01/15
-                "%d/%m/%Y",  # 15/01/2024
-                "%Y%m%d",  # 20240115
-            ]
-
-            dt = None
-            for fmt in date_formats:
-                try:
-                    dt = datetime.strptime(x, fmt)
-                    break
-                except ValueError:
-                    continue
-
-            if dt is None:
-                # Try ISO format parsing as last resort
-                dt = datetime.fromisoformat(x.replace("Z", "+00:00"))
-
+            dt = _parse_datetime_value(x)
             return dt.strftime("%Y-%m-%d")
         elif isinstance(x, datetime):
             return x.strftime("%Y-%m-%d")

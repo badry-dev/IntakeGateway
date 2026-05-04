@@ -34,7 +34,7 @@ interface MappingRow {
   transforms: string[]
 }
 
-const AVAILABLE_TRANSFORMS = ['trim', 'upper', 'lower', 'to_int', 'to_float', 'to_timestamp']
+const AVAILABLE_TRANSFORMS = ['trim', 'upper', 'lower', 'to_int', 'to_float', 'to_date', 'to_timestamp']
 
 const shellQuote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
 
@@ -253,7 +253,7 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
     try {
       const data: ColumnMappingCreate[] = mappings.map(m => ({
         source_field: m.sourceField, dest_column: m.destColumn,
-        transform_rules: m.transforms.length > 0 ? JSON.stringify(m.transforms) : undefined,
+        transform_rules: m.transforms.length > 0 ? m.transforms : undefined,
         is_active: true,
       }))
       if (onSave) await onSave(data)

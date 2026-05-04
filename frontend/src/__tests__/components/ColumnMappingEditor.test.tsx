@@ -61,7 +61,7 @@ describe('ColumnMappingEditor', () => {
 
   it('should display existing mappings', () => {
     const existingMappings = [
-      { source_field: 'name', dest_column: 'USER_NAME', transform_rules: '[]', is_active: true },
+      { source_field: 'name', dest_column: 'USER_NAME', transform_rules: [], is_active: true },
     ]
     render(
       <ColumnMappingEditor

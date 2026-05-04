@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+import json
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ColumnMappingCreate(BaseModel):
@@ -43,6 +45,19 @@ class ColumnMappingOut(BaseModel):
     updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("transform_rules", mode="before")
+    @classmethod
+    def parse_transform_rules(cls, value):
+        if value is None or isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return None
+            return parsed if isinstance(parsed, list) else None
+        return None
 
 
 class BulkMappingCreate(BaseModel):

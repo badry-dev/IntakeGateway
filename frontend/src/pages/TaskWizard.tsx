@@ -9,6 +9,15 @@ import { ColumnMappingEditor } from '@/components/ColumnMappingEditor'
 const { Title, Text } = Typography
 const { TextArea } = Input
 
+const getApiErrorMessage = (err: unknown, fallback: string) => {
+  const apiError = err as { response?: { data?: { detail?: unknown } } }
+  const detail = apiError.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (detail) return JSON.stringify(detail)
+  if (err instanceof Error) return err.message
+  return fallback
+}
+
 const STEPS = [
   { title: 'Basic Info', description: 'Task name and description' },
   { title: 'Endpoint', description: 'API endpoint configuration' },
@@ -165,12 +174,16 @@ export function TaskWizard() {
           await createMappingsMutation.mutateAsync({ taskId: createdTask.id, mappings })
         } catch (mappingErr) {
           console.error('Failed to create mappings:', mappingErr)
+          message.error(
+            `Task was created, but saving column mappings failed: ${getApiErrorMessage(mappingErr, 'Unknown error')}`
+          )
+          return
         }
       }
       message.success('Task created successfully!')
       navigate('/tasks')
-    } catch {
-      message.error('Failed to create task')
+    } catch (err) {
+      message.error(`Failed to create task: ${getApiErrorMessage(err, 'Unknown error')}`)
     }
   }
 
