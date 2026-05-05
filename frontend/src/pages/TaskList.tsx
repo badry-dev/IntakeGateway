@@ -17,7 +17,7 @@ export function TaskList() {
   const limit = 10
 
   const { data, isLoading, error } = useTasks(skip, limit, true)
-  const { data: schedulesResponse } = useListSchedules(0, 1000)
+  const { data: schedulesResponse } = useListSchedules(0, 500)
   const triggerRunMutation = useTriggerRun()
   const deleteTaskMutation = useDeleteTask()
 

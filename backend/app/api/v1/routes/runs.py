@@ -80,6 +80,9 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
         "error_message": task_run.error_message,
         "started_at": task_run.started_at,
         "ended_at": task_run.ended_at,
+        "duration_seconds": (task_run.ended_at - task_run.started_at).total_seconds()
+        if (task_run.ended_at and task_run.started_at)
+        else None,
         "cursor_start": task_run.cursor_start,
         "cursor_end": task_run.cursor_end,
         "is_backfill": task_run.is_backfill,
@@ -224,7 +227,7 @@ def list_runs(
                 "started_at": run.started_at,
                 "ended_at": run.ended_at,
                 "duration_seconds": (run.ended_at - run.started_at).total_seconds()
-                if run.ended_at
+                if (run.ended_at and run.started_at)
                 else None,
             }
         )

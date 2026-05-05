@@ -87,7 +87,7 @@ export function RunDetail() {
             <Statistic title="Inserted" value={run.rows_inserted || 0} prefix={<InsertRowAboveOutlined />} />
           </Col>
           <Col xs={12} sm={6}>
-            <Statistic title="Updated" value={(run as any).records_updated || 0} prefix={<CheckCircleOutlined />} />
+            <Statistic title="Updated" value={run.rows_updated || 0} prefix={<CheckCircleOutlined />} />
           </Col>
           <Col xs={12} sm={6}>
             <Statistic title="Errors" value={run.error_count || 0} valueStyle={{ color: run.error_count ? '#FF4D4F' : undefined }} prefix={<WarningOutlined />} />
@@ -95,7 +95,7 @@ export function RunDetail() {
           <Col xs={12} sm={6}>
             <Statistic
               title="Duration"
-              value={(run as any).execution_time_ms ? `${((run as any).execution_time_ms / 1000).toFixed(2)}s` : 'N/A'}
+              value={run.duration_seconds ? `${run.duration_seconds.toFixed(2)}s` : 'N/A'}
               prefix={<ClockCircleOutlined />}
             />
           </Col>

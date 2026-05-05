@@ -1,3 +1,4 @@
+import os
 import sys
 from contextvars import ContextVar
 
@@ -19,7 +20,7 @@ def context_filter(record):
 logger.remove()
 logger.add(
     sys.stdout,
-    level="INFO",
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
     enqueue=True,
     format=(
         "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "

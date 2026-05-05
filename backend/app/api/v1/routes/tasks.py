@@ -41,24 +41,6 @@ def get_db():
         db.close()
 
 
-def _record_enqueue_failure(db: Session, task_run: TaskRun, error: Exception) -> None:
-    """Persist broker/enqueue failures so failed runs are diagnosable in the UI."""
-    from datetime import UTC, datetime
-
-    message = f"Failed to enqueue Celery task: {error}"
-    task_run.status = TaskStatus.FAILED.value
-    task_run.ended_at = datetime.now(UTC)
-    task_run.error_message = message[:2000]
-    db.add(
-        TaskLog(
-            task_run_id=task_run.id,
-            step_name="ENQUEUE",
-            message=message[:1000],
-        )
-    )
-    db.commit()
-
-
 # ============================================================================
 # Task CRUD Endpoints
 # ============================================================================
@@ -249,28 +231,15 @@ def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
             detail="The task's selected destination connection no longer exists",
         )
 
-    # Create TaskRun record in PENDING state
-    task_run = TaskRun(
-        task_id=task_id,
-        status=TaskStatus.PENDING.value,
-        started_at=datetime.now(UTC),
-    )
-    db.add(task_run)
-    db.commit()
-    db.refresh(task_run)
-
-    # Enqueue to Celery worker
+    # Enqueue to Celery worker (worker will create the TaskRun record)
     try:
         celery_task = enqueue_run(task_id)
         return {
             "status": "enqueued",
-            "run_id": task_run.id,
             "task_id": task_id,
             "celery_task_id": celery_task.id if celery_task else None,
         }
     except Exception as e:
-        # If enqueueing fails, update run status to FAILED and keep the reason.
-        _record_enqueue_failure(db, task_run, e)
         raise HTTPException(status_code=500, detail=f"Failed to enqueue task: {str(e)}")
 
 
@@ -416,7 +385,7 @@ def list_task_runs(
             "started_at": run.started_at,
             "ended_at": run.ended_at,
             "duration_seconds": (run.ended_at - run.started_at).total_seconds()
-            if run.ended_at
+            if (run.ended_at and run.started_at)
             else None,
         }
         for run in runs

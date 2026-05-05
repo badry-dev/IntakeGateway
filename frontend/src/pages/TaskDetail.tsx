@@ -12,7 +12,22 @@ import {
   useDeleteSchedule,
   useBackfillTask,
 } from '@/hooks/api'
-import { Card, Button, Input, Tabs, Tag, Space, Typography, Modal, Spin, Descriptions, message } from 'antd'
+import {
+  Card,
+  Button,
+  Input,
+  Tabs,
+  Tag,
+  Space,
+  Typography,
+  Modal,
+  Spin,
+  Descriptions,
+  message,
+  Switch,
+  Alert,
+  Divider,
+} from 'antd'
 import {
   ArrowLeftOutlined,
   EditOutlined,
@@ -21,6 +36,7 @@ import {
   ClockCircleOutlined,
   DatabaseOutlined,
   HistoryOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons'
 import { TaskFormData, ScheduleCreate, ApiErrorLike } from '@/types'
 
@@ -58,6 +74,13 @@ export function TaskDetail() {
     dest_table: '', headers_json: {}, body_json: {}, batch_size: 500, is_active: true, connection_id: '',
   })
 
+  // Upsert configuration state
+  const [upsertEnabled, setUpsertEnabled] = useState(false)
+  const [upsertKeys, setUpsertKeys] = useState<string[]>([])
+  const [skipColumn, setSkipColumn] = useState('')
+  const [skipValue, setSkipValue] = useState('')
+  const [upsertKeyInput, setUpsertKeyInput] = useState('')
+
   // Backfill modal state (P0-C)
   const backfillMutation = useBackfillTask()
   const [isBackfillOpen, setIsBackfillOpen] = useState(false)
@@ -77,6 +100,11 @@ export function TaskDetail() {
         headers_json: task.headers_json || {}, body_json: task.body_json || {},
         batch_size: task.batch_size, is_active: task.is_active, connection_id: task.connection_id || '',
       })
+      // Initialize upsert settings
+      setUpsertEnabled(task.upsert_enabled || false)
+      setUpsertKeys(task.upsert_keys || [])
+      setSkipColumn(task.skip_column || '')
+      setSkipValue(task.skip_value || '')
     }
   }, [task])
 
@@ -144,6 +172,36 @@ export function TaskDetail() {
     if (!schedule) return
     await deleteScheduleMutation.mutateAsync(schedule.id)
     await refetchSchedule()
+  }
+
+  const handleSaveUpsert = async () => {
+    try {
+      await updateTaskMutation.mutateAsync({
+        id: task.id,
+        data: {
+          ...formData,
+          upsert_enabled: upsertEnabled,
+          upsert_keys: upsertKeys.length > 0 ? upsertKeys : undefined,
+          skip_column: skipColumn.trim() || undefined,
+          skip_value: skipValue.trim() || undefined,
+        },
+      })
+      message.success('Upsert settings updated')
+    } catch {
+      message.error('Failed to update upsert settings')
+    }
+  }
+
+  const handleAddUpsertKey = () => {
+    const trimmed = upsertKeyInput.trim()
+    if (trimmed && !upsertKeys.includes(trimmed)) {
+      setUpsertKeys([...upsertKeys, trimmed])
+      setUpsertKeyInput('')
+    }
+  }
+
+  const handleRemoveUpsertKey = (key: string) => {
+    setUpsertKeys(upsertKeys.filter((k) => k !== key))
   }
 
   const handleBackfill = async () => {
@@ -244,7 +302,136 @@ export function TaskDetail() {
       ),
       children: (
         <Card title="Column Mapping Configuration" extra={<Text type="secondary">Map API response fields to database columns</Text>}>
-          <ColumnMappingEditor taskId={Number(id)} taskFormData={formData} />
+          <ColumnMappingEditor
+            taskId={Number(id)}
+            taskFormData={formData}
+            existingMappings={mappings || []}
+          />
+        </Card>
+      ),
+    },
+    {
+      key: 'upsert',
+      label: (
+        <span>
+          <SafetyOutlined /> Upsert Settings
+          {upsertEnabled && <Tag color="blue" style={{ marginLeft: 8 }}>Enabled</Tag>}
+        </span>
+      ),
+      children: (
+        <Card
+          title="Upsert Configuration"
+          extra={
+            <Button type="primary" onClick={handleSaveUpsert} loading={updateTaskMutation.isPending}>
+              Save Upsert Settings
+            </Button>
+          }
+        >
+          <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Alert
+              message="Upsert Mode"
+              description="When enabled, existing records will be updated instead of causing duplicate key errors. Requires unique key columns to match records."
+              type="info"
+              showIcon
+            />
+
+            <div>
+              <Space align="center">
+                <Text strong>Enable Upsert:</Text>
+                <Switch checked={upsertEnabled} onChange={setUpsertEnabled} />
+                <Text type="secondary">
+                  {upsertEnabled ? 'Update existing records' : 'Insert only (fail on duplicates)'}
+                </Text>
+              </Space>
+            </div>
+
+            {upsertEnabled && (
+              <>
+                <Divider />
+
+                <div>
+                  <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                    Unique Key Columns *
+                  </Text>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                    Columns used to match existing records (e.g., REC_ID, EMPLOYEE_ID)
+                  </Text>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <Space.Compact style={{ width: '100%' }}>
+                      <Input
+                        placeholder="Enter column name"
+                        value={upsertKeyInput}
+                        onChange={(e) => setUpsertKeyInput(e.target.value)}
+                        onPressEnter={handleAddUpsertKey}
+                      />
+                      <Button type="primary" onClick={handleAddUpsertKey}>
+                        Add Key
+                      </Button>
+                    </Space.Compact>
+                    {upsertKeys.length > 0 && (
+                      <Space wrap>
+                        {upsertKeys.map((key) => (
+                          <Tag
+                            key={key}
+                            closable
+                            onClose={() => handleRemoveUpsertKey(key)}
+                            color="blue"
+                          >
+                            {key}
+                          </Tag>
+                        ))}
+                      </Space>
+                    )}
+                    {upsertKeys.length === 0 && (
+                      <Alert
+                        message="At least one unique key column is required for upsert mode"
+                        type="warning"
+                        showIcon
+                      />
+                    )}
+                  </Space>
+                </div>
+
+                <Divider />
+
+                <div>
+                  <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                    Skip Already Processed Records (Optional)
+                  </Text>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+                    Skip records where a specific column equals a certain value (e.g., processed='Y')
+                  </Text>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <div>
+                      <Text>Skip Column:</Text>
+                      <Input
+                        placeholder="e.g., processed"
+                        value={skipColumn}
+                        onChange={(e) => setSkipColumn(e.target.value)}
+                        style={{ marginTop: 4 }}
+                      />
+                    </div>
+                    <div>
+                      <Text>Skip Value:</Text>
+                      <Input
+                        placeholder="e.g., Y"
+                        value={skipValue}
+                        onChange={(e) => setSkipValue(e.target.value)}
+                        style={{ marginTop: 4 }}
+                      />
+                    </div>
+                    {skipColumn && skipValue && (
+                      <Alert
+                        message={`Records where ${skipColumn}='${skipValue}' will be skipped`}
+                        type="info"
+                        showIcon
+                      />
+                    )}
+                  </Space>
+                </div>
+              </>
+            )}
+          </Space>
         </Card>
       ),
     },

@@ -80,8 +80,15 @@ def _parse_datetime_value(x: str) -> datetime:
         except ValueError:
             continue
 
-    # Handles HTTP/RFC 1123 dates like: Sun, 03 May 2026 00:00:00 GMT
-    return parsedate_to_datetime(x_clean)
+    # Handles HTTP/RFC 1123 dates like: Mon, 04 May 2026 00:00:00 GMT
+    try:
+        dt = parsedate_to_datetime(x_clean)
+        if dt is None:
+            raise ValueError(f"parsedate_to_datetime returned None for: {x_clean}")
+        return dt
+    except (ValueError, TypeError) as e:
+        logger.error(f"Failed to parse date string '{x_clean}': {e}")
+        raise ValueError(f"Unable to parse date: {x_clean}")
 
 
 def to_timestamp(x):
@@ -105,19 +112,27 @@ def to_timestamp(x):
 
 def to_date(x):
     """Convert common date/time strings to Oracle DATE format (YYYY-MM-DD)."""
+    print(f"=== DEBUG to_date called with: {repr(x)} (type: {type(x).__name__})")
     if x is None or x == "":
+        print(f"=== DEBUG to_date returning None (empty input)")
         return None
 
     try:
         if isinstance(x, str):
+            print(f"=== DEBUG to_date parsing string: '{x}'")
+            logger.debug(f"Parsing date string: '{x}'")
             dt = _parse_datetime_value(x)
-            return dt.strftime("%Y-%m-%d")
+            result = dt.strftime("%Y-%m-%d")
+            print(f"=== DEBUG to_date successfully parsed to: '{result}'")
+            logger.debug(f"Successfully parsed '{x}' to '{result}'")
+            return result
         elif isinstance(x, datetime):
             return x.strftime("%Y-%m-%d")
         else:
             raise ValueError(f"Cannot convert {type(x).__name__} to date")
     except Exception as e:
-        logger.error(f"Error converting to date: {str(e)}")
+        print(f"=== DEBUG to_date ERROR: {e}")
+        logger.error(f"Error converting to date: value='{x}' type={type(x).__name__} error={str(e)}")
         return None
 
 

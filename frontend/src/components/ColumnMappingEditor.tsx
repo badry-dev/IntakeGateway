@@ -249,15 +249,24 @@ export const ColumnMappingEditor: React.FC<ColumnMappingEditorProps> = ({
 
   const handleSave = async () => {
     if (mappings.length === 0) { setSampleError('At least one mapping is required'); return }
+
+    // Filter out incomplete mappings (empty source or dest)
+    const validMappings = mappings.filter(m => m.sourceField.trim() && m.destColumn.trim())
+
+    if (validMappings.length === 0) {
+      setSampleError('At least one complete mapping (source field + destination column) is required')
+      return
+    }
+
     setIsSaving(true); setSampleError(null); setSuccessMessage(null)
     try {
-      const data: ColumnMappingCreate[] = mappings.map(m => ({
+      const data: ColumnMappingCreate[] = validMappings.map(m => ({
         source_field: m.sourceField, dest_column: m.destColumn,
         transform_rules: m.transforms.length > 0 ? m.transforms : undefined,
         is_active: true,
       }))
       if (onSave) await onSave(data)
-      setSuccessMessage(`Saved ${mappings.length} mapping${mappings.length !== 1 ? 's' : ''}`)
+      setSuccessMessage(`Saved ${validMappings.length} mapping${validMappings.length !== 1 ? 's' : ''}`)
       setTimeout(() => setSuccessMessage(null), 3000)
     } catch (err) {
       setSampleError(err instanceof Error ? err.message : 'Failed to save')

@@ -5,7 +5,7 @@ from typing import Any
 
 import json
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ColumnMappingCreate(BaseModel):
@@ -46,18 +46,25 @@ class ColumnMappingOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_validator("transform_rules", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def parse_transform_rules(cls, value):
-        if value is None or isinstance(value, list):
-            return value
-        if isinstance(value, str):
-            try:
-                parsed = json.loads(value)
-            except json.JSONDecodeError:
-                return None
-            return parsed if isinstance(parsed, list) else None
-        return None
+    def parse_json_fields(cls, data: Any) -> Any:
+        """Parse JSON string fields from database."""
+        # Handle both dict and SQLAlchemy model objects
+        if hasattr(data, "__dict__"):
+            # SQLAlchemy model - convert to dict for parsing
+            data_dict = {key: getattr(data, key) for key in ["id", "task_id", "source_field", "dest_column", "transform_rules", "is_active", "created_at", "updated_at"]}
+            data = data_dict
+
+        if isinstance(data, dict):
+            # Parse transform_rules if it's a string
+            if "transform_rules" in data and isinstance(data["transform_rules"], str):
+                try:
+                    parsed = json.loads(data["transform_rules"])
+                    data["transform_rules"] = parsed if isinstance(parsed, list) else None
+                except (json.JSONDecodeError, TypeError):
+                    data["transform_rules"] = None
+        return data
 
 
 class BulkMappingCreate(BaseModel):
