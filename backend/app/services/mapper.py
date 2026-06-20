@@ -114,7 +114,7 @@ def to_date(x):
     """Convert common date/time strings to Oracle DATE format (YYYY-MM-DD)."""
     print(f"=== DEBUG to_date called with: {repr(x)} (type: {type(x).__name__})")
     if x is None or x == "":
-        print(f"=== DEBUG to_date returning None (empty input)")
+        print("=== DEBUG to_date returning None (empty input)")
         return None
 
     try:

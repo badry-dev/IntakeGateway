@@ -726,8 +726,6 @@ def _process_upsert_batch(
     3. Bulk UPDATE existing records (one query)
     4. Bulk INSERT new records (one query)
     """
-    import re
-    from sqlalchemy import and_
 
     results = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0, "error_details": []}
 
@@ -740,7 +738,6 @@ def _process_upsert_batch(
 
         # Build WHERE clause: (key1=val1 AND key2=val2) OR (key1=val3 AND key2=val4) ...
         # This fetches all matching records in a single query
-        from sqlalchemy import select, table, column, or_
 
         # Create a table reference for raw SQL
         where_clauses = []
