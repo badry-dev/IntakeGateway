@@ -52,7 +52,19 @@ class ColumnMappingOut(BaseModel):
         # Handle both dict and SQLAlchemy model objects
         if hasattr(data, "__dict__"):
             # SQLAlchemy model - convert to dict for parsing
-            data_dict = {key: getattr(data, key) for key in ["id", "task_id", "source_field", "dest_column", "transform_rules", "is_active", "created_at", "updated_at"]}
+            data_dict = {
+                key: getattr(data, key)
+                for key in [
+                    "id",
+                    "task_id",
+                    "source_field",
+                    "dest_column",
+                    "transform_rules",
+                    "is_active",
+                    "created_at",
+                    "updated_at",
+                ]
+            }
             data = data_dict
 
         if isinstance(data, dict):
