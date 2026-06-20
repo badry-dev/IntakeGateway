@@ -66,7 +66,7 @@ The application ships with eight pages: Dashboard, Tasks, Task Wizard, Task Deta
 
 ## How it works
 
-```
+```text
 User Browser
     |
     v
@@ -189,7 +189,7 @@ See [`.env.example`](.env.example) for the full reference. Key variables:
 | `CONNECTIONS_FILE_PATH` | `connections.enc` | Encrypted destination connections file |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis URL for Celery |
 | `FRONTEND_URL` | `http://localhost:5173` | CORS allow-origin for the UI |
-| `LOG_LEVEL` | `INFO` | Application log verbosity |
+| `APP_LOG_LEVEL` | `INFO` | Application log verbosity |
 
 ## Roadmap
 
@@ -216,7 +216,7 @@ Issues labelled `good first issue` are a reasonable place to start.
 
 ## Project structure
 
-```
+```text
 IntakeGateway/
 ├── backend/                    # FastAPI application
 │   ├── app/
