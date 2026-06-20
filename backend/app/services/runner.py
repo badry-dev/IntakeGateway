@@ -556,7 +556,7 @@ def _build_insert_statement(
         is_date_string = False
         if sample_row and column in sample_row:
             value = sample_row[column]
-            if isinstance(value, str) and re.match(r'^\d{4}-\d{2}-\d{2}$', value):
+            if isinstance(value, str) and re.match(r"^\d{4}-\d{2}-\d{2}$", value):
                 is_date_string = True
                 logger.debug(f"Detected date column: {column} = {value}")
                 print(f"=== DEBUG: Detected date column: {column} = {value}")
@@ -576,7 +576,9 @@ def _build_insert_statement(
     return insert_sql, columns, dict(zip(columns, bind_names, strict=True))
 
 
-def _rows_for_bind_aliases(rows: list[dict], columns: list[str], bind_map: dict[str, str]) -> list[dict]:
+def _rows_for_bind_aliases(
+    rows: list[dict], columns: list[str], bind_map: dict[str, str]
+) -> list[dict]:
     return [{bind_map[column]: row.get(column) for column in columns} for row in rows]
 
 
@@ -606,7 +608,9 @@ def insert_batch(db: Session, table_name: str, rows: list[dict], batch_size: int
             # Build dynamic INSERT statement
             if batch:
                 columns = list(batch[0].keys())
-                insert_sql, columns, bind_map = _build_insert_statement(table_name, columns, batch[0])
+                insert_sql, columns, bind_map = _build_insert_statement(
+                    table_name, columns, batch[0]
+                )
                 bind_rows = _rows_for_bind_aliases(batch, columns, bind_map)
 
                 # Execute batch insert
@@ -679,7 +683,7 @@ def process_rows_with_upsert(
     BATCH_SIZE = 500
 
     for batch_start in range(0, len(rows), BATCH_SIZE):
-        batch = rows[batch_start:batch_start + BATCH_SIZE]
+        batch = rows[batch_start : batch_start + BATCH_SIZE]
         batch_results = _process_upsert_batch(
             db=db,
             task=task,
@@ -726,8 +730,6 @@ def _process_upsert_batch(
     3. Bulk UPDATE existing records (one query)
     4. Bulk INSERT new records (one query)
     """
-    import re
-    from sqlalchemy import and_
 
     results = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0, "error_details": []}
 
@@ -740,7 +742,6 @@ def _process_upsert_batch(
 
         # Build WHERE clause: (key1=val1 AND key2=val2) OR (key1=val3 AND key2=val4) ...
         # This fetches all matching records in a single query
-        from sqlalchemy import select, table, column, or_
 
         # Create a table reference for raw SQL
         where_clauses = []
@@ -812,11 +813,9 @@ def _process_upsert_batch(
         db.rollback()
         logger.error(f"Batch upsert failed: {e}")
         results["errors"] = len(batch)
-        results["error_details"].append({
-            "batch_start": batch_offset,
-            "batch_size": len(batch),
-            "error": str(e)[:500]
-        })
+        results["error_details"].append(
+            {"batch_start": batch_offset, "batch_size": len(batch), "error": str(e)[:500]}
+        )
 
     return results
 
@@ -850,7 +849,8 @@ def _bulk_update_rows(
 
     # Get columns to update (exclude upsert keys and None values)
     update_cols = [
-        col for col in sample_row.keys()
+        col
+        for col in sample_row.keys()
         if col not in upsert_keys and sample_row.get(col) is not None
     ]
 
@@ -886,7 +886,7 @@ def _bulk_update_rows(
             param_counter += 1
 
             # Check if this is a date string that needs TO_DATE()
-            if isinstance(value, str) and re.match(r'^\d{4}-\d{2}-\d{2}$', value):
+            if isinstance(value, str) and re.match(r"^\d{4}-\d{2}-\d{2}$", value):
                 case_whens.append(f"WHEN {condition_sql} THEN TO_DATE(:{param_name}, 'YYYY-MM-DD')")
             else:
                 case_whens.append(f"WHEN {condition_sql} THEN :{param_name}")
@@ -916,7 +916,9 @@ def _bulk_update_rows(
 
     where_sql = " OR ".join(where_conditions)
 
-    update_sql = f"UPDATE {_format_table_name(table_name)} SET {', '.join(set_clauses)} WHERE {where_sql}"
+    update_sql = (
+        f"UPDATE {_format_table_name(table_name)} SET {', '.join(set_clauses)} WHERE {where_sql}"
+    )
 
     result = db.execute(text(update_sql), params)
     return result.rowcount
@@ -1056,7 +1058,7 @@ def _update_existing_row(db: Session, table_name: str, row: dict, upsert_keys: l
         value = row.get(col)
 
         # Check if value is a date string (YYYY-MM-DD)
-        if isinstance(value, str) and re.match(r'^\d{4}-\d{2}-\d{2}$', value):
+        if isinstance(value, str) and re.match(r"^\d{4}-\d{2}-\d{2}$", value):
             set_clauses.append(f"{_quote_column_name(col)} = TO_DATE(:{bind_name}, 'YYYY-MM-DD')")
         else:
             set_clauses.append(f"{_quote_column_name(col)} = :{bind_name}")

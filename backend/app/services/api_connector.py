@@ -489,8 +489,7 @@ async def fetch_sample_response(
     except httpx.HTTPStatusError as e:
         body_excerpt = _response_excerpt(e.response)
         message = (
-            f"API returned {e.response.status_code} {e.response.reason_phrase} "
-            f"for {method} {url}"
+            f"API returned {e.response.status_code} {e.response.reason_phrase} for {method} {url}"
         )
         if e.response.status_code == 405:
             message += ". Check that the selected HTTP method matches the method used in Postman."

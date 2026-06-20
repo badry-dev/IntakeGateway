@@ -114,7 +114,7 @@ def to_date(x):
     """Convert common date/time strings to Oracle DATE format (YYYY-MM-DD)."""
     print(f"=== DEBUG to_date called with: {repr(x)} (type: {type(x).__name__})")
     if x is None or x == "":
-        print(f"=== DEBUG to_date returning None (empty input)")
+        print("=== DEBUG to_date returning None (empty input)")
         return None
 
     try:
@@ -132,7 +132,9 @@ def to_date(x):
             raise ValueError(f"Cannot convert {type(x).__name__} to date")
     except Exception as e:
         print(f"=== DEBUG to_date ERROR: {e}")
-        logger.error(f"Error converting to date: value='{x}' type={type(x).__name__} error={str(e)}")
+        logger.error(
+            f"Error converting to date: value='{x}' type={type(x).__name__} error={str(e)}"
+        )
         return None
 
 

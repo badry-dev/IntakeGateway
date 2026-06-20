@@ -211,7 +211,6 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
 @router.post("/{task_id}/run", status_code=202)
 def trigger_task_run(task_id: int, db: Session = Depends(get_db)):
     """Trigger a new run for a task (enqueues to Celery)"""
-    from datetime import UTC, datetime
 
     # Verify task exists
     task = db.query(Task).filter(Task.id == task_id).first()

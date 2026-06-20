@@ -9,9 +9,9 @@ Endpoints:
 - GET /api/v1/oracle/tables/{table_name}/columns - Query Oracle metadata
 """
 
+import base64
 import json
 import logging
-import base64
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
