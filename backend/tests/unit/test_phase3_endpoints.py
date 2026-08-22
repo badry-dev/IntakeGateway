@@ -107,6 +107,59 @@ class TestStatsAggregation:
         assert data["last_run_status"] is not None
 
 
+class TestResponseCaps:
+    """logs_limit / row_errors_limit caps and uncapped row_errors_total
+    (v1.4 task 17) — covered for BOTH run-detail endpoints."""
+
+    def _seed_run_with_errors(self, test_db, task_id, n_errors):
+        from datetime import UTC, datetime
+
+        from app.db.models.task_run_log import TaskRunLog
+
+        run = TaskRun(
+            task_id=task_id,
+            status="FAILED",
+            started_at=datetime.now(UTC),
+            ended_at=datetime.now(UTC),
+        )
+        test_db.add(run)
+        test_db.flush()
+        for i in range(n_errors):
+            test_db.add(
+                TaskRunLog(
+                    task_run_id=run.id,
+                    row_number=i,
+                    column_name="c",
+                    error_type="t",
+                    error_message=f"err {i}",
+                )
+            )
+        test_db.commit()
+        return run.id
+
+    def test_caps_and_total_on_both_endpoints(self, client, test_db, task_with_runs):
+        from app.api.v1.routes.runs import DEFAULT_ROW_ERRORS_LIMIT
+
+        n = 12  # > default page size used in the request below
+        run_id = self._seed_run_with_errors(test_db, task_with_runs.id, n)
+
+        for url in (
+            f"/api/v1/tasks/{task_with_runs.id}/runs/{run_id}",
+            f"/api/v1/runs/{run_id}",
+        ):
+            resp = client.get(url, params={"row_errors_limit": 5})
+            assert resp.status_code == 200, (url, resp.text)
+            data = resp.json()
+            assert len(data["row_errors"]) == 5  # capped at requested limit
+            assert data["row_errors_total"] == n  # uncapped count reported
+
+        # Default limit applies when no params passed
+        resp = client.get(f"/api/v1/runs/{run_id}")
+        data = resp.json()
+        assert len(data["row_errors"]) == min(n, DEFAULT_ROW_ERRORS_LIMIT)
+        assert data["row_errors_total"] == n
+
+
 class TestIdentifierValidation:
     def test_dest_table_rejects_injection(self, client):
         resp = client.post(

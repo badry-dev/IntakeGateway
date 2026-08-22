@@ -209,7 +209,11 @@ def parse_transform_rules(transform_rules: str | None) -> Any:
 
     try:
         return json.loads(transform_rules)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            f"Ignoring unparsable transform_rules ({exc}); "
+            f"no transforms applied. Raw value: {transform_rules[:200]!r}"
+        )
         return None
 
 

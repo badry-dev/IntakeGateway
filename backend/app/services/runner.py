@@ -570,6 +570,28 @@ def _rows_for_bind_aliases(
     return [{bind_map[column]: row.get(column) for column in columns} for row in rows]
 
 
+def _insert_rows(db: Session, table_name: str, rows: list[dict], batch_size: int = 500) -> int:
+    """Insert rows WITHOUT committing — the caller owns the transaction.
+
+    Required inside savepoints: a committing helper would close the outer
+    transaction and let partial writes survive a rollback.
+    """
+    if not rows:
+        return 0
+
+    total_inserted = 0
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i : i + batch_size]
+        if batch:
+            columns = list(batch[0].keys())
+            insert_sql, columns, bind_map = _build_insert_statement(table_name, columns, batch[0])
+            bind_rows = _rows_for_bind_aliases(batch, columns, bind_map)
+            db.execute(text(insert_sql), bind_rows)
+            total_inserted += len(batch)
+            logger.debug(f"Staged insert of {len(batch)} rows ({total_inserted}/{len(rows)})")
+    return total_inserted
+
+
 def insert_batch(db: Session, table_name: str, rows: list[dict], batch_size: int = 500) -> int:
     """
     Insert rows into the destination table in batches with transaction handling
@@ -830,7 +852,10 @@ def _process_upsert_batch(
                         logger.debug(f"Bulk updated {results['updated']} rows")
                     if to_insert:
                         insert_rows = [row for _, row in to_insert]
-                        results["inserted"] = insert_batch(db, task.dest_table, insert_rows)
+                        # Commit-free helper: insert_batch() would COMMIT inside
+                        # the savepoint, closing the outer transaction and
+                        # letting partial writes survive a rollback.
+                        results["inserted"] = _insert_rows(db, task.dest_table, insert_rows)
                         logger.debug(f"Bulk inserted {results['inserted']} rows")
                 db.commit()
             except Exception as bulk_exc:
@@ -839,6 +864,10 @@ def _process_upsert_batch(
                     f"Bulk upsert failed ({bulk_exc}); falling back to row-by-row "
                     f"for this batch of {len(batch)} rows"
                 )
+                # The rolled-back savepoint discards tentative bulk counts —
+                # reset them so the fallback can't double-count.
+                results["updated"] = 0
+                results["inserted"] = 0
                 # Per-row fallback preserves error attribution and the
                 # "never stop on row errors" contract; _process_single_row
                 # includes the fixed skip-condition logic.

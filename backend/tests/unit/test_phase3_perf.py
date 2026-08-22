@@ -4,8 +4,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 
 from app.db.models.column_mapping import ColumnMapping
 from app.db.models.task import Task
@@ -60,18 +59,11 @@ class TestBatchFallbackToRowByRow:
     """A failing bulk statement must roll back to a savepoint and fall back to
     per-row processing without replaying partial writes (v1.4 H5 / task 18)."""
 
+    TWO_COL_DDL = 'CREATE TABLE "EMPLOYEES" ("employee_id" INTEGER PRIMARY KEY, "name" TEXT)'
+
     @pytest.fixture
-    def sqlite_dest(self):
-        engine = create_engine("sqlite:///:memory:")
-        conn = engine.connect()
-        conn.execute(
-            text('CREATE TABLE "EMPLOYEES" ("employee_id" INTEGER PRIMARY KEY, "name" TEXT)')
-        )
-        conn.commit()
-        Session = sessionmaker(bind=engine)
-        yield Session()
-        conn.close()
-        engine.dispose()
+    def sqlite_dest(self, sqlite_dest_factory):
+        return sqlite_dest_factory(self.TWO_COL_DDL)
 
     @pytest.fixture
     def task(self):
@@ -83,6 +75,31 @@ class TestBatchFallbackToRowByRow:
         task.skip_column = None
         task.skip_value = None
         return task
+
+    def test_successful_bulk_path_commits_once(self, sqlite_dest_factory, task):
+        """No mocks: new rows only — the savepoint bulk path commits and no
+        fallback warning runs."""
+        from app.services.runner import process_rows_with_upsert
+
+        db = sqlite_dest_factory(self.TWO_COL_DDL)
+        rows = [
+            {"employee_id": 1, "name": "Alice"},
+            {"employee_id": 2, "name": "Bob"},
+        ]
+
+        with patch("app.services.runner.logger.warning") as mock_warn:
+            results = process_rows_with_upsert(db, task, 1, rows, app_db=db)
+
+        assert results["inserted"] == 2
+        assert results["updated"] == 0
+        assert results["errors"] == 0
+        mock_warn.assert_not_called()
+
+        # Rows are committed (visible on a fresh session)
+        names = {
+            r[0]: r[1] for r in db.execute(text('SELECT "employee_id", "name" FROM "EMPLOYEES"'))
+        }
+        assert names == {1: "Alice", 2: "Bob"}
 
     def test_bulk_failure_falls_back_per_row(self, sqlite_dest, task):
         from app.services.runner import process_rows_with_upsert
@@ -112,6 +129,35 @@ class TestBatchFallbackToRowByRow:
         }
         assert names == {1: "Alice", 2: "Bob", 3: "Charlie"}
 
+    def test_insert_failure_inside_savepoint_falls_back_per_row(self, sqlite_dest, task):
+        """A REAL failure of the insert statement inside the savepoint (not a
+        mocked helper): partial updates staged before it are rolled back and
+        every row is recovered by the per-row fallback."""
+        from app.services.runner import process_rows_with_upsert
+
+        # Row 2 already exists -> the bulk INSERT chunk violates the PK.
+        sqlite_dest.execute(text('INSERT INTO "EMPLOYEES" ("employee_id") VALUES (2)'))
+        sqlite_dest.commit()
+
+        rows = [
+            {"employee_id": 1, "name": "New"},
+            {"employee_id": 2, "name": "Clash"},  # PK violation on bulk insert
+            {"employee_id": 3, "name": "Also New"},
+        ]
+
+        results = process_rows_with_upsert(sqlite_dest, task, 1, rows, app_db=sqlite_dest)
+
+        assert results["errors"] == 0
+        names = {
+            r[0]: r[1]
+            for r in sqlite_dest.execute(text('SELECT "employee_id", "name" FROM "EMPLOYEES"'))
+        }
+        # All three rows landed exactly once via per-row fallback
+        assert names[1] == "New"
+        assert names[2] == "Clash"
+        assert names[3] == "Also New"
+        assert len(names) == 3
+
     def test_no_duplicate_writes_after_fallback(self, sqlite_dest, task):
         from app.services.runner import process_rows_with_upsert
 
@@ -126,9 +172,12 @@ class TestBatchFallbackToRowByRow:
             patch("app.services.runner._bulk_update_rows") as mock_bulk,
         ):
             mock_bulk.side_effect = RuntimeError("boom")
-            mock_insert_batch.side_effect = AssertionError("insert path must not run for existing")
 
             process_rows_with_upsert(sqlite_dest, task, 1, rows, app_db=sqlite_dest)
+
+        # Record-then-assert: a side_effect AssertionError would be swallowed
+        # by the batch-level except and silently pass.
+        mock_insert_batch.assert_not_called()
 
         count = sqlite_dest.execute(
             text('SELECT COUNT(*) FROM "EMPLOYEES" WHERE "employee_id" = 1')

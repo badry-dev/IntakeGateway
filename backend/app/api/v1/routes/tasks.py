@@ -2,11 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from app.api.v1.run_payloads import (
+    DEFAULT_LOGS_LIMIT,
+    DEFAULT_ROW_ERRORS_LIMIT,
+    LOGS_LIMIT_BOUND,
+    ROW_ERRORS_LIMIT_BOUND,
+    get_capped_run_logs,
+)
 from app.core.encryption import encrypt_value
 from app.db.models.task import Task
-from app.db.models.task_log import TaskLog
 from app.db.models.task_run import TaskRun, TaskStatus
-from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import (
     BackfillRequest,
     BackfillResponse,
@@ -423,8 +428,8 @@ def list_task_runs(
 def get_task_run(
     task_id: int,
     run_id: int,
-    logs_limit: int = Query(200, ge=1, le=1000),
-    row_errors_limit: int = Query(500, ge=1, le=5000),
+    logs_limit: int = Query(DEFAULT_LOGS_LIMIT, ge=1, le=LOGS_LIMIT_BOUND),
+    row_errors_limit: int = Query(DEFAULT_ROW_ERRORS_LIMIT, ge=1, le=ROW_ERRORS_LIMIT_BOUND),
     db: Session = Depends(get_db),
 ):
     """Get detailed information about a specific task run.
@@ -452,20 +457,8 @@ def get_task_run(
     is_retry = previous_run is not None and previous_run.status == TaskStatus.FAILED.value
     retry_of_run_id = previous_run.id if is_retry else None
 
-    # Get execution logs (capped)
-    execution_logs = (
-        db.query(TaskLog)
-        .filter(TaskLog.task_run_id == run_id)
-        .order_by(TaskLog.created_at.asc())
-        .limit(logs_limit)
-        .all()
-    )
-
-    # Get row errors (capped) + uncapped total
-    row_errors_query = db.query(TaskRunLog).filter(TaskRunLog.task_run_id == run_id)
-    row_errors_total = row_errors_query.count()
-    row_errors = (
-        row_errors_query.order_by(TaskRunLog.row_number.asc()).limit(row_errors_limit).all()
+    execution_logs, row_errors, row_errors_total = get_capped_run_logs(
+        db, run_id, logs_limit, row_errors_limit
     )
 
     return TaskRunOut(
@@ -531,9 +524,16 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
 
     from sqlalchemy import case, func
 
-    duration_ms = func.avg(
-        (func.julianday(TaskRun.ended_at) - func.julianday(TaskRun.started_at)) * 86400000.0
-    )
+    # Average duration is dialect-aware: julianday() exists only on SQLite.
+    # On other backends, fetch the (small) timestamp pairs and average in
+    # Python rather than failing with a 500.
+    if db.get_bind().dialect.name == "sqlite":
+        duration_ms = func.avg(
+            (func.julianday(TaskRun.ended_at) - func.julianday(TaskRun.started_at)) * 86400000.0
+        )
+        avg_duration_expr = func.coalesce(duration_ms, 0.0).label("avg_duration_ms")
+    else:
+        avg_duration_expr = None
 
     agg = (
         db.query(
@@ -557,7 +557,7 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
                 "total_rows_skipped"
             ),
             func.coalesce(func.sum(func.coalesce(TaskRun.error_count, 0)), 0).label("total_errors"),
-            func.coalesce(duration_ms, 0.0).label("avg_duration_ms"),
+            *([avg_duration_expr] if avg_duration_expr is not None else []),
         )
         .filter(TaskRun.task_id == task_id)
         .one()
@@ -567,7 +567,17 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
     successful_runs = int(agg.successful_runs or 0)
     failed_runs = int(agg.failed_runs or 0)
     success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0.0
-    avg_duration = float(agg.avg_duration_ms or 0.0) / 1000.0
+
+    if avg_duration_expr is not None:
+        avg_duration = float(agg.avg_duration_ms or 0.0) / 1000.0
+    else:
+        pairs = (
+            db.query(TaskRun.started_at, TaskRun.ended_at)
+            .filter(TaskRun.task_id == task_id, TaskRun.ended_at.isnot(None))
+            .all()
+        )
+        durations = [(p.ended_at - p.started_at).total_seconds() for p in pairs]
+        avg_duration = (sum(durations) / len(durations)) if durations else 0.0
 
     last_run = (
         db.query(TaskRun.started_at, TaskRun.status)

@@ -216,15 +216,6 @@ class TaskCreate(BaseModel):
     skip_value: str | None = None  # Value that triggers skip (e.g., 'Y')
     continue_on_error: bool = True  # Continue processing on row errors
 
-    @field_validator("upsert_keys")
-    @classmethod
-    def validate_upsert_keys(cls, v: list[str] | None, info):
-        """Validate that upsert_keys is provided when upsert is enabled"""
-        upsert_enabled = info.data.get("upsert_enabled")
-        if upsert_enabled and (not v or len(v) == 0):
-            raise ValueError("upsert_enabled requires at least one column in upsert_keys")
-        return v
-
     @field_validator("api_key")
     @classmethod
     def validate_api_key_with_auth_type(cls, v: str | None, info):
@@ -256,7 +247,8 @@ class TaskCreate(BaseModel):
     @field_validator("upsert_keys")
     @classmethod
     def validate_upsert_key_identifiers(cls, v: list[str] | None, info):
-        """Validate that upsert_keys is provided when upsert is enabled"""
+        """Normalize entries to safe SQL identifiers and require at least one
+        key when upsert is enabled."""
         if v:
             v = [_validate_sql_identifier(k, "upsert_keys entry") for k in v]
         upsert_enabled = info.data.get("upsert_enabled")

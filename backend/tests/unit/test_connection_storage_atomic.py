@@ -98,6 +98,12 @@ svc.create_connection(conn)
         ready_dir = tmp_path / "ready"
         ready_dir.mkdir()
         n = 6
+        # Other test modules mutate os.environ["ENCRYPTION_KEY"]; pass the
+        # key this process actually uses (cached on settings at import time)
+        # so workers encrypt identically.
+        from app.core.config import settings as app_settings
+
+        parent_key = app_settings.ENCRYPTION_KEY or os.environ.get("ENCRYPTION_KEY", "")
         procs = []
         for i in range(n):
             procs.append(
@@ -112,12 +118,18 @@ svc.create_connection(conn)
                         str(n),
                     ],
                     cwd=os.getcwd(),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env={**os.environ, "ENCRYPTION_KEY": parent_key},
                 )
             )
-        for p in procs:
-            p.wait(timeout=60)
-
-        assert all(p.returncode == 0 for p in procs)
+        outs = [p.communicate(timeout=60) for p in procs]
+        failed = [
+            (p.returncode, err.decode()[-500:])
+            for p, (_, err) in zip(procs, outs)
+            if p.returncode != 0
+        ]
+        assert not failed, f"worker failures: {failed}"
 
         names = [
             c["name"]

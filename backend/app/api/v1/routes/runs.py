@@ -2,10 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session, aliased
 
+from app.api.v1.run_payloads import (
+    DEFAULT_LOGS_LIMIT,
+    DEFAULT_ROW_ERRORS_LIMIT,
+    LOGS_LIMIT_BOUND,
+    ROW_ERRORS_LIMIT_BOUND,
+    get_capped_run_logs,
+)
 from app.db.models.task import Task
-from app.db.models.task_log import TaskLog
 from app.db.models.task_run import TaskRun, TaskStatus
-from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import (
     ReplayRequest,
     ReplayResponse,
@@ -14,10 +19,6 @@ from app.db.schemas.task import (
 from app.db.session import SessionLocal
 from app.services.connection_storage import get_connection_storage
 from app.workers.tasks import enqueue_replay
-
-# Response caps: a pathological run must not serialize unbounded payloads.
-DEFAULT_LOGS_LIMIT = 200
-DEFAULT_ROW_ERRORS_LIMIT = 500
 
 router = APIRouter()
 
@@ -80,8 +81,8 @@ def get_db():
 @router.get("/{run_id}", response_model=TaskRunOut)
 def get_run(
     run_id: int,
-    logs_limit: int = Query(DEFAULT_LOGS_LIMIT, ge=1, le=1000),
-    row_errors_limit: int = Query(DEFAULT_ROW_ERRORS_LIMIT, ge=1, le=5000),
+    logs_limit: int = Query(DEFAULT_LOGS_LIMIT, ge=1, le=LOGS_LIMIT_BOUND),
+    row_errors_limit: int = Query(DEFAULT_ROW_ERRORS_LIMIT, ge=1, le=ROW_ERRORS_LIMIT_BOUND),
     db: Session = Depends(get_db),
 ):
     """Get detailed information about a specific run (logs/errors capped)."""
@@ -92,20 +93,8 @@ def get_run(
     task = db.query(Task).filter(Task.id == task_run.task_id).first()
     is_retry, retry_of_run_id = get_retry_info(db, task_run.task_id, task_run.id)
 
-    # Get execution logs (capped)
-    execution_logs = (
-        db.query(TaskLog)
-        .filter(TaskLog.task_run_id == run_id)
-        .order_by(TaskLog.created_at.asc())
-        .limit(logs_limit)
-        .all()
-    )
-
-    # Get row errors (capped) + uncapped total
-    row_errors_query = db.query(TaskRunLog).filter(TaskRunLog.task_run_id == run_id)
-    row_errors_total = row_errors_query.count()
-    row_errors = (
-        row_errors_query.order_by(TaskRunLog.row_number.asc()).limit(row_errors_limit).all()
+    execution_logs, row_errors, row_errors_total = get_capped_run_logs(
+        db, run_id, logs_limit, row_errors_limit
     )
 
     return {
