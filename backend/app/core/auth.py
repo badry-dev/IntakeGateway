@@ -37,7 +37,9 @@ def verify_api_token(token: str | None) -> bool:
         return True
     if not token:
         return False
-    return hmac.compare_digest(token, expected)
+    # Compare UTF-8 encoded bytes: hmac.compare_digest raises TypeError on
+    # non-ASCII str input.
+    return hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8"))
 
 
 async def require_api_token(request: Request) -> None:
@@ -47,7 +49,10 @@ async def require_api_token(request: Request) -> None:
 
     supplied = _extract_token(request)
     if not verify_api_token(supplied):
-        logger.warning(f"Rejected request to {request.url.path}: missing or invalid API token")
+        # ASGI servers percent-decode paths, so control characters can reach
+        # request.url.path — strip CR/LF to prevent log forging.
+        safe_path = str(request.url.path).replace("\r", "").replace("\n", "")
+        logger.warning(f"Rejected request to {safe_path}: missing or invalid API token")
         raise HTTPException(
             status_code=401,
             detail="Missing or invalid API token. Provide X-API-Key or Authorization: Bearer.",

@@ -31,6 +31,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.encryption import decrypt_value, encrypt_value
+from app.core.url_guard import SSRFBlockedError, validate_url_async
 from app.db.models.task import Task
 
 # Locks are keyed by (task_id, id(running_loop)) because asyncio.Lock instances
@@ -135,11 +136,9 @@ def _persist_token_response(task: Task, db: Any, payload: dict[str, Any]) -> str
 async def _post_token_request(token_url: str, body: dict[str, str]) -> dict[str, Any]:
     """POST to the token endpoint. Logs status + body length only — never the body itself."""
     # SSRF guard (C4): token URLs are caller-supplied and this client bypasses
-    # fetch_json, so validate independently.
-    from app.core.url_guard import SSRFBlockedError, validate_url
-
+    # fetch_json, so validate independently (off the event loop).
     try:
-        validate_url(token_url)
+        await validate_url_async(token_url)
     except SSRFBlockedError as e:
         logger.error(f"Blocked SSRF attempt via OAuth token URL: {e}")
         raise

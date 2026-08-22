@@ -278,18 +278,48 @@ class TaskUpdate(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def validate_auth_requirements(self):
-        """Switching to a secret-requiring auth type requires the secret in the
-        same request — otherwise the update would store an unusable config."""
+    def reject_explicit_nulls_for_required_fields(self):
+        """Separate 'omitted' from 'explicitly null'.
+
+        exclude_unset keeps keys the client set to null, and setattr(None)
+        would write NULL into NOT NULL columns (name/connection_id/
+        dest_table/...) causing IntegrityError 500s. Explicit nulls for
+        required-at-create fields are rejected with a validation error;
+        nullable fields may still be explicitly cleared.
+        """
         fields_set = self.model_fields_set
-        if self.auth_type in ("bearer", "api_key") and "api_key" not in fields_set:
-            raise ValueError(f"{self.auth_type} authentication requires api_key in the update")
-        if self.auth_type == "basic" and not (
-            "username" in fields_set and "password" in fields_set
-        ):
-            raise ValueError(
-                "basic authentication requires both username and password in the update"
-            )
+        required = (
+            "name",
+            "connection_id",
+            "http_method",
+            "endpoint_path",
+            "dest_table",
+        )
+        for field in required:
+            if field in fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be set to null")
+        if "batch_size" in fields_set and self.batch_size is None:
+            raise ValueError("batch_size cannot be set to null")
+        return self
+
+    @model_validator(mode="after")
+    def validate_auth_requirements(self):
+        """Switching to a secret-requiring auth type requires USABLE (non-empty)
+        credentials in the same request — otherwise the update could clear the
+        secret while retaining an auth mode that cannot work."""
+        fields_set = self.model_fields_set
+        if self.auth_type in ("bearer", "api_key"):
+            if "api_key" not in fields_set:
+                raise ValueError(f"{self.auth_type} authentication requires api_key in the update")
+            if not self.api_key:
+                raise ValueError(f"{self.auth_type} authentication requires a non-empty api_key")
+        if self.auth_type == "basic":
+            if not ("username" in fields_set and "password" in fields_set):
+                raise ValueError(
+                    "basic authentication requires both username and password in the update"
+                )
+            if not self.username or not self.password:
+                raise ValueError("basic authentication requires non-empty username and password")
         return self
 
 
