@@ -137,6 +137,28 @@ class FieldsPreviewResponse(BaseModel):
     field_count: int = Field(..., description="Total number of fields")
 
 
+class SanitizedFieldPreview(BaseModel):
+    """Field metadata without source values (SSRF-safe auto-fetch responses).
+
+    Auto-fetched sample values echo third-party data to unauthenticated
+    callers; only derived metadata is returned.
+    """
+
+    field_name: str = Field(..., description="Full dot notation field name")
+    field_type: str = Field(..., description="Inferred type")
+    is_nested: bool = Field(default=False, description="Whether this is a nested field")
+    parent_path: str | None = Field(None, description="Parent path for nested fields")
+
+
+class StandaloneFieldsPreviewResponse(BaseModel):
+    """Response for standalone preview auto-fetch: metadata only, no samples."""
+
+    fields: list[SanitizedFieldPreview] = Field(
+        ..., description="Available fields (no sample values)"
+    )
+    field_count: int = Field(..., description="Total number of fields")
+
+
 class OracleColumn(BaseModel):
     """Schema for Oracle table column information."""
 

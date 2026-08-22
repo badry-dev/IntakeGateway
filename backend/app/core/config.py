@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str | None = None
     CONNECTIONS_FILE_PATH: str = "connections.enc"
 
+    # Shared API token for management endpoints (H1). When set, every
+    # management route requires X-API-Key or Authorization: Bearer to match.
+    # When unset in production, startup fails closed. This authenticates the
+    # API but provides no per-user authorization.
+    API_TOKEN: str | None = None
+
+    # SSRF escape hatch (C4): comma-separated hostnames that may resolve to
+    # private/loopback/link-local addresses (legitimate internal sources).
+    ALLOWED_SOURCE_HOSTS: str = ""
+
     @property
     def destination_sqlalchemy_url(self) -> str:
         # Using oracledb with thin mode

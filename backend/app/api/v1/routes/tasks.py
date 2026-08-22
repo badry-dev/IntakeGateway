@@ -16,6 +16,7 @@ from app.db.schemas.task import (
     TaskRunLogOut,
     TaskRunOut,
     TaskStatsOut,
+    TaskUpdate,
 )
 from app.db.session import SessionLocal
 from app.services.connection_storage import get_connection_storage
@@ -153,36 +154,47 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{task_id}", response_model=TaskOut)
-def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)):
-    """Update an existing task"""
+def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
+    """Update an existing task (partial update).
+
+    Only explicitly-set fields are applied. Omitted secrets (api_key,
+    password, oauth secrets) are preserved; a secret field present but empty
+    string is an explicit clear.
+    """
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    update_data = payload.model_dump(exclude_unset=True)
+
     # Check if new name conflicts with another task
-    if payload.name != task.name:
-        exists = db.query(Task).filter(Task.name == payload.name).first()
+    if "name" in update_data and update_data["name"] != task.name:
+        exists = db.query(Task).filter(Task.name == update_data["name"]).first()
         if exists:
             raise HTTPException(status_code=400, detail="Task with this name already exists")
 
-    _require_existing_connection(payload.connection_id)
+    if "connection_id" in update_data:
+        _require_existing_connection(update_data["connection_id"])
 
-    # Prepare update data and encrypt sensitive fields
-    update_data = payload.model_dump()
+    # Encrypt secrets. Empty string = explicit clear; None (explicit null)
+    # also clears; omitted = untouched (key not in update_data).
+    if "api_key" in update_data:
+        if update_data["api_key"]:
+            update_data["api_key"] = encrypt_value(update_data["api_key"])
+            logger.debug(f"Encrypted api_key for task '{update_data.get('name', task.name)}'")
+        else:
+            update_data["api_key"] = None
 
-    # Encrypt api_key if provided
-    if update_data.get("api_key"):
-        update_data["api_key"] = encrypt_value(update_data["api_key"])
-        logger.debug(f"Encrypted api_key for task '{payload.name}'")
+    if "password" in update_data:
+        if update_data["password"]:
+            update_data["password"] = encrypt_value(update_data["password"])
+            logger.debug(f"Encrypted password for task '{update_data.get('name', task.name)}'")
+        else:
+            update_data["password"] = None
 
-    # Encrypt password if provided
-    if update_data.get("password"):
-        update_data["password"] = encrypt_value(update_data["password"])
-        logger.debug(f"Encrypted password for task '{payload.name}'")
+    _flatten_p0_submodels(update_data, update_data.get("name", task.name))
 
-    _flatten_p0_submodels(update_data, payload.name)
-
-    # Update task with all fields from payload
+    # Update task with only the fields explicitly provided
     for key, value in update_data.items():
         setattr(task, key, value)
 

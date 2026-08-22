@@ -8,6 +8,7 @@ File location is configurable via CONNECTIONS_FILE_PATH environment variable.
 import json
 import os
 import uuid
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,6 +16,14 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.encryption import decrypt_value, encrypt_value, get_encryption_service
+
+try:  # Unix
+    import fcntl
+
+    _HAVE_FCNTL = True
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None
+    _HAVE_FCNTL = False
 
 # Default path (can be overridden via environment variable)
 DEFAULT_CONNECTIONS_PATH = os.getenv("CONNECTIONS_FILE_PATH", settings.CONNECTIONS_FILE_PATH)
@@ -32,6 +41,27 @@ class ConnectionStorageService:
         """
         self.file_path = Path(file_path)
         self._encryption = get_encryption_service()
+
+    @contextmanager
+    def _file_lock(self):
+        """Cross-process advisory lock around read-modify-write cycles.
+
+        The API, worker, and scheduler are separate processes sharing this
+        file; without the lock their non-atomic read-modify-write cycles can
+        lose each other's writes. No-op fallback where flock is unavailable.
+        """
+        if not _HAVE_FCNTL:
+            yield
+            return
+
+        lock_path = self.file_path.with_suffix(self.file_path.suffix + ".lock")
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "w") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     @staticmethod
     def _empty_data() -> dict:
@@ -80,14 +110,30 @@ class ConnectionStorageService:
             decrypted = self._encryption.decrypt(encrypted_content)
             return self._normalize_data(json.loads(decrypted))
         except Exception as e:
-            logger.error(
-                f"Failed to read connections file at {self.file_path}: {e}. "
-                "Treating destination connections as empty so the app remains usable."
-            )
+            # Preserve the unreadable file before treating the store as empty —
+            # a silent reset previously made ALL saved connections vanish.
+            backup_path = self.file_path.with_suffix(self.file_path.suffix + ".bak")
+            try:
+                backup_path.write_bytes(self.file_path.read_bytes())
+                logger.error(
+                    f"Failed to read connections file at {self.file_path}: {e}. "
+                    f"A copy of the corrupt file was preserved at {backup_path}; "
+                    "treating destination connections as empty so the app remains usable."
+                )
+            except Exception as backup_exc:
+                logger.error(
+                    f"Failed to read connections file at {self.file_path}: {e}. "
+                    f"Additionally failed to preserve a backup: {backup_exc}"
+                )
             return self._empty_data()
 
     def _write_file(self, data: dict) -> None:
-        """Encrypt and write connections file"""
+        """Encrypt and atomically write connections file.
+
+        Writes to a temp file in the same directory then os.replace()s it into
+        place, so a crash mid-write can never leave a truncated/empty store
+        behind (which previously read back as an empty connection list).
+        """
         try:
             json_str = json.dumps(data, indent=2, default=str)
             encrypted = self._encryption.encrypt(json_str)
@@ -95,8 +141,24 @@ class ConnectionStorageService:
             # Ensure parent directory exists
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Write file
-            self.file_path.write_text(encrypted, encoding="utf-8")
+            # Atomic write: temp file + os.replace (same filesystem)
+            import tempfile
+
+            tmp_fd, tmp_name = tempfile.mkstemp(
+                dir=self.file_path.parent, prefix=self.file_path.name, suffix=".tmp"
+            )
+            try:
+                with os.fdopen(tmp_fd, "w", encoding="utf-8") as tmp_file:
+                    tmp_file.write(encrypted)
+                    tmp_file.flush()
+                    os.fsync(tmp_file.fileno())
+                os.replace(tmp_name, self.file_path)
+            except BaseException:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
 
             # Set secure permissions on Unix systems
             if os.name != "nt":
@@ -158,7 +220,6 @@ class ConnectionStorageService:
         Returns:
             Created connection with masked password
         """
-        data = self._read_file()
         now = datetime.now(UTC).isoformat()
 
         # Generate ID and set metadata
@@ -177,9 +238,12 @@ class ConnectionStorageService:
             "updated_at": now,
         }
 
-        data["connections"].append(new_conn)
+        # The ENTIRE read-modify-write cycle holds the lock.
+        with self._file_lock():
+            data = self._read_file()
+            data["connections"].append(new_conn)
+            self._write_file(data)
 
-        self._write_file(data)
         logger.info(f"Created connection: {new_conn['name']} ({new_conn['id']})")
 
         # Return with masked password
@@ -196,30 +260,31 @@ class ConnectionStorageService:
         Returns:
             Updated connection with masked password, or None if not found
         """
-        data = self._read_file()
+        with self._file_lock():
+            data = self._read_file()
 
-        for i, conn in enumerate(data.get("connections", [])):
-            if conn.get("id") == connection_id:
-                # Handle password update
-                if "password" in updates and updates["password"]:
-                    updates["password"] = encrypt_value(updates["password"])
-                else:
-                    updates.pop("password", None)
+            for i, conn in enumerate(data.get("connections", [])):
+                if conn.get("id") == connection_id:
+                    # Handle password update
+                    if "password" in updates and updates["password"]:
+                        updates["password"] = encrypt_value(updates["password"])
+                    else:
+                        updates.pop("password", None)
 
-                # Merge updates
-                data["connections"][i] = {
-                    **conn,
-                    **updates,
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }
+                    # Merge updates
+                    data["connections"][i] = {
+                        **conn,
+                        **updates,
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
 
-                self._write_file(data)
-                logger.info(
-                    f"Updated connection: {data['connections'][i]['name']} ({connection_id})"
-                )
+                    self._write_file(data)
+                    logger.info(
+                        f"Updated connection: {data['connections'][i]['name']} ({connection_id})"
+                    )
 
-                # Return with masked password
-                return {**data["connections"][i], "password": "********"}
+                    # Return with masked password
+                    return {**data["connections"][i], "password": "********"}
 
         return None
 
@@ -233,17 +298,18 @@ class ConnectionStorageService:
         Returns:
             True if deleted, False if not found
         """
-        data = self._read_file()
+        with self._file_lock():
+            data = self._read_file()
 
-        initial_count = len(data.get("connections", []))
-        data["connections"] = [
-            c for c in data.get("connections", []) if c.get("id") != connection_id
-        ]
+            initial_count = len(data.get("connections", []))
+            data["connections"] = [
+                c for c in data.get("connections", []) if c.get("id") != connection_id
+            ]
 
-        if len(data["connections"]) < initial_count:
-            self._write_file(data)
-            logger.info(f"Deleted connection: {connection_id}")
-            return True
+            if len(data["connections"]) < initial_count:
+                self._write_file(data)
+                logger.info(f"Deleted connection: {connection_id}")
+                return True
 
         return False
 

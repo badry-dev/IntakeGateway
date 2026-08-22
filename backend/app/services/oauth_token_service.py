@@ -134,8 +134,18 @@ def _persist_token_response(task: Task, db: Any, payload: dict[str, Any]) -> str
 
 async def _post_token_request(token_url: str, body: dict[str, str]) -> dict[str, Any]:
     """POST to the token endpoint. Logs status + body length only — never the body itself."""
+    # SSRF guard (C4): token URLs are caller-supplied and this client bypasses
+    # fetch_json, so validate independently.
+    from app.core.url_guard import SSRFBlockedError, validate_url
+
+    try:
+        validate_url(token_url)
+    except SSRFBlockedError as e:
+        logger.error(f"Blocked SSRF attempt via OAuth token URL: {e}")
+        raise
+
     timeout = httpx.Timeout(settings.HTTP_TIMEOUT_SECONDS)
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
         resp = await client.post(
             token_url,
             data=body,
