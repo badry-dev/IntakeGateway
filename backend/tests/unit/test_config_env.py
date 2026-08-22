@@ -30,10 +30,7 @@ class TestAppEnvNormalization:
         from pathlib import Path
 
         backend = Path(__file__).resolve().parents[2]
-        code = (
-            "from app.core.config import Settings;"
-            "print(Settings(SECRET_KEY='x').APP_ENV)"
-        )
+        code = "from app.core.config import Settings;print(Settings(SECRET_KEY='x').APP_ENV)"
         out = subprocess.run(
             [sys.executable, "-c", code],
             env=env,

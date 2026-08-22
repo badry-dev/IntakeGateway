@@ -1,6 +1,6 @@
 """Add consecutive_failures counter to task_schedule
 
-Revision ID: 004_schedule_consecutive_failures
+Revision ID: 004_sched_fail_ctr
 Revises: 003_p0_oauth_ratelimit_cursor
 Create Date: 2026-08-22 00:00:00.000000
 
@@ -12,7 +12,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = '004_schedule_consecutive_failures'
+# Revision id must fit alembic_version.version_num VARCHAR(32).
+revision = '004_sched_fail_ctr'
 down_revision = '003_p0_oauth_ratelimit_cursor'
 branch_labels = None
 depends_on = None
