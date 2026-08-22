@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     def normalize_level(cls, v: str) -> str:
         return v.upper()
 
+    @field_validator("APP_ENV")
+    @classmethod
+    def normalize_env(cls, v: str) -> str:
+        """Normalize APP_ENV so production gating (docs, API_TOKEN fail-closed)
+        can't be bypassed by 'Production', ' prod ', etc."""
+        return v.strip().lower()
+
     class Config:
         env_file = ".env"
         case_sensitive = True
