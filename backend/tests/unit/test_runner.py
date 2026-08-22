@@ -97,7 +97,8 @@ class TestLogRowError:
     """Tests for log_row_error function"""
 
     def test_log_row_error_creates_task_run_log(self, mock_db):
-        """Test log_row_error creates TaskRunLog entry"""
+        """Test log_row_error creates TaskRunLog entry (staged, no commit —
+        v1.4 M1 batches commits at pipeline-stage boundaries)."""
         log_row_error(
             db=mock_db,
             task_run_id=1,
@@ -109,7 +110,7 @@ class TestLogRowError:
         )
 
         mock_db.add.assert_called_once()
-        mock_db.commit.assert_called_once()
+        mock_db.commit.assert_not_called()
 
         added_log = mock_db.add.call_args[0][0]
         assert isinstance(added_log, TaskRunLog)

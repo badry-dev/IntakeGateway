@@ -266,6 +266,8 @@ export interface TaskRun {
   replay_of_run_id?: number | null
   execution_logs?: TaskLog[]
   row_errors?: TaskRunLog[]
+  // Uncapped count of row errors (row_errors list is capped at 500 by the API)
+  row_errors_total?: number
 }
 
 export interface TaskLog {

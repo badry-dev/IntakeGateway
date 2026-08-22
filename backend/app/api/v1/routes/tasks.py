@@ -404,8 +404,19 @@ def list_task_runs(
 
 
 @router.get("/{task_id}/runs/{run_id}", response_model=TaskRunOut)
-def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
-    """Get detailed information about a specific task run"""
+def get_task_run(
+    task_id: int,
+    run_id: int,
+    logs_limit: int = Query(200, ge=1, le=1000),
+    row_errors_limit: int = Query(500, ge=1, le=5000),
+    db: Session = Depends(get_db),
+):
+    """Get detailed information about a specific task run.
+
+    execution_logs and row_errors are capped (logs_limit / row_errors_limit)
+    so a pathological run can't serialize unbounded payloads;
+    row_errors_total reports the uncapped count.
+    """
     # Verify task exists
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -425,20 +436,20 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
     is_retry = previous_run is not None and previous_run.status == TaskStatus.FAILED.value
     retry_of_run_id = previous_run.id if is_retry else None
 
-    # Get execution logs
+    # Get execution logs (capped)
     execution_logs = (
         db.query(TaskLog)
         .filter(TaskLog.task_run_id == run_id)
         .order_by(TaskLog.created_at.asc())
+        .limit(logs_limit)
         .all()
     )
 
-    # Get row errors
+    # Get row errors (capped) + uncapped total
+    row_errors_query = db.query(TaskRunLog).filter(TaskRunLog.task_run_id == run_id)
+    row_errors_total = row_errors_query.count()
     row_errors = (
-        db.query(TaskRunLog)
-        .filter(TaskRunLog.task_run_id == run_id)
-        .order_by(TaskRunLog.row_number.asc())
-        .all()
+        row_errors_query.order_by(TaskRunLog.row_number.asc()).limit(row_errors_limit).all()
     )
 
     return TaskRunOut(
@@ -457,6 +468,7 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
         started_at=task_run.started_at,
         ended_at=task_run.ended_at,
         error_message=task_run.error_message,
+        row_errors_total=row_errors_total,
         execution_logs=[
             TaskLogOut(
                 id=log.id,
@@ -491,35 +503,62 @@ def get_task_run(task_id: int, run_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{task_id}/stats", response_model=TaskStatsOut)
 def get_task_stats(task_id: int, db: Session = Depends(get_db)):
-    """Get execution statistics for a task"""
+    """Get execution statistics for a task.
+
+    Aggregated entirely in SQL — previously this loaded EVERY run row into
+    Python to sum/count, which degrades linearly with run history.
+    """
     # Verify task exists
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Get all runs for this task
-    runs = db.query(TaskRun).filter(TaskRun.task_id == task_id).all()
+    from sqlalchemy import case, func
 
-    total_runs = len(runs)
-    successful_runs = len([r for r in runs if r.status == TaskStatus.SUCCESS.value])
-    failed_runs = len([r for r in runs if r.status == TaskStatus.FAILED.value])
+    duration_ms = func.avg(
+        (func.julianday(TaskRun.ended_at) - func.julianday(TaskRun.started_at)) * 86400000.0
+    )
 
+    agg = (
+        db.query(
+            func.count(TaskRun.id).label("total_runs"),
+            func.sum(case((TaskRun.status == TaskStatus.SUCCESS.value, 1), else_=0)).label(
+                "successful_runs"
+            ),
+            func.sum(case((TaskRun.status == TaskStatus.FAILED.value, 1), else_=0)).label(
+                "failed_runs"
+            ),
+            func.coalesce(func.sum(func.coalesce(TaskRun.rows_fetched, 0)), 0).label(
+                "total_rows_fetched"
+            ),
+            func.coalesce(func.sum(func.coalesce(TaskRun.rows_inserted, 0)), 0).label(
+                "total_rows_inserted"
+            ),
+            func.coalesce(func.sum(func.coalesce(TaskRun.rows_updated, 0)), 0).label(
+                "total_rows_updated"
+            ),
+            func.coalesce(func.sum(func.coalesce(TaskRun.rows_skipped, 0)), 0).label(
+                "total_rows_skipped"
+            ),
+            func.coalesce(func.sum(func.coalesce(TaskRun.error_count, 0)), 0).label("total_errors"),
+            func.coalesce(duration_ms, 0.0).label("avg_duration_ms"),
+        )
+        .filter(TaskRun.task_id == task_id)
+        .one()
+    )
+
+    total_runs = int(agg.total_runs or 0)
+    successful_runs = int(agg.successful_runs or 0)
+    failed_runs = int(agg.failed_runs or 0)
     success_rate = (successful_runs / total_runs * 100) if total_runs > 0 else 0.0
+    avg_duration = float(agg.avg_duration_ms or 0.0) / 1000.0
 
-    # Calculate totals
-    total_rows_fetched = sum(r.rows_fetched or 0 for r in runs)
-    total_rows_inserted = sum(r.rows_inserted or 0 for r in runs)
-    total_errors = sum(r.error_count or 0 for r in runs)
-
-    # Calculate average duration
-    completed_runs = [r for r in runs if r.ended_at]
-    avg_duration = 0.0
-    if completed_runs:
-        durations = [(r.ended_at - r.started_at).total_seconds() for r in completed_runs]
-        avg_duration = sum(durations) / len(durations)
-
-    # Get last run
-    last_run = max(runs, key=lambda r: r.started_at) if runs else None
+    last_run = (
+        db.query(TaskRun.started_at, TaskRun.status)
+        .filter(TaskRun.task_id == task_id)
+        .order_by(TaskRun.started_at.desc())
+        .first()
+    )
 
     return TaskStatsOut(
         task_id=task_id,
@@ -527,9 +566,11 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
         successful_runs=successful_runs,
         failed_runs=failed_runs,
         success_rate=success_rate,
-        total_rows_fetched=total_rows_fetched,
-        total_rows_inserted=total_rows_inserted,
-        total_errors=total_errors,
+        total_rows_fetched=int(agg.total_rows_fetched),
+        total_rows_inserted=int(agg.total_rows_inserted),
+        total_rows_updated=int(agg.total_rows_updated),
+        total_rows_skipped=int(agg.total_rows_skipped),
+        total_errors=int(agg.total_errors),
         avg_duration_seconds=avg_duration,
         last_run_at=last_run.started_at if last_run else None,
         last_run_status=last_run.status if last_run else None,

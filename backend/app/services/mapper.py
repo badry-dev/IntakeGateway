@@ -195,14 +195,32 @@ def apply_transform(value: Any, transform: str | None):
     return fn(value)
 
 
-def apply_transforms(value: Any, transform_rules: str | None) -> Any:
-    """Apply multiple transforms from JSON rules to a value"""
+def parse_transform_rules(transform_rules: str | None) -> Any:
+    """Parse a mapping's transform_rules JSON once per mapping (not per row).
+
+    Accepts already-parsed input unchanged, so callers can hoist parsing out
+    of row loops. Returns None when there are no usable rules.
+    """
     if not transform_rules:
-        return value
+        return None
+
+    if not isinstance(transform_rules, str):
+        return transform_rules
 
     try:
-        rules = json.loads(transform_rules) if isinstance(transform_rules, str) else transform_rules
+        return json.loads(transform_rules)
     except json.JSONDecodeError:
+        return None
+
+
+def apply_transforms(value: Any, transform_rules: str | None) -> Any:
+    """Apply multiple transforms from JSON rules to a value.
+
+    Accepts either a raw JSON string (parsed per call — prefer hoisting via
+    parse_transform_rules for hot loops) or pre-parsed rules.
+    """
+    rules = parse_transform_rules(transform_rules)
+    if rules is None:
         return value
 
     # Handle both dict format and list format
@@ -218,6 +236,17 @@ def apply_transforms(value: Any, transform_rules: str | None) -> Any:
                 value = TRANSFORMS[transform_name](value)
 
     return value
+
+
+def map_row_with_prepared_mappings(
+    source_row: dict[str, Any],
+    prepared: list[tuple[str, str, Any]],
+) -> dict[str, Any]:
+    """Map a source row using pre-parsed (source_field, dest_column, rules) tuples."""
+    return {
+        dest_column: apply_transforms(source_row.get(source_field), rules)
+        for source_field, dest_column, rules in prepared
+    }
 
 
 def map_row_with_column_mappings(
@@ -255,5 +284,14 @@ def get_column_mappings(db: Session, task_id: int) -> list[ColumnMapping]:
 def map_rows(
     source_rows: list[dict[str, Any]], column_mappings: list[ColumnMapping]
 ) -> list[dict[str, Any]]:
-    """Map multiple rows from source to destination format"""
-    return [map_row_with_column_mappings(row, column_mappings) for row in source_rows]
+    """Map multiple rows from source to destination format.
+
+    Transform rules are parsed ONCE per mapping (hoisted out of the row loop);
+    previously every row re-ran json.loads on every mapping's rules.
+    """
+    prepared = [
+        (mapping.source_field, mapping.dest_column, parse_transform_rules(mapping.transform_rules))
+        for mapping in column_mappings
+        if mapping.is_active
+    ]
+    return [map_row_with_prepared_mappings(row, prepared) for row in source_rows]
