@@ -41,10 +41,17 @@ jobs:
       APP_DATABASE_URL: sqlite:///./test_app.db
       APP_ENV: dev
       SECRET_KEY: ${{ secrets.SECRET_KEY || 'ci-test-only-not-for-production' }}
-      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || 'GRAuWlz_10CTaEXbPwOUgzBy24TZNJ5CPM2gy-kPeCA=' }}
+      # No committed fallback key: generate a throwaway Fernet key per run.
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
       REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v4
+
+      - name: Generate per-run Fernet key
+        if: ${{ env.ENCRYPTION_KEY == '' }}
+        run: |
+          python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())" > fernet_key.txt
+          echo "ENCRYPTION_KEY=$(cat fernet_key.txt)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
