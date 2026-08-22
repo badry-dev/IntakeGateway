@@ -115,8 +115,11 @@ class TaskScheduler:
         try:
             logger.info(f"Triggering scheduled import for task {task_id} '{task_name}'")
 
-            # Enqueue task to Celery
-            result = enqueue_run.delay(task_id)
+            # Enqueue task to Celery. enqueue_run() itself delegates to
+            # run_import_task.delay(); calling .delay on it again would raise
+            # AttributeError on every cron fire (the function is not a Celery
+            # task itself).
+            result = enqueue_run(task_id)
 
             # Update last_run_date and next_run_date
             task_schedule = (
@@ -125,6 +128,7 @@ class TaskScheduler:
 
             if task_schedule:
                 task_schedule.last_run_date = datetime.now(UTC)
+                task_schedule.consecutive_failures = 0
 
                 # Calculate next run
                 next_run = croniter(task_schedule.cron_expression, datetime.now(UTC)).get_next(
@@ -141,6 +145,27 @@ class TaskScheduler:
         except Exception as e:
             logger.error(f"Failed to execute scheduled task {task_id}: {str(e)}")
             self.db.rollback()
+
+            # Persist the failure counter in a separate transaction: the
+            # rollback above discards anything staged before the error, so the
+            # increment must happen after it.
+            try:
+                task_schedule = (
+                    self.db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
+                )
+                if task_schedule:
+                    current = task_schedule.consecutive_failures or 0
+                    task_schedule.consecutive_failures = current + 1
+                    self.db.commit()
+                    logger.error(
+                        f"Scheduled task {task_id} dispatch failure "
+                        f"(consecutive_failures={current + 1})"
+                    )
+            except Exception as counter_exc:
+                logger.error(
+                    f"Failed to persist consecutive_failures for task {task_id}: {counter_exc}"
+                )
+                self.db.rollback()
 
     def reload_schedules(self):
         """Reload all schedules from database (useful after schedule updates)"""
