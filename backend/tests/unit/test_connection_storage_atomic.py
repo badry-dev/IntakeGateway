@@ -1,6 +1,6 @@
 """Tests for atomic, locked connections-file storage (v1.4 H4)."""
 
-import threading
+import os
 
 import pytest
 
@@ -32,45 +32,99 @@ class TestAtomicWrite:
         assert leftovers == []
 
     def test_no_truncated_store_on_crash(self, storage, monkeypatch):
-        """If the process dies mid-write, the old store remains intact."""
+        """A failure AFTER the temp file is created but BEFORE os.replace()
+        leaves the old store intact and removes the temp file."""
         storage.create_connection(_conn("survivor"))
 
-        def explode(self, data):
-            raise RuntimeError("simulated crash mid-write")
+        real_replace = os.replace
 
-        monkeypatch.setattr(ConnectionStorageService, "_write_file", explode)
-        with pytest.raises(RuntimeError):
+        def exploding_replace(src, dst):
+            # Temp file exists at this point; simulate a crash before rename.
+            raise RuntimeError("simulated crash before replace")
+
+        monkeypatch.setattr("app.services.connection_storage.os.replace", exploding_replace)
+        # _write_file wraps the failure in ValueError; state is what matters.
+        with pytest.raises((RuntimeError, ValueError)):
             storage.create_connection(_conn("lost"))
+
+        monkeypatch.setattr("app.services.connection_storage.os.replace", real_replace)
 
         # Original connection still readable
         names = [c["name"] for c in storage.list_connections()["connections"]]
         assert names == ["survivor"]
+        # No temp leftovers
+        leftovers = [p for p in storage.file_path.parent.iterdir() if p.suffix == ".tmp"]
+        assert leftovers == []
 
 
 class TestConcurrentWrites:
-    def test_interleaved_read_modify_write_preserves_both(self, storage):
-        """Two processes' read-modify-write cycles must not lose writes."""
-        storage.create_connection(_conn("first"))
+    def test_interleaved_read_modify_write_preserves_both(self, tmp_path):
+        """Separate PROCESSES' read-modify-write cycles must not lose writes.
 
-        errors = []
+        Threads share one GIL and would not exercise the cross-process flock;
+        spawn independent interpreter processes synchronized via marker files
+        (no multiprocessing primitives: they need /dev/shm). Skipped on
+        platforms without fcntl.
+        """
+        import subprocess
+        import sys
 
-        def add(name):
-            svc = ConnectionStorageService(str(storage.file_path))
-            try:
-                svc.create_connection(_conn(name))
-            except Exception as e:  # pragma: no cover
-                errors.append(e)
+        if os.name == "nt":
+            pytest.skip("interprocess lock test requires fcntl")
 
-        threads = [threading.Thread(target=add, args=(f"conn-{i}",)) for i in range(8)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        store_path = tmp_path / "connections.enc"
+        seed = ConnectionStorageService(str(store_path))
+        seed.create_connection(_conn("first"))
 
-        assert not errors
-        names = [c["name"] for c in storage.list_connections()["connections"]]
-        assert len(names) == 9  # first + 8 concurrent
-        assert len(set(names)) == 9
+        worker_code = """
+import sys, time, os
+# Run with cwd=backend so `import app` resolves via sys.path[0] == ""
+from app.services.connection_storage import ConnectionStorageService
+
+path, name, ready_dir, total = (
+    sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]))
+svc = ConnectionStorageService(path)
+conn = {
+    "name": name, "db_type": "oracle", "host": "db.example.com",
+    "port": 1521, "username": "scott", "password": "tiger",
+}
+open(os.path.join(ready_dir, name), "w").close()
+deadline = time.time() + 30
+while len(os.listdir(ready_dir)) < total and time.time() < deadline:
+    time.sleep(0.02)
+svc.create_connection(conn)
+"""
+
+        ready_dir = tmp_path / "ready"
+        ready_dir.mkdir()
+        n = 6
+        procs = []
+        for i in range(n):
+            procs.append(
+                subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-c",
+                        worker_code,
+                        str(store_path),
+                        f"conn-{i}",
+                        str(ready_dir),
+                        str(n),
+                    ],
+                    cwd=os.getcwd(),
+                )
+            )
+        for p in procs:
+            p.wait(timeout=60)
+
+        assert all(p.returncode == 0 for p in procs)
+
+        names = [
+            c["name"]
+            for c in ConnectionStorageService(str(store_path)).list_connections()["connections"]
+        ]
+        assert len(names) == n + 1  # first + n concurrent processes
+        assert len(set(names)) == n + 1
 
 
 class TestCorruptFileHandling:

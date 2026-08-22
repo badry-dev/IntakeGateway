@@ -25,6 +25,14 @@ except ImportError:  # pragma: no cover - Windows
     fcntl = None
     _HAVE_FCNTL = False
 
+try:  # Windows
+    import msvcrt
+
+    _HAVE_MSVCRT = True
+except ImportError:  # pragma: no cover - non-Windows
+    msvcrt = None
+    _HAVE_MSVCRT = False
+
 # Default path (can be overridden via environment variable)
 DEFAULT_CONNECTIONS_PATH = os.getenv("CONNECTIONS_FILE_PATH", settings.CONNECTIONS_FILE_PATH)
 
@@ -48,20 +56,34 @@ class ConnectionStorageService:
 
         The API, worker, and scheduler are separate processes sharing this
         file; without the lock their non-atomic read-modify-write cycles can
-        lose each other's writes. No-op fallback where flock is unavailable.
+        lose each other's writes. Uses fcntl.flock on Unix and msvcrt.locking
+        on Windows.
         """
-        if not _HAVE_FCNTL:
-            yield
-            return
+        if not _HAVE_FCNTL and not _HAVE_MSVCRT:  # pragma: no cover
+            # No interprocess locking primitive available. os.replace() keeps
+            # the file intact, but concurrent writers can still lose updates —
+            # refuse rather than corrupt silently.
+            raise RuntimeError(
+                "No interprocess file-locking primitive available on this "
+                "platform; refusing unsynchronized connections-file access."
+            )
 
         lock_path = self.file_path.with_suffix(self.file_path.suffix + ".lock")
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(lock_path, "w") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            if _HAVE_FCNTL:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            else:  # pragma: no cover - Windows
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                try:
+                    yield
+                finally:
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
 
     @staticmethod
     def _empty_data() -> dict:
@@ -114,7 +136,14 @@ class ConnectionStorageService:
             # a silent reset previously made ALL saved connections vanish.
             backup_path = self.file_path.with_suffix(self.file_path.suffix + ".bak")
             try:
-                backup_path.write_bytes(self.file_path.read_bytes())
+                if os.name != "nt":
+                    # Create with owner-only permissions BEFORE writing: the
+                    # unreadable source may contain partial secret data.
+                    fd = os.open(backup_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                    with os.fdopen(fd, "wb") as backup_file:
+                        backup_file.write(self.file_path.read_bytes())
+                else:  # pragma: no cover - Windows
+                    backup_path.write_bytes(self.file_path.read_bytes())
                 logger.error(
                     f"Failed to read connections file at {self.file_path}: {e}. "
                     f"A copy of the corrupt file was preserved at {backup_path}; "

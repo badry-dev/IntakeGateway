@@ -387,6 +387,9 @@ async def preview_fields(
             field_count=len(fields_info),
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP errors instead of rewriting them to 400.
+        raise
     except ValueError as e:
         logger.warning(f"Invalid JSON for task {task_id}: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
@@ -585,6 +588,10 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
             field_count=len(fields_info),
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP errors (400 missing sample_json, 403 SSRF
+        # block) instead of letting the broad handler rewrite them to 400.
+        raise
     except ValueError as e:
         logger.warning(f"Invalid JSON: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")

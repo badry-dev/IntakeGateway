@@ -5,6 +5,9 @@ import pytest
 from app.core import url_guard
 from app.core.url_guard import SSRFBlockedError, validate_url
 
+# Keep real (DNS-resolving) validation: the conftest autouse bypass checks this marker.
+pytestmark = pytest.mark.real_ssrf_guard
+
 
 class TestSchemeValidation:
     def test_rejects_non_http_schemes(self):
@@ -67,3 +70,23 @@ class TestResolution:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestFetchJsonHTTPPath:
+    """The real guard rejects private URLs through the async fetch path."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_json_blocks_metadata_url(self):
+        from app.services.api_connector import fetch_json
+
+        with pytest.raises(SSRFBlockedError):
+            await fetch_json("GET", "http://169.254.169.254/latest/meta-data/")
+
+    @pytest.mark.asyncio
+    async def test_fetch_json_rejects_invalid_port_as_ssrf_error(self):
+        from app.services.api_connector import fetch_json
+
+        # Out-of-range port must surface as SSRFBlockedError (a 4xx-class
+        # validation failure), not escape as ValueError -> HTTP 500.
+        with pytest.raises(SSRFBlockedError):
+            await fetch_json("GET", "http://example.com:99999/")

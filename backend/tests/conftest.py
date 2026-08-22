@@ -39,25 +39,42 @@ def setup_database():
         db.close()
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "real_ssrf_guard: keep real DNS-resolving SSRF validation (opt-out of "
+        "the autouse bypass below)",
+    )
+
+
 @pytest.fixture(autouse=True)
 def bypass_fetch_time_ssrf_resolution(request, monkeypatch):
-    """Skip fetch-time SSRF DNS resolution except in the guard's own tests.
+    """Skip fetch-time SSRF DNS resolution except where explicitly marked.
 
     Most HTTP-layer tests mock ``httpx.AsyncClient``, so the url_guard's real
     DNS resolution inside ``fetch_json`` / token requests would either fail
-    (offline) or hit sandbox-local addresses. The guard's behavior is covered
-    by tests/unit/test_url_guard.py and the schema-level 422 tests.
+    (offline) or hit sandbox-local addresses. Mark tests with
+    ``@pytest.mark.real_ssrf_guard`` to exercise the real guard.
+
+    Binding notes: ``app.services.api_connector`` binds validate_url_async at
+    module scope (both names patched here); ``oauth_token_service`` imports at
+    call time via the url_guard module (covered by patching
+    ``url_guard.validate_url``, which ``validate_url_async`` calls through);
+    schema-level validation in ``schemas/task.py`` retains its own reference
+    and stays active everywhere.
     """
-    if request.module.__name__ == "tests.unit.test_url_guard":
+    if request.node.get_closest_marker("real_ssrf_guard"):
         yield
         return
 
     import app.core.url_guard as url_guard
+
+    async def _async_passthrough(url, **kwargs):
+        return url
+
+    monkeypatch.setattr(url_guard, "validate_url", lambda url, **kwargs: url)
     import app.services.api_connector as api_connector
 
-    # url_guard.validate_url is patched so oauth_token_service's in-function
-    # import is covered too; schemas/task.py holds its own reference, so
-    # config-time validation stays active.
-    monkeypatch.setattr(url_guard, "validate_url", lambda url, **kwargs: url)
     monkeypatch.setattr(api_connector, "validate_url", lambda url, **kwargs: url)
+    monkeypatch.setattr(api_connector, "validate_url_async", _async_passthrough)
     yield

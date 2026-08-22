@@ -43,7 +43,9 @@ def run_migrations_offline() -> None:
 
     """
     from app.core.config import settings
-    url = settings.sqlalchemy_url
+    # Migrations target the APP-STATE database (task/task_run/schedule tables),
+    # NOT the destination Oracle connection (settings.sqlalchemy_url).
+    url = settings.APP_DATABASE_URL
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -65,7 +67,8 @@ def run_migrations_online() -> None:
     from app.core.config import settings
     
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = settings.sqlalchemy_url
+    # App-state DB — see note in run_migrations_offline().
+    configuration["sqlalchemy.url"] = settings.APP_DATABASE_URL
     
     connectable = engine_from_config(
         configuration,

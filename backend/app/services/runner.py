@@ -724,6 +724,32 @@ def _process_upsert_batch(
     if not batch:
         return results
 
+    # Deduplicate rows sharing the same upsert-key tuple WITHIN this batch.
+    # Two rows with identical keys would both enter to_update (later WHEN
+    # clauses silently dropped by SQL) or both to_insert (constraint failure
+    # or duplicate rows). First occurrence wins; duplicates are counted as
+    # skipped with an attribution entry.
+    seen_keys = set()
+    deduped_batch = []
+    for idx, row in enumerate(batch):
+        key_tuple = tuple(row.get(key) for key in upsert_keys)
+        if key_tuple in seen_keys:
+            results["skipped"] += 1
+            results["error_details"].append(
+                {
+                    "row_index": batch_offset + idx,
+                    "record_key": _get_record_key(row, upsert_keys),
+                    "error": "duplicate upsert key within batch; first occurrence wins",
+                }
+            )
+            continue
+        seen_keys.add(key_tuple)
+        deduped_batch.append(row)
+    batch = deduped_batch
+
+    if not batch:
+        return results
+
     try:
         # Step 1: Fetch ALL existing records in one SELECT query
         table_name = task.dest_table
@@ -751,7 +777,7 @@ def _process_upsert_batch(
         # configured so matching rows can be routed to `to_skip` without a
         # second per-row query.
         select_columns = list(upsert_keys)
-        if task.skip_column and task.skip_value:
+        if task.skip_column and task.skip_value is not None:
             skip_col = _clean_identifier(task.skip_column)
             if skip_col not in select_columns:
                 select_columns.append(skip_col)
@@ -784,7 +810,7 @@ def _process_upsert_batch(
             if existing is None:
                 # New record
                 to_insert.append((batch_offset + idx, row))
-            elif task.skip_column and task.skip_value and _should_skip(task, existing):
+            elif task.skip_column and task.skip_value is not None and _should_skip(task, existing):
                 # Record exists and matches the configured skip condition —
                 # third parties may have marked this row processed; never
                 # overwrite it.
@@ -1057,7 +1083,7 @@ def _find_existing_record(
 
 def _should_skip(task: Task, existing_record: dict) -> bool:
     """Check if record should be skipped based on skip_column/skip_value."""
-    if not task.skip_column or not task.skip_value:
+    if not task.skip_column or task.skip_value is None:
         return False
 
     current_value = existing_record.get(task.skip_column.upper())  # Oracle returns uppercase

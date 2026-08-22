@@ -58,11 +58,21 @@ def _flatten_p0_submodels(task_data: dict, task_name: str) -> dict:
         # Plaintext on the wire becomes encrypted at rest. The same field-by-field
         # approach as api_key/password keeps the encryption surface explicit and
         # auditable rather than hidden behind an ORM TypeDecorator.
-        task_data["oauth_grant_type"] = oauth.get("grant_type")
-        task_data["oauth_token_url"] = oauth.get("token_url")
-        task_data["oauth_client_id"] = oauth.get("client_id")
-        task_data["oauth_scope"] = oauth.get("scope")
-        task_data["oauth_audience"] = oauth.get("audience")
+        #
+        # Presence-based assignment: with exclude_unset=True a partial update's
+        # oauth dict only contains explicitly-set keys — assigning .get() for
+        # every column would clear omitted fields (e.g. updating ONLY scope
+        # would wipe grant_type/token_url/client_id).
+        if "grant_type" in oauth:
+            task_data["oauth_grant_type"] = oauth["grant_type"]
+        if "token_url" in oauth:
+            task_data["oauth_token_url"] = oauth["token_url"]
+        if "client_id" in oauth:
+            task_data["oauth_client_id"] = oauth["client_id"]
+        if "scope" in oauth:
+            task_data["oauth_scope"] = oauth["scope"]
+        if "audience" in oauth:
+            task_data["oauth_audience"] = oauth["audience"]
         # Key presence (not truthiness) drives whether the column is touched.
         # PUT with explicit null/"" must be able to clear stored credentials —
         # truthiness-only checks left revoked secrets in place forever.
@@ -79,15 +89,21 @@ def _flatten_p0_submodels(task_data: dict, task_name: str) -> dict:
 
     rl = task_data.pop("rate_limit", None)
     if isinstance(rl, dict):
-        task_data["rate_limit_max_retries"] = rl.get("max_retries")
-        task_data["rate_limit_max_wait_seconds"] = rl.get("max_wait_seconds")
-        task_data["rate_limit_rps"] = rl.get("rps")
+        if "max_retries" in rl:
+            task_data["rate_limit_max_retries"] = rl["max_retries"]
+        if "max_wait_seconds" in rl:
+            task_data["rate_limit_max_wait_seconds"] = rl["max_wait_seconds"]
+        if "rps" in rl:
+            task_data["rate_limit_rps"] = rl["rps"]
 
     cursor = task_data.pop("cursor", None)
     if isinstance(cursor, dict):
-        task_data["cursor_field"] = cursor.get("field")
-        task_data["cursor_param_name"] = cursor.get("param_name")
-        task_data["cursor_initial_value"] = cursor.get("initial_value")
+        if "field" in cursor:
+            task_data["cursor_field"] = cursor["field"]
+        if "param_name" in cursor:
+            task_data["cursor_param_name"] = cursor["param_name"]
+        if "initial_value" in cursor:
+            task_data["cursor_initial_value"] = cursor["initial_value"]
 
     return task_data
 

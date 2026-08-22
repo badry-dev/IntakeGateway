@@ -25,11 +25,14 @@ def scheduler():
         yield sched, db
 
 
-def _make_schedule(consecutive_failures=0):
+def _make_schedule(consecutive_failures=0, is_active=True):
     schedule = MagicMock(spec=TaskSchedule)
     schedule.task_id = 7
     schedule.cron_expression = "0 2 * * *"
     schedule.consecutive_failures = consecutive_failures
+    schedule.is_active = is_active
+    schedule.last_run_date = None
+    schedule.next_run_date = None
     return schedule
 
 
@@ -39,7 +42,7 @@ class TestScheduledDispatch:
         run_import_task.delay — not enqueue_run.delay (AttributeError)."""
         sched, db = scheduler
 
-        schedule = _make_schedule()
+        schedule = _make_schedule(consecutive_failures=2)
         db.query.return_value.filter.return_value.first.return_value = schedule
 
         with patch("app.services.scheduler.enqueue_run") as mock_enqueue:
@@ -47,6 +50,7 @@ class TestScheduledDispatch:
             sched._execute_scheduled_task(7, "Nightly import")
 
         mock_enqueue.assert_called_once_with(7)
+        # Successful dispatch resets the failure counter
         assert schedule.consecutive_failures == 0
 
     def test_dispatch_updates_schedule_dates_on_success(self, scheduler):
@@ -103,6 +107,62 @@ class TestDispatchFailureCounter:
         with patch("app.services.scheduler.enqueue_run", side_effect=RuntimeError("broker down")):
             # Must not raise
             sched._execute_scheduled_task(7, "Nightly import")
+
+    def test_bookkeeping_failure_does_not_count_as_dispatch_failure(self, scheduler):
+        """A failure AFTER a successful enqueue (e.g. metadata commit) must not
+        increment consecutive_failures — Celery already accepted the job."""
+        sched, db = scheduler
+        schedule = _make_schedule(consecutive_failures=4)
+        db.query.return_value.filter.return_value.first.return_value = schedule
+        db.commit.side_effect = RuntimeError("sqlite locked")
+
+        with (
+            patch("app.services.scheduler.enqueue_run") as mock_enqueue,
+            patch.object(sched, "_handle_dispatch_failure") as mock_handle,
+        ):
+            mock_enqueue.return_value = MagicMock(id="celery-id-3")
+            sched._execute_scheduled_task(7, "Nightly import")
+
+        # Dispatch succeeded; the metadata failure is handled separately and
+        # must NOT be recorded as a dispatch failure.
+        mock_enqueue.assert_called_once()
+        mock_handle.assert_not_called()
+        db.rollback.assert_called_once()
+
+    def test_auto_pause_at_threshold_deactivates_schedule(self, scheduler):
+        """Reaching the consecutive-failure threshold deactivates the schedule
+        and removes its APScheduler job."""
+        sched, db = scheduler
+        schedule = _make_schedule(consecutive_failures=4, is_active=True)
+        db.query.return_value.filter.return_value.first.return_value = schedule
+
+        with (
+            patch("app.services.scheduler.enqueue_run", side_effect=RuntimeError("down")),
+            patch.object(sched, "remove_schedule") as mock_remove,
+            patch("app.core.config.settings") as mock_settings,
+        ):
+            mock_settings.SCHEDULE_MAX_CONSECUTIVE_FAILURES = 5
+            sched._execute_scheduled_task(7, "Nightly import")
+
+        assert schedule.is_active is False
+        assert schedule.consecutive_failures == 5
+        mock_remove.assert_called_once_with(7)
+
+    def test_below_threshold_does_not_pause(self, scheduler):
+        sched, db = scheduler
+        schedule = _make_schedule(consecutive_failures=1, is_active=True)
+        db.query.return_value.filter.return_value.first.return_value = schedule
+
+        with (
+            patch("app.services.scheduler.enqueue_run", side_effect=RuntimeError("down")),
+            patch.object(sched, "remove_schedule") as mock_remove,
+            patch("app.core.config.settings") as mock_settings,
+        ):
+            mock_settings.SCHEDULE_MAX_CONSECUTIVE_FAILURES = 5
+            sched._execute_scheduled_task(7, "Nightly import")
+
+        assert schedule.is_active is True
+        mock_remove.assert_not_called()
 
 
 if __name__ == "__main__":

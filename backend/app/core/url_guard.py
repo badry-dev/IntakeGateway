@@ -7,6 +7,12 @@ ranges.
 
 An escape hatch (`ALLOWED_SOURCE_HOSTS`, comma-separated) exists for legitimate
 internal-source deployments; matching hosts bypass the private-range checks.
+
+Residual risk: validation resolves DNS independently of the HTTP client, so a
+rebinding resolver can still serve different answers to the guard and to the
+connection. Re-validation per attempt narrows this window but does not close
+it; fully closing it requires pinning the connection to the validated IP
+(with correct Host/SNI) or a transport that re-checks the peer address.
 """
 
 import ipaddress
@@ -65,8 +71,15 @@ def validate_url(url: str, *, resolve: bool = True) -> str:
     host_allowed = host.lower() in allowed
 
     if not candidate_addrs and resolve:
+        # urlparse raises ValueError on attribute access for out-of-range
+        # ports (http://example.com:99999/) — surface it as SSRFBlockedError,
+        # not a 500.
         try:
-            infos = socket.getaddrinfo(host, parsed.port or None)
+            port = parsed.port
+        except ValueError as e:
+            raise SSRFBlockedError(f"URL has an invalid port: {e}") from e
+        try:
+            infos = socket.getaddrinfo(host, port or None)
             candidate_addrs = [ipaddress.ip_address(info[4][0]) for info in infos]
         except socket.gaierror as e:
             raise SSRFBlockedError(f"Cannot resolve host {host!r}: {e}") from e
@@ -76,6 +89,18 @@ def validate_url(url: str, *, resolve: bool = True) -> str:
             _reject_private(addr, host)
 
     return url.strip()
+
+
+async def validate_url_async(url: str, *, resolve: bool = True) -> str:
+    """Async variant of validate_url.
+
+    socket.getaddrinfo is synchronous and has no timeout control; running it
+    on the event loop would stall every other coroutine for the full resolver
+    delay. Async call sites (fetch_json, OAuth token requests) must use this.
+    """
+    import asyncio
+
+    return await asyncio.to_thread(validate_url, url, resolve=resolve)
 
 
 def _reject_private(addr: ipaddress.IPv4Address | ipaddress.IPv6Address, host: str) -> None:

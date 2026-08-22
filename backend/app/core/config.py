@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # private/loopback/link-local addresses (legitimate internal sources).
     ALLOWED_SOURCE_HOSTS: str = ""
 
+    # Auto-pause a schedule after this many consecutive dispatch failures.
+    SCHEDULE_MAX_CONSECUTIVE_FAILURES: int = 5
+
     @property
     def destination_sqlalchemy_url(self) -> str:
         # Using oracledb with thin mode
@@ -96,6 +99,13 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_level(cls, v: str) -> str:
         return v.upper()
+
+    @field_validator("APP_ENV")
+    @classmethod
+    def normalize_env(cls, v: str) -> str:
+        """Normalize APP_ENV so production gating (docs, API_TOKEN fail-closed)
+        can't be bypassed by 'Production', ' prod ', etc."""
+        return v.strip().lower()
 
     class Config:
         env_file = ".env"

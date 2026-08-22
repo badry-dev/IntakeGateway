@@ -43,10 +43,9 @@ def test_db():
 
 @pytest.fixture(autouse=True)
 def mock_connection_dependencies(monkeypatch):
-    storage = MagicMock = None  # noqa: F841 - placeholder to keep flake quiet
-    from unittest.mock import MagicMock as _M
+    from unittest.mock import MagicMock
 
-    storage = _M()
+    storage = MagicMock()
     storage.get_connection.side_effect = lambda connection_id, include_password=False: (
         {"id": connection_id, "name": f"Connection {connection_id}"} if connection_id else None
     )
@@ -56,22 +55,6 @@ def mock_connection_dependencies(monkeypatch):
 @pytest.fixture
 def client(test_db):
     return TestClient(app)
-
-
-@pytest.fixture
-def bearer_task(test_db) -> Task:
-    task = Task(
-        name="Bearer Task",
-        connection_id="conn-1",
-        endpoint_path="/api/users",
-        dest_table="users",
-        auth_type="bearer",
-        api_key="ENCRYPTED_BLOB",
-    )
-    test_db.add(task)
-    test_db.commit()
-    test_db.refresh(task)
-    return task
 
 
 def _create_task(client: TestClient, name: str) -> dict:
