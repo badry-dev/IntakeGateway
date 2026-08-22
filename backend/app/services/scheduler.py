@@ -112,16 +112,26 @@ class TaskScheduler:
 
     def _execute_scheduled_task(self, task_id: int, task_name: str):
         """Execute a scheduled task by enqueueing to Celery"""
+        logger.info(f"Triggering scheduled import for task {task_id} '{task_name}'")
+
+        # Enqueue task to Celery. enqueue_run() itself delegates to
+        # run_import_task.delay(); calling .delay on it again would raise
+        # AttributeError on every cron fire (the function is not a Celery
+        # task itself).
+        #
+        # Dispatch is isolated in its own try block so that only enqueue
+        # failures count toward consecutive_failures — later bookkeeping
+        # errors (schedule query, cron calc, metadata commit) must not
+        # record a dispatch failure for an import Celery already accepted.
         try:
-            logger.info(f"Triggering scheduled import for task {task_id} '{task_name}'")
-
-            # Enqueue task to Celery. enqueue_run() itself delegates to
-            # run_import_task.delay(); calling .delay on it again would raise
-            # AttributeError on every cron fire (the function is not a Celery
-            # task itself).
             result = enqueue_run(task_id)
+        except Exception as dispatch_exc:
+            self._handle_dispatch_failure(task_id, dispatch_exc)
+            return
 
-            # Update last_run_date and next_run_date
+        # Update last_run_date and next_run_date. Bookkeeping failures are
+        # logged and rolled back WITHOUT touching the failure counter.
+        try:
             task_schedule = (
                 self.db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
             )
@@ -141,31 +151,50 @@ class TaskScheduler:
                 logger.info(
                     f"Enqueued task {task_id} to Celery (job_id: {result.id}). Next run: {next_run}"
                 )
-
         except Exception as e:
-            logger.error(f"Failed to execute scheduled task {task_id}: {str(e)}")
+            logger.error(f"Failed to update schedule metadata for task {task_id}: {str(e)}")
             self.db.rollback()
 
-            # Persist the failure counter in a separate transaction: the
-            # rollback above discards anything staged before the error, so the
-            # increment must happen after it.
-            try:
-                task_schedule = (
-                    self.db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
-                )
-                if task_schedule:
-                    current = task_schedule.consecutive_failures or 0
-                    task_schedule.consecutive_failures = current + 1
-                    self.db.commit()
+    def _handle_dispatch_failure(self, task_id: int, exc: Exception):
+        """Record a dispatch failure and auto-pause at the configured threshold.
+
+        The counter is persisted in a separate transaction AFTER the rollback:
+        the rollback discards anything staged before the error.
+        """
+        from app.core.config import settings
+
+        logger.error(f"Failed to execute scheduled task {task_id}: {str(exc)}")
+        self.db.rollback()
+
+        threshold = getattr(settings, "SCHEDULE_MAX_CONSECUTIVE_FAILURES", 5)
+
+        try:
+            task_schedule = (
+                self.db.query(TaskSchedule).filter(TaskSchedule.task_id == task_id).first()
+            )
+            if task_schedule:
+                current = task_schedule.consecutive_failures or 0
+                task_schedule.consecutive_failures = current + 1
+
+                if current + 1 >= threshold and task_schedule.is_active:
+                    task_schedule.is_active = False
+                    self.remove_schedule(task_id)
                     logger.error(
-                        f"Scheduled task {task_id} dispatch failure "
-                        f"(consecutive_failures={current + 1})"
+                        f"Auto-paused schedule for task {task_id}: "
+                        f"{current + 1} consecutive dispatch failures "
+                        f"(threshold={threshold}). Use the resume endpoint to reactivate."
                     )
-            except Exception as counter_exc:
+
+                self.db.commit()
                 logger.error(
-                    f"Failed to persist consecutive_failures for task {task_id}: {counter_exc}"
+                    f"Scheduled task {task_id} dispatch failure "
+                    f"(consecutive_failures={current + 1})"
                 )
-                self.db.rollback()
+        except Exception as counter_exc:
+            logger.error(
+                f"Failed to persist consecutive_failures for task {task_id}: {counter_exc}"
+            )
+            self.db.rollback()
 
     def reload_schedules(self):
         """Reload all schedules from database (useful after schedule updates)"""

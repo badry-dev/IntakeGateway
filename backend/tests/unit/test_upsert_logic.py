@@ -475,6 +475,39 @@ class TestBulkUpdateNullPreservation:
         assert email_val == "row2@example.com"
 
 
+class TestDuplicateUpsertKeysInBatch:
+    """Duplicate upsert-key tuples within one batch: first occurrence wins,
+    duplicates are counted as skipped (v1.4 review finding)."""
+
+    @pytest.fixture
+    def task(self):
+        task = MagicMock(spec=Task)
+        task.id = 1
+        task.dest_table = "EMPLOYEES"
+        task.upsert_enabled = True
+        task.upsert_keys = ["employee_id"]
+        task.skip_column = None
+        task.skip_value = None
+        return task
+
+    def test_duplicate_keys_first_row_wins(self, task):
+        db = MagicMock()
+        db.execute.return_value.fetchall.return_value = []  # nothing exists
+
+        rows = [
+            {"employee_id": 1, "name": "First"},
+            {"employee_id": 1, "name": "Second"},  # duplicate key
+        ]
+        with patch("app.services.runner.insert_batch", return_value=1):
+            results = process_rows_with_upsert(db, task, 1, rows)
+
+        assert results["inserted"] == 1
+        assert results["skipped"] == 1
+        assert any(
+            "duplicate upsert key" in str(d.get("error", "")) for d in results["error_details"]
+        )
+
+
 class TestBatchSkipCondition:
     """Regression tests for the unimplemented skip condition in the batch
     upsert path (v1.4 C3)."""
