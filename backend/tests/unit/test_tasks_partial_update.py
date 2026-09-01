@@ -160,3 +160,57 @@ class TestTaskCreateSSRFValidation:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestUpsertInvariant:
+    """upsert_enabled without any key must be rejected, at create and update time."""
+
+    def test_create_enabled_without_keys_is_422(self, client):
+        resp = client.post(
+            "/api/v1/tasks/",
+            json={
+                "name": "No Keys",
+                "connection_id": "conn-1",
+                "endpoint_path": "https://api.example.com/users",
+                "dest_table": "users",
+                "upsert_enabled": True,
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_enable_without_stored_or_supplied_keys_is_400(self, client):
+        task_id = _create_task(client, "Enable No Keys")["id"]
+        resp = client.put(f"/api/v1/tasks/{task_id}", json={"upsert_enabled": True})
+        assert resp.status_code == 400
+        assert "upsert_keys" in resp.json()["detail"]
+
+    def test_enable_with_supplied_keys_then_toggle_uses_stored_keys(self, client, test_db):
+        task_id = _create_task(client, "Enable With Keys")["id"]
+        resp = client.put(
+            f"/api/v1/tasks/{task_id}", json={"upsert_enabled": True, "upsert_keys": ["id"]}
+        )
+        assert resp.status_code == 200, resp.text
+        resp = client.put(f"/api/v1/tasks/{task_id}", json={"upsert_enabled": False})
+        assert resp.status_code == 200, resp.text
+        # Stored keys satisfy the invariant when re-enabling without resending them.
+        resp = client.put(f"/api/v1/tasks/{task_id}", json={"upsert_enabled": True})
+        assert resp.status_code == 200, resp.text
+        row = test_db.query(Task).filter(Task.id == task_id).first()
+        assert row.upsert_enabled is True
+
+    def test_enable_with_explicit_empty_keys_is_422(self, client):
+        task_id = _create_task(client, "Enable Empty Keys")["id"]
+        resp = client.put(
+            f"/api/v1/tasks/{task_id}", json={"upsert_enabled": True, "upsert_keys": []}
+        )
+        assert resp.status_code == 422
+
+
+class TestRelativeEndpointPath:
+    def test_relative_path_with_absolute_url_in_query_is_kept(self, client):
+        """A relative endpoint whose query embeds an absolute URL is not an SSRF target."""
+        task_id = _create_task(client, "Relative Path")["id"]
+        path = "/api/items?redirect=https://cb.example.com/done"
+        resp = client.put(f"/api/v1/tasks/{task_id}", json={"endpoint_path": path})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["endpoint_path"] == path
