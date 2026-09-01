@@ -460,14 +460,18 @@ if __name__ == "__main__":
 
 def test_standalone_preview_fetch_time_ssrf_block_is_403(client: TestClient):
     """SSRFBlockedError subclasses ValueError; before the dedicated handler it
-    came back as 400 "Invalid JSON", hiding that the URL was blocked."""
+    came back as 400 "Invalid JSON", hiding that the URL was blocked.
+
+    The block is raised from fetch_json, i.e. underneath fetch_sample_response,
+    so it must survive that helper's catch-all wrapper to reach the route.
+    """
     from unittest.mock import patch
 
     from app.core.url_guard import SSRFBlockedError
 
     path = "/api/v1/preview-fields-standalone"
     with patch(
-        "app.api.v1.routes.column_mappings.fetch_sample_response",
+        "app.services.api_connector.fetch_json",
         side_effect=SSRFBlockedError("Host 'api.example.com' resolves to a non-public address"),
     ):
         resp = client.post(

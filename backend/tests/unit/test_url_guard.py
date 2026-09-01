@@ -99,3 +99,20 @@ class TestInvalidPort:
         # config-time validation (resolve=False), not a ValueError/500.
         with pytest.raises(SSRFBlockedError, match="invalid port"):
             validate_url(url, resolve=False)
+
+
+class TestFetchSampleResponsePreservesSsrfError:
+    @pytest.mark.asyncio
+    async def test_ssrf_block_is_not_flattened_into_value_error(self):
+        from unittest.mock import patch
+
+        from app.services.api_connector import fetch_sample_response
+
+        with patch(
+            "app.services.api_connector.fetch_json",
+            side_effect=SSRFBlockedError("Host 'x' resolves to a non-public address"),
+        ):
+            with pytest.raises(SSRFBlockedError):
+                await fetch_sample_response(
+                    method="GET", url="https://api.example.com/x", auth_type="none"
+                )

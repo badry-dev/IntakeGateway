@@ -573,6 +573,10 @@ async def fetch_sample_response(
         logger.info(f"Fetched sample API response: {type(response_data).__name__}")
         return response_data
 
+    except SSRFBlockedError:
+        # Preserve the SSRF signal: callers map it to 403. The catch-all below
+        # would flatten it into a generic ValueError (a misleading 400).
+        raise
     except httpx.HTTPStatusError as e:
         # Status + reason only: upstream bodies can contain PII, so neither
         # the log line nor the client-facing message includes an excerpt.
