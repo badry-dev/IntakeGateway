@@ -1,0 +1,217 @@
+"""Tests for bounded read endpoints and config-time identifier validation
+(v1.4 phase 3, tasks 17 & 19)."""
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.api.v1.routes.runs import get_db as runs_get_db
+from app.api.v1.routes.tasks import get_db
+from app.db.models.task import Task
+from app.db.models.task_run import TaskRun
+from app.db.session import Base
+from app.main import app
+
+
+@pytest.fixture(scope="function")
+def test_db():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    TestingSessionLocal = sessionmaker(bind=engine)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[runs_get_db] = override_get_db
+
+    yield TestingSessionLocal()
+
+    app.dependency_overrides.clear()
+    engine.dispose()
+
+
+@pytest.fixture
+def client(test_db):
+    return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def mock_connection_dependencies(monkeypatch):
+    from unittest.mock import MagicMock
+
+    storage = MagicMock()
+    storage.get_connection.side_effect = lambda connection_id, include_password=False: (
+        {"id": connection_id, "name": f"Connection {connection_id}"} if connection_id else None
+    )
+    monkeypatch.setattr("app.api.v1.routes.tasks.get_connection_storage", lambda: storage)
+
+
+@pytest.fixture
+def task_with_runs(test_db):
+    from datetime import UTC, datetime, timedelta
+
+    task = Task(
+        name="Stats Task",
+        connection_id="conn-1",
+        endpoint_path="/api/x",
+        dest_table="x",
+    )
+    test_db.add(task)
+    test_db.commit()
+    test_db.refresh(task)
+
+    base = datetime.now(UTC)
+    statuses = ["SUCCESS", "SUCCESS", "FAILED", "PARTIAL_SUCCESS"]
+    for i, status in enumerate(statuses):
+        run = TaskRun(
+            task_id=task.id,
+            status=status,
+            started_at=base - timedelta(minutes=len(statuses) - i),
+            ended_at=base - timedelta(minutes=len(statuses) - i - 1),
+            rows_fetched=100,
+            rows_inserted=80,
+            rows_updated=10,
+            rows_skipped=5,
+            error_count=2,
+        )
+        test_db.add(run)
+    test_db.commit()
+    return task
+
+
+class TestStatsAggregation:
+    def test_stats_correct_and_aggregated(self, client, task_with_runs):
+        resp = client.get(f"/api/v1/tasks/{task_with_runs.id}/stats")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["total_runs"] == 4
+        assert data["successful_runs"] == 2
+        assert data["failed_runs"] == 1
+        assert data["success_rate"] == 50.0
+        assert data["total_rows_fetched"] == 400
+        assert data["total_rows_inserted"] == 320
+        assert data["total_errors"] == 8
+        assert data["avg_duration_seconds"] > 0
+        assert data["last_run_status"] is not None
+
+
+class TestResponseCaps:
+    """logs_limit / row_errors_limit caps and uncapped row_errors_total
+    (v1.4 task 17) — covered for BOTH run-detail endpoints."""
+
+    def _seed_run_with_errors(self, test_db, task_id, n_errors):
+        from datetime import UTC, datetime
+
+        from app.db.models.task_run_log import TaskRunLog
+
+        run = TaskRun(
+            task_id=task_id,
+            status="FAILED",
+            started_at=datetime.now(UTC),
+            ended_at=datetime.now(UTC),
+        )
+        test_db.add(run)
+        test_db.flush()
+        for i in range(n_errors):
+            test_db.add(
+                TaskRunLog(
+                    task_run_id=run.id,
+                    row_number=i,
+                    column_name="c",
+                    error_type="t",
+                    error_message=f"err {i}",
+                )
+            )
+        test_db.commit()
+        return run.id
+
+    def test_caps_and_total_on_both_endpoints(self, client, test_db, task_with_runs):
+        from app.api.v1.routes.runs import DEFAULT_ROW_ERRORS_LIMIT
+
+        n = 12  # > default page size used in the request below
+        run_id = self._seed_run_with_errors(test_db, task_with_runs.id, n)
+
+        for url in (
+            f"/api/v1/tasks/{task_with_runs.id}/runs/{run_id}",
+            f"/api/v1/runs/{run_id}",
+        ):
+            resp = client.get(url, params={"row_errors_limit": 5})
+            assert resp.status_code == 200, (url, resp.text)
+            data = resp.json()
+            assert len(data["row_errors"]) == 5  # capped at requested limit
+            assert data["row_errors_total"] == n  # uncapped count reported
+
+        # Default limit applies when no params passed
+        resp = client.get(f"/api/v1/runs/{run_id}")
+        data = resp.json()
+        assert len(data["row_errors"]) == min(n, DEFAULT_ROW_ERRORS_LIMIT)
+        assert data["row_errors_total"] == n
+
+
+class TestIdentifierValidation:
+    def test_dest_table_rejects_injection(self, client):
+        resp = client.post(
+            "/api/v1/tasks/",
+            json={
+                "name": "bad table",
+                "connection_id": "conn-1",
+                "endpoint_path": "https://api.example.com/x",
+                "dest_table": 'evil"; DROP TABLE tasks; --',
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_dest_table_allows_schema_qualified(self, client):
+        resp = client.post(
+            "/api/v1/tasks/",
+            json={
+                "name": "qualified",
+                "connection_id": "conn-1",
+                "endpoint_path": "https://api.example.com/x",
+                "dest_table": "SCHEMA.TABLE_NAME",
+            },
+        )
+        assert resp.status_code == 201, resp.text
+
+    def test_upsert_keys_entries_validated(self, client):
+        resp = client.post(
+            "/api/v1/tasks/",
+            json={
+                "name": "bad keys",
+                "connection_id": "conn-1",
+                "endpoint_path": "https://api.example.com/x",
+                "dest_table": "TBL",
+                "upsert_enabled": True,
+                "upsert_keys": ['ok_key", "injected'],
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_skip_column_validated(self, client):
+        resp = client.post(
+            "/api/v1/tasks/",
+            json={
+                "name": "bad skip",
+                "connection_id": "conn-1",
+                "endpoint_path": "https://api.example.com/x",
+                "dest_table": "TBL",
+                "skip_column": 'a"; DROP TABLE x',
+            },
+        )
+        assert resp.status_code == 422
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

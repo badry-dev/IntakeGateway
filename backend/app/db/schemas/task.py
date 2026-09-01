@@ -8,6 +8,31 @@ from app.core.url_guard import SSRFBlockedError, validate_url
 
 # Reusable regex for safe API parameter / column identifiers (cursor injection guard).
 _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
+# SQL identifiers for dest_table / upsert_keys / skip_column (defense at config
+# time; the runner keeps its runtime guards as defense-in-depth).
+_SAFE_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$#]{0,127}$")
+
+
+def _validate_sql_identifier(value: str, field: str) -> str:
+    cleaned = str(value).strip()
+    if not _SAFE_SQL_IDENTIFIER_RE.match(cleaned):
+        raise ValueError(
+            f"{field} {value!r} is not a valid SQL identifier "
+            f"(must match {_SAFE_SQL_IDENTIFIER_RE.pattern})"
+        )
+    return cleaned
+
+
+def _validate_dest_table(value: str | None) -> str | None:
+    """Schema-qualified table names allowed; each part must be a safe identifier."""
+    if value is None:
+        return value
+    parts = str(value).strip().split(".")
+    if not parts or any(not p for p in parts):
+        raise ValueError(f"dest_table {value!r} is invalid")
+    for part in parts:
+        _validate_sql_identifier(part, "dest_table")
+    return str(value).strip()
 
 
 def _validate_source_url(url: str | None) -> str | None:
@@ -191,15 +216,6 @@ class TaskCreate(BaseModel):
     skip_value: str | None = None  # Value that triggers skip (e.g., 'Y')
     continue_on_error: bool = True  # Continue processing on row errors
 
-    @field_validator("upsert_keys")
-    @classmethod
-    def validate_upsert_keys(cls, v: list[str] | None, info):
-        """Validate that upsert_keys is provided when upsert is enabled"""
-        upsert_enabled = info.data.get("upsert_enabled")
-        if upsert_enabled and (not v or len(v) == 0):
-            raise ValueError("upsert_enabled requires at least one column in upsert_keys")
-        return v
-
     @field_validator("api_key")
     @classmethod
     def validate_api_key_with_auth_type(cls, v: str | None, info):
@@ -222,6 +238,30 @@ class TaskCreate(BaseModel):
     @classmethod
     def validate_endpoint_url(cls, v: str):
         return _validate_source_url(v)
+
+    @field_validator("dest_table")
+    @classmethod
+    def validate_dest_table_identifier(cls, v: str):
+        return _validate_dest_table(v)
+
+    @field_validator("upsert_keys")
+    @classmethod
+    def validate_upsert_key_identifiers(cls, v: list[str] | None, info):
+        """Normalize entries to safe SQL identifiers and require at least one
+        key when upsert is enabled."""
+        if v:
+            v = [_validate_sql_identifier(k, "upsert_keys entry") for k in v]
+        upsert_enabled = info.data.get("upsert_enabled")
+        if upsert_enabled and (not v or len(v) == 0):
+            raise ValueError("upsert_enabled requires at least one column in upsert_keys")
+        return v
+
+    @field_validator("skip_column")
+    @classmethod
+    def validate_skip_column_identifier(cls, v: str | None):
+        if v is not None:
+            _validate_sql_identifier(v, "skip_column")
+        return v
 
 
 class TaskUpdate(BaseModel):
@@ -267,6 +307,25 @@ class TaskUpdate(BaseModel):
     @classmethod
     def validate_endpoint_url(cls, v: str | None):
         return _validate_source_url(v)
+
+    @field_validator("dest_table")
+    @classmethod
+    def validate_dest_table_identifier(cls, v: str | None):
+        return _validate_dest_table(v)
+
+    @field_validator("upsert_keys")
+    @classmethod
+    def validate_upsert_key_identifiers_update(cls, v: list[str] | None):
+        if v:
+            v = [_validate_sql_identifier(k, "upsert_keys entry") for k in v]
+        return v
+
+    @field_validator("skip_column")
+    @classmethod
+    def validate_skip_column_identifier_update(cls, v: str | None):
+        if v is not None:
+            _validate_sql_identifier(v, "skip_column")
+        return v
 
     @field_validator("upsert_keys")
     @classmethod
@@ -432,6 +491,8 @@ class TaskRunOut(BaseModel):
     replay_of_run_id: int | None = None
     execution_logs: list[TaskLogOut] = []
     row_errors: list[TaskRunLogOut] = []
+    # Uncapped count of row errors (row_errors list itself may be capped at 500)
+    row_errors_total: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 

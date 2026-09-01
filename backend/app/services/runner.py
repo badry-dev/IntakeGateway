@@ -570,6 +570,28 @@ def _rows_for_bind_aliases(
     return [{bind_map[column]: row.get(column) for column in columns} for row in rows]
 
 
+def _insert_rows(db: Session, table_name: str, rows: list[dict], batch_size: int = 500) -> int:
+    """Insert rows WITHOUT committing — the caller owns the transaction.
+
+    Required inside savepoints: a committing helper would close the outer
+    transaction and let partial writes survive a rollback.
+    """
+    if not rows:
+        return 0
+
+    total_inserted = 0
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i : i + batch_size]
+        if batch:
+            columns = list(batch[0].keys())
+            insert_sql, columns, bind_map = _build_insert_statement(table_name, columns, batch[0])
+            bind_rows = _rows_for_bind_aliases(batch, columns, bind_map)
+            db.execute(text(insert_sql), bind_rows)
+            total_inserted += len(batch)
+            logger.debug(f"Staged insert of {len(batch)} rows ({total_inserted}/{len(rows)})")
+    return total_inserted
+
+
 def insert_batch(db: Session, table_name: str, rows: list[dict], batch_size: int = 500) -> int:
     """
     Insert rows into the destination table in batches with transaction handling
@@ -818,20 +840,54 @@ def _process_upsert_batch(
             else:
                 to_update.append((batch_offset + idx, row))
 
-        # Step 3: Bulk UPDATE (if any)
-        if to_update:
-            update_count = _bulk_update_rows(db, task, to_update, upsert_keys)
-            results["updated"] = update_count
-            db.commit()
-            logger.debug(f"Bulk updated {update_count} rows")
-
-        # Step 4: Bulk INSERT (if any)
-        if to_insert:
-            insert_rows = [row for _, row in to_insert]
-            insert_count = insert_batch(db, task.dest_table, insert_rows)
-            results["inserted"] = insert_count
-            db.commit()
-            logger.debug(f"Bulk inserted {insert_count} rows")
+        # Steps 3+4: Bulk UPDATE + INSERT inside a savepoint, so a partially
+        # applied bulk statement is rolled back completely before falling back
+        # to per-row processing (a replayed half-applied batch would corrupt
+        # data). The batch commits exactly once.
+        if to_update or to_insert:
+            try:
+                with db.begin_nested():
+                    if to_update:
+                        results["updated"] = _bulk_update_rows(db, task, to_update, upsert_keys)
+                        logger.debug(f"Bulk updated {results['updated']} rows")
+                    if to_insert:
+                        insert_rows = [row for _, row in to_insert]
+                        # Commit-free helper: insert_batch() would COMMIT inside
+                        # the savepoint, closing the outer transaction and
+                        # letting partial writes survive a rollback.
+                        results["inserted"] = _insert_rows(db, task.dest_table, insert_rows)
+                        logger.debug(f"Bulk inserted {results['inserted']} rows")
+                db.commit()
+            except Exception as bulk_exc:
+                db.rollback()
+                logger.warning(
+                    f"Bulk upsert failed ({bulk_exc}); falling back to row-by-row "
+                    f"for this batch of {len(batch)} rows"
+                )
+                # The rolled-back savepoint discards tentative bulk counts —
+                # reset them so the fallback can't double-count.
+                results["updated"] = 0
+                results["inserted"] = 0
+                # Per-row fallback preserves error attribution and the
+                # "never stop on row errors" contract; _process_single_row
+                # includes the fixed skip-condition logic.
+                for idx, row in to_update + to_insert:
+                    row_result = _process_single_row(db, task, row, idx)
+                    if row_result.status == RowStatus.UPDATED:
+                        results["updated"] += 1
+                    elif row_result.status == RowStatus.INSERTED:
+                        results["inserted"] += 1
+                    elif row_result.status == RowStatus.SKIPPED:
+                        results["skipped"] += 1
+                    else:
+                        results["errors"] += 1
+                        results["error_details"].append(
+                            {
+                                "row_index": idx,
+                                "record_key": row_result.record_key,
+                                "error": str(row_result.message)[:500],
+                            }
+                        )
 
         results["skipped"] += len(to_skip)
 
@@ -1139,7 +1195,13 @@ def log_row_error(
     error_message: str,
     source_value: str = None,
 ):
-    """Log row-level validation error to TaskRunLog table"""
+    """Log row-level validation error to TaskRunLog table.
+
+    Stages the insert WITHOUT committing — a failing run can produce thousands
+    of row errors and one commit per error previously stalled the pipeline.
+    The caller commits at the pipeline-stage boundary (run_import does after
+    the validation stage).
+    """
     error_log = TaskRunLog(
         task_run_id=task_run_id,
         row_number=row_number,
@@ -1149,4 +1211,4 @@ def log_row_error(
         source_value=source_value,
     )
     db.add(error_log)
-    db.commit()
+    return error_log

@@ -373,20 +373,10 @@ class TestBulkUpdateNullPreservation:
     """
 
     @pytest.fixture
-    def sqlite_dest(self):
-        from sqlalchemy import create_engine, text
-        from sqlalchemy.orm import sessionmaker
-
-        engine = create_engine("sqlite:///:memory:")
-        conn = engine.connect()
-        conn.execute(
-            text('CREATE TABLE "EMPLOYEES" ("employee_id" INTEGER PRIMARY KEY, "name" TEXT)')
+    def sqlite_dest(self, sqlite_dest_factory):
+        return sqlite_dest_factory(
+            'CREATE TABLE "EMPLOYEES" ("employee_id" INTEGER PRIMARY KEY, "name" TEXT)'
         )
-        conn.commit()
-        Session = sessionmaker(bind=engine)
-        yield Session()
-        conn.close()
-        engine.dispose()
 
     @pytest.fixture
     def task(self):
@@ -513,23 +503,11 @@ class TestBatchSkipCondition:
     upsert path (v1.4 C3)."""
 
     @pytest.fixture
-    def sqlite_dest(self):
-        from sqlalchemy import create_engine, text
-        from sqlalchemy.orm import sessionmaker
-
-        engine = create_engine("sqlite:///:memory:")
-        conn = engine.connect()
-        conn.execute(
-            text(
-                'CREATE TABLE "EMPLOYEES" ('
-                '"employee_id" INTEGER PRIMARY KEY, "name" TEXT, "processed" TEXT)'
-            )
+    def sqlite_dest(self, sqlite_dest_factory):
+        return sqlite_dest_factory(
+            'CREATE TABLE "EMPLOYEES" '
+            '("employee_id" INTEGER PRIMARY KEY, "name" TEXT, "processed" TEXT)'
         )
-        conn.commit()
-        Session = sessionmaker(bind=engine)
-        yield Session()
-        conn.close()
-        engine.dispose()
 
     @pytest.fixture
     def task_with_skip(self):

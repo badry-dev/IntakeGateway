@@ -1,10 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func
+from sqlalchemy.orm import Session, aliased
 
+from app.api.v1.run_payloads import (
+    DEFAULT_LOGS_LIMIT,
+    DEFAULT_ROW_ERRORS_LIMIT,
+    LOGS_LIMIT_BOUND,
+    ROW_ERRORS_LIMIT_BOUND,
+    get_capped_run_logs,
+)
 from app.db.models.task import Task
-from app.db.models.task_log import TaskLog
 from app.db.models.task_run import TaskRun, TaskStatus
-from app.db.models.task_run_log import TaskRunLog
 from app.db.schemas.task import (
     ReplayRequest,
     ReplayResponse,
@@ -30,6 +36,40 @@ def get_retry_info(db: Session, task_id: int, run_id: int) -> tuple[bool, int | 
     return False, None
 
 
+def get_retry_map(db: Session, run_ids: list[int]) -> dict[int, tuple[bool, int | None]]:
+    """Compute retry info for a page of runs WITHOUT an N+1 query.
+
+    Two statements total: one self-join to find each run's immediately
+    preceding run, one to fetch the preceding runs' statuses. Previously every
+    row in the list triggered its own get_retry_info query.
+    """
+    if not run_ids:
+        return {}
+
+    PrevRun = aliased(TaskRun)
+    prev_pairs = (
+        db.query(TaskRun.id.label("run_id"), func.max(PrevRun.id).label("prev_id"))
+        .join(PrevRun, and_(PrevRun.task_id == TaskRun.task_id, PrevRun.id < TaskRun.id))
+        .filter(TaskRun.id.in_(run_ids))
+        .group_by(TaskRun.id)
+        .all()
+    )
+
+    prev_ids = [p.prev_id for p in prev_pairs if p.prev_id is not None]
+    statuses = {}
+    if prev_ids:
+        rows = db.query(TaskRun.id, TaskRun.status).filter(TaskRun.id.in_(prev_ids)).all()
+        statuses = {r.id: r.status for r in rows}
+
+    result = {}
+    for p in prev_pairs:
+        if p.prev_id is not None and statuses.get(p.prev_id) == TaskStatus.FAILED.value:
+            result[p.run_id] = (True, p.prev_id)
+        else:
+            result[p.run_id] = (False, None)
+    return result
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -39,8 +79,13 @@ def get_db():
 
 
 @router.get("/{run_id}", response_model=TaskRunOut)
-def get_run(run_id: int, db: Session = Depends(get_db)):
-    """Get detailed information about a specific run"""
+def get_run(
+    run_id: int,
+    logs_limit: int = Query(DEFAULT_LOGS_LIMIT, ge=1, le=LOGS_LIMIT_BOUND),
+    row_errors_limit: int = Query(DEFAULT_ROW_ERRORS_LIMIT, ge=1, le=ROW_ERRORS_LIMIT_BOUND),
+    db: Session = Depends(get_db),
+):
+    """Get detailed information about a specific run (logs/errors capped)."""
     task_run = db.query(TaskRun).filter(TaskRun.id == run_id).first()
     if not task_run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -48,20 +93,8 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
     task = db.query(Task).filter(Task.id == task_run.task_id).first()
     is_retry, retry_of_run_id = get_retry_info(db, task_run.task_id, task_run.id)
 
-    # Get execution logs
-    execution_logs = (
-        db.query(TaskLog)
-        .filter(TaskLog.task_run_id == run_id)
-        .order_by(TaskLog.created_at.asc())
-        .all()
-    )
-
-    # Get row errors
-    row_errors = (
-        db.query(TaskRunLog)
-        .filter(TaskRunLog.task_run_id == run_id)
-        .order_by(TaskRunLog.row_number.asc())
-        .all()
+    execution_logs, row_errors, row_errors_total = get_capped_run_logs(
+        db, run_id, logs_limit, row_errors_limit
     )
 
     return {
@@ -88,6 +121,7 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
         "is_backfill": task_run.is_backfill,
         "is_replay": task_run.is_replay,
         "replay_of_run_id": task_run.replay_of_run_id,
+        "row_errors_total": row_errors_total,
         "execution_logs": [
             {
                 "id": log.id,
@@ -206,9 +240,11 @@ def list_runs(
     tasks = db.query(Task).filter(Task.id.in_(task_ids)).all() if task_ids else []
     task_name_map = {task.id: task.name for task in tasks}
 
+    retry_map = get_retry_map(db, [run.id for run in runs])
+
     result = []
     for run in runs:
-        is_retry, retry_of_run_id = get_retry_info(db, run.task_id, run.id)
+        is_retry, retry_of_run_id = retry_map.get(run.id, (False, None))
         result.append(
             {
                 "id": run.id,
