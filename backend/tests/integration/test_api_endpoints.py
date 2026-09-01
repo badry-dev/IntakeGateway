@@ -240,7 +240,7 @@ def test_trigger_task_run(client: TestClient, sample_task, test_db):
     data = response.json()
     assert data["status"] == "enqueued"
     assert data["task_id"] == sample_task.id
-    assert data["run_id"] is not None
+    assert data["celery_task_id"] == f"task-{sample_task.id}"
 
 
 def test_trigger_nonexistent_task_run(client: TestClient):
