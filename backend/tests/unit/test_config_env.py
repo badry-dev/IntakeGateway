@@ -48,7 +48,11 @@ class TestDocsGating:
         from app.core.config import settings
 
         original = settings.APP_ENV
+        original_token = settings.API_TOKEN
         settings.APP_ENV = app_env
+        # Production fail-closed guard requires a token at import time.
+        if app_env == "production":
+            settings.API_TOKEN = "test-token"
         try:
             import app.main as main_module
 
@@ -56,6 +60,7 @@ class TestDocsGating:
             return main_module.app
         finally:
             settings.APP_ENV = original
+            settings.API_TOKEN = original_token
 
     def test_docs_enabled_outside_production(self):
         from fastapi.testclient import TestClient
