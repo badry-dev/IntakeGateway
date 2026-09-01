@@ -16,6 +16,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core.url_guard import SSRFBlockedError, validate_url
 from app.db.models.column_mapping import ColumnMapping
 from app.db.models.task import Task
 from app.db.schemas.column_mapping import (
@@ -26,6 +27,8 @@ from app.db.schemas.column_mapping import (
     FieldsPreviewResponse,
     OracleColumnsResponse,
     PreviewFieldsRequest,
+    SanitizedFieldPreview,
+    StandaloneFieldsPreviewResponse,
     TransformSuggestionsResponse,
 )
 from app.db.session import SessionLocal
@@ -384,6 +387,9 @@ async def preview_fields(
             field_count=len(fields_info),
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP errors instead of rewriting them to 400.
+        raise
     except ValueError as e:
         logger.warning(f"Invalid JSON for task {task_id}: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
@@ -463,7 +469,10 @@ def get_columns(
 # ============================================================================
 
 
-@oracle_router.post("/preview-fields-standalone", response_model=FieldsPreviewResponse)
+@oracle_router.post(
+    "/preview-fields-standalone",
+    response_model=FieldsPreviewResponse | StandaloneFieldsPreviewResponse,
+)
 async def preview_fields_standalone(request: PreviewFieldsRequest):
     """
     Preview available fields from a sample API response (standalone - no task required).
@@ -471,17 +480,22 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
     Useful for TaskWizard mapping step before task creation.
 
     Supports two modes:
-    1. Auto-fetch: Makes a test API call with provided parameters
-    2. Manual: Uses provided sample_json (user pastes JSON)
+    1. Auto-fetch: Makes a test API call with provided parameters. The URL is
+       validated against the SSRF guard, and the response returns ONLY derived
+       field metadata (no sample values / raw response are echoed back).
+    2. Manual: Uses provided sample_json (user pastes JSON). The user-supplied
+       JSON is echoed back as before.
 
     Args:
         request: PreviewFieldsRequest with all parameters
 
     Returns:
-        FieldsPreviewResponse with available fields and flattened structure
+        FieldsPreviewResponse (manual mode) or StandaloneFieldsPreviewResponse
+        (auto-fetch mode)
 
     Raises:
         400: Invalid JSON or API fetch failed
+        403: URL blocked by SSRF guard
     """
     try:
         if request.use_auto_fetch:
@@ -489,6 +503,13 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
                 raise HTTPException(
                     status_code=400, detail="url parameter required for auto-fetch mode"
                 )
+
+            # SSRF guard (C4): reject private/loopback/link-local targets.
+            try:
+                validate_url(request.url)
+            except SSRFBlockedError as e:
+                logger.warning(f"SSRF guard rejected standalone preview URL: {e}")
+                raise HTTPException(status_code=403, detail=str(e))
 
             logger.info(f"Auto-fetching from {request.method} {request.url}")
             raw_response = await fetch_sample_response(
@@ -500,13 +521,39 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
                 record_path=request.record_path,
                 auth_type="none",
             )
-        else:
-            if not request.sample_json:
-                raise HTTPException(
-                    status_code=400,
-                    detail="sample_json is required when use_auto_fetch=False",
+
+            sample_record = raw_response
+            if isinstance(raw_response, list):
+                if not raw_response:
+                    raise ValueError("Cannot process empty list")
+                sample_record = raw_response[0]
+
+            flattened_data = get_record_type_info(sample_record, request.record_path)
+
+            # Auto-fetch echoes NO source values — only derived metadata.
+            fields_info = [
+                SanitizedFieldPreview(
+                    field_name=field_name,
+                    field_type=field_info.get("field_type", "string"),
+                    is_nested=field_info.get("parent_path") is not None,
+                    parent_path=field_info.get("parent_path"),
                 )
-            raw_response = request.sample_json
+                for field_name, field_info in flattened_data.items()
+            ]
+
+            logger.info(f"Generated field preview (standalone): {len(fields_info)} fields")
+
+            return StandaloneFieldsPreviewResponse(
+                fields=fields_info,
+                field_count=len(fields_info),
+            )
+
+        if not request.sample_json:
+            raise HTTPException(
+                status_code=400,
+                detail="sample_json is required when use_auto_fetch=False",
+            )
+        raw_response = request.sample_json
 
         # Ensure we have a dict for processing (extract first record if list)
         sample_record = raw_response
@@ -541,6 +588,10 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
             field_count=len(fields_info),
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP errors (400 missing sample_json, 403 SSRF
+        # block) instead of letting the broad handler rewrite them to 400.
+        raise
     except ValueError as e:
         logger.warning(f"Invalid JSON: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")

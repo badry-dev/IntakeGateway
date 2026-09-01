@@ -1,12 +1,15 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.routes import column_mappings, connections, runs, schedules, tasks
 from app.api.v1.routes.column_mappings import oracle_router
+from app.core.auth import enforce_api_token_configured, require_api_token
 from app.core.config import settings
 from app.db.session import init_app_database
+
+enforce_api_token_configured()
 
 
 @asynccontextmanager
@@ -44,12 +47,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
-app.include_router(runs.router, prefix="/api/v1/runs", tags=["runs"])
-app.include_router(column_mappings.router, prefix="/api/v1/tasks", tags=["column_mappings"])
-app.include_router(schedules.router, tags=["schedules"])
-app.include_router(connections.router, tags=["connections"])
-app.include_router(oracle_router, prefix="/api/v1", tags=["oracle"])
+# Real router-level dependencies (NOT dependency_overrides, which only
+# replaces existing dependencies and would leave routes unauthenticated).
+app.include_router(
+    tasks.router, prefix="/api/v1/tasks", tags=["tasks"], dependencies=[Depends(require_api_token)]
+)
+app.include_router(
+    runs.router, prefix="/api/v1/runs", tags=["runs"], dependencies=[Depends(require_api_token)]
+)
+app.include_router(
+    column_mappings.router,
+    prefix="/api/v1/tasks",
+    tags=["column_mappings"],
+    dependencies=[Depends(require_api_token)],
+)
+app.include_router(schedules.router, tags=["schedules"], dependencies=[Depends(require_api_token)])
+app.include_router(
+    connections.router, tags=["connections"], dependencies=[Depends(require_api_token)]
+)
+app.include_router(
+    oracle_router, prefix="/api/v1", tags=["oracle"], dependencies=[Depends(require_api_token)]
+)
 
 
 @app.get("/health")

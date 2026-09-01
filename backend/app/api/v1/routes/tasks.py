@@ -16,6 +16,7 @@ from app.db.schemas.task import (
     TaskRunLogOut,
     TaskRunOut,
     TaskStatsOut,
+    TaskUpdate,
 )
 from app.db.session import SessionLocal
 from app.services.connection_storage import get_connection_storage
@@ -57,11 +58,21 @@ def _flatten_p0_submodels(task_data: dict, task_name: str) -> dict:
         # Plaintext on the wire becomes encrypted at rest. The same field-by-field
         # approach as api_key/password keeps the encryption surface explicit and
         # auditable rather than hidden behind an ORM TypeDecorator.
-        task_data["oauth_grant_type"] = oauth.get("grant_type")
-        task_data["oauth_token_url"] = oauth.get("token_url")
-        task_data["oauth_client_id"] = oauth.get("client_id")
-        task_data["oauth_scope"] = oauth.get("scope")
-        task_data["oauth_audience"] = oauth.get("audience")
+        #
+        # Presence-based assignment: with exclude_unset=True a partial update's
+        # oauth dict only contains explicitly-set keys — assigning .get() for
+        # every column would clear omitted fields (e.g. updating ONLY scope
+        # would wipe grant_type/token_url/client_id).
+        if "grant_type" in oauth:
+            task_data["oauth_grant_type"] = oauth["grant_type"]
+        if "token_url" in oauth:
+            task_data["oauth_token_url"] = oauth["token_url"]
+        if "client_id" in oauth:
+            task_data["oauth_client_id"] = oauth["client_id"]
+        if "scope" in oauth:
+            task_data["oauth_scope"] = oauth["scope"]
+        if "audience" in oauth:
+            task_data["oauth_audience"] = oauth["audience"]
         # Key presence (not truthiness) drives whether the column is touched.
         # PUT with explicit null/"" must be able to clear stored credentials —
         # truthiness-only checks left revoked secrets in place forever.
@@ -78,15 +89,21 @@ def _flatten_p0_submodels(task_data: dict, task_name: str) -> dict:
 
     rl = task_data.pop("rate_limit", None)
     if isinstance(rl, dict):
-        task_data["rate_limit_max_retries"] = rl.get("max_retries")
-        task_data["rate_limit_max_wait_seconds"] = rl.get("max_wait_seconds")
-        task_data["rate_limit_rps"] = rl.get("rps")
+        if "max_retries" in rl:
+            task_data["rate_limit_max_retries"] = rl["max_retries"]
+        if "max_wait_seconds" in rl:
+            task_data["rate_limit_max_wait_seconds"] = rl["max_wait_seconds"]
+        if "rps" in rl:
+            task_data["rate_limit_rps"] = rl["rps"]
 
     cursor = task_data.pop("cursor", None)
     if isinstance(cursor, dict):
-        task_data["cursor_field"] = cursor.get("field")
-        task_data["cursor_param_name"] = cursor.get("param_name")
-        task_data["cursor_initial_value"] = cursor.get("initial_value")
+        if "field" in cursor:
+            task_data["cursor_field"] = cursor["field"]
+        if "param_name" in cursor:
+            task_data["cursor_param_name"] = cursor["param_name"]
+        if "initial_value" in cursor:
+            task_data["cursor_initial_value"] = cursor["initial_value"]
 
     return task_data
 
@@ -153,36 +170,47 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{task_id}", response_model=TaskOut)
-def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)):
-    """Update an existing task"""
+def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
+    """Update an existing task (partial update).
+
+    Only explicitly-set fields are applied. Omitted secrets (api_key,
+    password, oauth secrets) are preserved; a secret field present but empty
+    string is an explicit clear.
+    """
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    update_data = payload.model_dump(exclude_unset=True)
+
     # Check if new name conflicts with another task
-    if payload.name != task.name:
-        exists = db.query(Task).filter(Task.name == payload.name).first()
+    if "name" in update_data and update_data["name"] != task.name:
+        exists = db.query(Task).filter(Task.name == update_data["name"]).first()
         if exists:
             raise HTTPException(status_code=400, detail="Task with this name already exists")
 
-    _require_existing_connection(payload.connection_id)
+    if "connection_id" in update_data:
+        _require_existing_connection(update_data["connection_id"])
 
-    # Prepare update data and encrypt sensitive fields
-    update_data = payload.model_dump()
+    # Encrypt secrets. Empty string = explicit clear; None (explicit null)
+    # also clears; omitted = untouched (key not in update_data).
+    if "api_key" in update_data:
+        if update_data["api_key"]:
+            update_data["api_key"] = encrypt_value(update_data["api_key"])
+            logger.debug(f"Encrypted api_key for task '{update_data.get('name', task.name)}'")
+        else:
+            update_data["api_key"] = None
 
-    # Encrypt api_key if provided
-    if update_data.get("api_key"):
-        update_data["api_key"] = encrypt_value(update_data["api_key"])
-        logger.debug(f"Encrypted api_key for task '{payload.name}'")
+    if "password" in update_data:
+        if update_data["password"]:
+            update_data["password"] = encrypt_value(update_data["password"])
+            logger.debug(f"Encrypted password for task '{update_data.get('name', task.name)}'")
+        else:
+            update_data["password"] = None
 
-    # Encrypt password if provided
-    if update_data.get("password"):
-        update_data["password"] = encrypt_value(update_data["password"])
-        logger.debug(f"Encrypted password for task '{payload.name}'")
+    _flatten_p0_submodels(update_data, update_data.get("name", task.name))
 
-    _flatten_p0_submodels(update_data, payload.name)
-
-    # Update task with all fields from payload
+    # Update task with only the fields explicitly provided
     for key, value in update_data.items():
         setattr(task, key, value)
 

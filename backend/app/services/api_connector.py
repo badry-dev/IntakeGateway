@@ -9,6 +9,56 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.encryption import decrypt_value
+from app.core.url_guard import SSRFBlockedError, validate_url_async
+
+# Header names that may carry secrets. Matching is case-insensitive and
+# substring-based for the patterns below, so configurable API-key header
+# names (api_key_header is user-supplied) are masked too.
+_SECRET_HEADER_PATTERNS = (
+    "authorization",
+    "api",  # matches *api*key* style names
+    "key",
+    "token",
+    "x-auth",
+    "secret",
+    "password",
+    "cookie",
+)
+
+
+def _is_secret_header(name: str) -> bool:
+    lowered = name.lower()
+    return any(pattern in lowered for pattern in _SECRET_HEADER_PATTERNS)
+
+
+def mask_secret_value(value: str) -> str:
+    """Return a log-safe version of a secret value."""
+    if not value:
+        return "***"
+    return f"***{value[-4:]}" if len(value) > 8 else "***"
+
+
+def mask_headers(headers: dict) -> dict:
+    """Return a copy of headers with any secret-bearing header masked."""
+    masked = {}
+    for key, value in (headers or {}).items():
+        if _is_secret_header(str(key)):
+            masked[key] = mask_secret_value(str(value))
+        else:
+            masked[key] = value
+    return masked
+
+
+def _redact_url_for_log(url: str) -> str:
+    """Strip query strings AND userinfo (may embed api keys / tokens) for log
+    output. All URL logging must go through this helper."""
+    base = url.split("?", 1)[0]
+    scheme, sep, rest = base.partition("://")
+    if sep and "@" in rest.split("/", 1)[0]:
+        # https://user:secret@host/path -> https://host/path
+        _, _, tail = rest.partition("@")
+        return f"{scheme}://{tail}"
+    return base
 
 
 def _parse_retry_after(header_value: str | None) -> float | None:
@@ -186,36 +236,38 @@ async def fetch_json(
         oauth_config=oauth_config,
     )
 
-    # Debug: Show request details (mask sensitive headers)
-    debug_headers = dict(headers)
-    if "Authorization" in debug_headers:
-        auth_value = debug_headers["Authorization"]
-        if auth_value.startswith("Bearer "):
-            debug_headers["Authorization"] = f"Bearer ***{auth_value[-4:]}"
-        elif auth_value.startswith("Basic "):
-            debug_headers["Authorization"] = "Basic ***"
-    if "X-API-Key" in debug_headers:
-        debug_headers["X-API-Key"] = f"***{debug_headers['X-API-Key'][-4:]}"
+    # Debug: Show request details (masked copy only, at DEBUG level — raw
+    # header values and URLs with query params must never hit INFO logs).
+    debug_headers = mask_headers(headers)
 
-    logger.info(f"Making API request: {method} {url}")
-    logger.info(f"Request headers: {debug_headers}")
+    logger.info(f"Making API request: {method} {_redact_url_for_log(url)}")
+    logger.debug(f"Request headers: {debug_headers}")
     if params:
-        logger.debug(f"Query params: {params}")
+        logger.debug("Query params: <redacted>")
     if json_body:
-        logger.debug(f"Request body: {json_body}")
+        logger.debug("Request body: <redacted>")
 
-    # Generate curl command for debugging
-    curl_cmd = f"curl -X {method} '{url}'"
+    # Generate curl command for debugging — mask secret headers and redact
+    # query params / body (they can embed API keys and upstream PII).
+    curl_cmd = f"curl -X {method} '{_redact_url_for_log(url)}'"
     for key, value in headers.items():
-        if key == "Authorization":
-            curl_cmd += f" -H '{key}: ***'"
+        if _is_secret_header(str(key)):
+            curl_cmd += f" -H '{key}: {mask_secret_value(str(value))}'"
         else:
             curl_cmd += f" -H '{key}: {value}'"
     if params:
-        curl_cmd += f" -G {' '.join([f'-d {k}={v}' for k, v in params.items()])}"
+        curl_cmd += " -G <redacted-query-params>"
     if json_body:
-        curl_cmd += f" -d '{json_body}'"
-    logger.info(f"Equivalent curl: {curl_cmd}")
+        curl_cmd += " -d '<redacted-body>'"
+    logger.debug(f"Equivalent curl: {curl_cmd}")
+
+    # SSRF guard (C4): resolve and validate before connecting. Re-validated on
+    # every attempt; redirects are disabled so each destination is explicit.
+    try:
+        await validate_url_async(url)
+    except SSRFBlockedError as e:
+        logger.error(f"Blocked SSRF attempt: {e}")
+        raise
 
     timeout = httpx.Timeout(settings.HTTP_TIMEOUT_SECONDS)
 
@@ -233,14 +285,39 @@ async def fetch_json(
 
     while True:
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            # follow_redirects=False: a redirect could bounce a validated
+            # public URL to an internal address; re-validate each explicit hop.
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+                # Anti-rebinding narrowing: re-resolve and validate immediately
+                # before the connection is opened. The guard and httpx still
+                # resolve independently, so a rebinding resolver can serve
+                # different answers — this shrinks but does not close the
+                # window (see url_guard module docstring).
+                await validate_url_async(url)
                 logger.debug(
                     f"API request attempt: transient={transient_attempts}/{max_retries} "
-                    f"rate_limit={rate_limit_attempts}/{rl_max_retries}: {method} {url}"
+                    f"rate_limit={rate_limit_attempts}/{rl_max_retries}: "
+                    f"{method} {_redact_url_for_log(url)}"
                 )
                 resp = await client.request(
                     method, url, headers=headers, params=params, json=json_body
                 )
+
+                # With redirects disabled, raise_for_status does not raise on
+                # 3xx — report the redirect explicitly instead of letting it
+                # flow to resp.json() as an opaque decode error.
+                if 300 <= resp.status_code < 400:
+                    location = resp.headers.get("location", "<none>")
+                    logger.warning(
+                        f"Upstream redirected {resp.status_code} to "
+                        f"{_redact_url_for_log(location)}; redirects are disabled"
+                    )
+                    raise ValueError(
+                        f"Upstream redirected with status {resp.status_code} to "
+                        f"{_redact_url_for_log(location)}; redirect following is "
+                        "disabled. Update the task URL to the final destination."
+                    )
+
                 resp.raise_for_status()
 
                 if len(resp.content) > settings.HTTP_MAX_RESPONSE_MB * 1024 * 1024:
@@ -249,7 +326,7 @@ async def fetch_json(
                         f"limit of {settings.HTTP_MAX_RESPONSE_MB}MB"
                     )
 
-                logger.info(f"API request successful: {method} {url}")
+                logger.info(f"API request successful: {method} {_redact_url_for_log(url)}")
                 return resp.json()
 
         except (httpx.TimeoutException, httpx.NetworkError, httpx.ConnectError) as e:
@@ -307,8 +384,9 @@ async def fetch_json(
 
             body_excerpt = _response_excerpt(e.response)
             logger.error(
-                f"API request failed with status {status} for {method} {url}: "
-                f"{body_excerpt or str(e)}"
+                f"API request failed with status {status} for {method} "
+                f"{_redact_url_for_log(url)}: "
+                f"<response body redacted, {len(body_excerpt)} chars>"
             )
             raise
 
@@ -487,18 +565,18 @@ async def fetch_sample_response(
         return response_data
 
     except httpx.HTTPStatusError as e:
-        body_excerpt = _response_excerpt(e.response)
+        # Status + reason only: upstream bodies can contain PII, so neither
+        # the log line nor the client-facing message includes an excerpt.
         message = (
-            f"API returned {e.response.status_code} {e.response.reason_phrase} for {method} {url}"
+            f"API returned {e.response.status_code} {e.response.reason_phrase} "
+            f"for {method} {_redact_url_for_log(url)}"
         )
         if e.response.status_code == 405:
             message += ". Check that the selected HTTP method matches the method used in Postman."
-        if body_excerpt:
-            message += f" Response body: {body_excerpt}"
         logger.error(f"Failed to fetch sample response: {message}")
         raise ValueError(message)
     except httpx.HTTPError as e:
-        logger.error(f"Failed to fetch sample response from {url}: {str(e)}")
+        logger.error(f"Failed to fetch sample response from {_redact_url_for_log(url)}: {str(e)}")
         raise ValueError(f"API request failed for {method} {url}: {str(e)}")
     except Exception as e:
         logger.error(f"Error fetching sample response: {str(e)}")

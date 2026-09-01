@@ -22,3 +22,8 @@ backend/connections.enc
 frontend/*.log
 backend/*.log
 backend/intakegateway_app.db.backup-*
+
+# Runtime lock files for the encrypted connections store
+*.enc.lock
+# Corrupt-store backups preserved by ConnectionStorageService._read_file()
+*.enc.bak

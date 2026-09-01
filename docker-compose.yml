@@ -2,10 +2,18 @@ services:
   redis:
     image: redis:7-alpine
     container_name: intakegateway_redis
-    ports:
-      - "6379:6379"
+    # Not published to the host: only the api/worker/scheduler containers
+    # reach Redis over the compose network. The broker also requires a
+    # password (REDIS_PASSWORD from .env) so task injection / result reading
+    # from the network is not possible.
+    expose:
+      - "6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD required in .env}"]
+    environment:
+      # For the authenticated healthcheck ($$REDIS_PASSWORD at runtime)
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD required in .env}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 5

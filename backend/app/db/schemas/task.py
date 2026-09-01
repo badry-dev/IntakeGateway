@@ -4,8 +4,26 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.url_guard import SSRFBlockedError, validate_url
+
 # Reusable regex for safe API parameter / column identifiers (cursor injection guard).
 _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
+
+
+def _validate_source_url(url: str | None) -> str | None:
+    """Validate a caller-supplied source URL (scheme + literal-IP checks).
+
+    Only absolute URLs are validated here; legacy configs may store
+    endpoint-style values ("/api/users") that are resolved elsewhere. DNS is
+    NOT resolved so a transient resolver outage can't 422 a config save; full
+    resolution is enforced at fetch time by url_guard.
+    """
+    if url is None or "://" not in url:
+        return url
+    try:
+        return validate_url(url, resolve=False)
+    except SSRFBlockedError as e:
+        raise ValueError(str(e)) from e
 
 
 class OAuthConfigIn(BaseModel):
@@ -26,6 +44,8 @@ class OAuthConfigIn(BaseModel):
         """Reject incomplete OAuth configs at request time so the worker
         doesn't fail later with a useless error. Each grant has different
         required fields per RFC 6749."""
+        if self.token_url:
+            self.token_url = _validate_source_url(self.token_url)
         if self.grant_type == "client_credentials":
             missing = [
                 f
@@ -197,6 +217,110 @@ class TaskCreate(BaseModel):
         if auth_type == "basic" and not v:
             raise ValueError("basic authentication requires both username and password")
         return v
+
+    @field_validator("endpoint_path")
+    @classmethod
+    def validate_endpoint_url(cls, v: str):
+        return _validate_source_url(v)
+
+
+class TaskUpdate(BaseModel):
+    """Partial task update (PUT /tasks/{id}).
+
+    All fields optional; only explicitly-set fields are applied
+    (`model_dump(exclude_unset=True)`), so omitted secrets preserve the stored
+    encrypted values instead of wiping them. Secret fields present but empty
+    string are an explicit clear.
+    """
+
+    name: str | None = None
+    description: str | None = None
+    connection_id: str | None = Field(default=None, min_length=1)
+    http_method: str | None = Field(default=None, pattern="^(GET|POST|PUT|PATCH)$")
+    endpoint_path: str | None = None
+    query_params_json: dict[str, Any] | None = None
+    headers_json: dict[str, Any] | None = None
+    body_json: dict[str, Any] | None = None
+    record_path: str | None = None
+    dest_table: str | None = None
+    batch_size: int | None = Field(default=None, ge=1)
+    is_active: bool | None = None
+
+    # Authentication fields
+    auth_type: Literal["none", "bearer", "api_key", "basic", "oauth"] | None = None
+    api_key: str | None = None
+    username: str | None = None
+    password: str | None = None
+    oauth_config: dict[str, Any] | None = None
+
+    oauth: OAuthConfigIn | None = None
+    rate_limit: RateLimitConfigIn | None = None
+    cursor: CursorConfigIn | None = None
+
+    upsert_enabled: bool | None = None
+    upsert_keys: list[str] | None = None
+    skip_column: str | None = None
+    skip_value: str | None = None
+    continue_on_error: bool | None = None
+
+    @field_validator("endpoint_path")
+    @classmethod
+    def validate_endpoint_url(cls, v: str | None):
+        return _validate_source_url(v)
+
+    @field_validator("upsert_keys")
+    @classmethod
+    def validate_upsert_keys(cls, v: list[str] | None, info):
+        """When enabling upsert, keys must be present in the same request."""
+        upsert_enabled = info.data.get("upsert_enabled")
+        if upsert_enabled and not v:
+            raise ValueError("upsert_enabled=true requires at least one column in upsert_keys")
+        return v
+
+    @model_validator(mode="after")
+    def reject_explicit_nulls_for_required_fields(self):
+        """Separate 'omitted' from 'explicitly null'.
+
+        exclude_unset keeps keys the client set to null, and setattr(None)
+        would write NULL into NOT NULL columns (name/connection_id/
+        dest_table/...) causing IntegrityError 500s. Explicit nulls for
+        required-at-create fields are rejected with a validation error;
+        nullable fields may still be explicitly cleared.
+        """
+        fields_set = self.model_fields_set
+        required = (
+            "name",
+            "connection_id",
+            "http_method",
+            "endpoint_path",
+            "dest_table",
+        )
+        for field in required:
+            if field in fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be set to null")
+        if "batch_size" in fields_set and self.batch_size is None:
+            raise ValueError("batch_size cannot be set to null")
+        return self
+
+    @model_validator(mode="after")
+    def validate_auth_requirements(self):
+        """Switching to a secret-requiring auth type requires USABLE (non-empty)
+        credentials in the same request — otherwise the update could clear the
+        secret while retaining an auth mode that cannot work."""
+        fields_set = self.model_fields_set
+        if self.auth_type in ("bearer", "api_key"):
+            if "api_key" not in fields_set:
+                raise ValueError(f"{self.auth_type} authentication requires api_key in the update")
+            if not self.api_key:
+                raise ValueError(f"{self.auth_type} authentication requires a non-empty api_key")
+        if self.auth_type == "basic":
+            if not ("username" in fields_set and "password" in fields_set):
+                raise ValueError(
+                    "basic authentication requires both username and password in the update"
+                )
+            if not self.username or not self.password:
+                raise ValueError("basic authentication requires non-empty username and password")
+        return self
 
 
 class TaskOut(BaseModel):
