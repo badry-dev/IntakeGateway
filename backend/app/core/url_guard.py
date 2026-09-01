@@ -61,6 +61,15 @@ def validate_url(url: str, *, resolve: bool = True) -> str:
     if not host:
         raise SSRFBlockedError("URL must include a host")
 
+    # urlparse raises ValueError on attribute access for out-of-range ports
+    # (http://example.com:99999/). Check it up front so literal-IP URLs and
+    # config-time validation (resolve=False) reject it too, as an
+    # SSRFBlockedError rather than a 500.
+    try:
+        port = parsed.port
+    except ValueError as e:
+        raise SSRFBlockedError(f"URL has an invalid port: {e}") from e
+
     # Literal IPs are checked directly; hostnames are resolved.
     try:
         candidate_addrs = [ipaddress.ip_address(host)]
@@ -71,13 +80,6 @@ def validate_url(url: str, *, resolve: bool = True) -> str:
     host_allowed = host.lower() in allowed
 
     if not candidate_addrs and resolve:
-        # urlparse raises ValueError on attribute access for out-of-range
-        # ports (http://example.com:99999/) — surface it as SSRFBlockedError,
-        # not a 500.
-        try:
-            port = parsed.port
-        except ValueError as e:
-            raise SSRFBlockedError(f"URL has an invalid port: {e}") from e
         try:
             infos = socket.getaddrinfo(host, port or None)
             candidate_addrs = [ipaddress.ip_address(info[4][0]) for info in infos]

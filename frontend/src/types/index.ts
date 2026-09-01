@@ -266,7 +266,8 @@ export interface TaskRun {
   replay_of_run_id?: number | null
   execution_logs?: TaskLog[]
   row_errors?: TaskRunLog[]
-  // Uncapped count of row errors (row_errors list is capped at 500 by the API)
+  // Uncapped count of row errors. row_errors itself is capped by the
+  // row_errors_limit query parameter (default 500, max 5000).
   row_errors_total?: number
 }
 

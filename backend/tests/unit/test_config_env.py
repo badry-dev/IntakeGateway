@@ -30,7 +30,12 @@ class TestAppEnvNormalization:
         from pathlib import Path
 
         backend = Path(__file__).resolve().parents[2]
-        code = "from app.core.config import Settings;print(Settings(SECRET_KEY='x').APP_ENV)"
+        # _env_file=None: a developer's backend/.env must not be able to supply APP_ENV
+        # and mask the built-in default this test exists to exercise.
+        code = (
+            "from app.core.config import Settings;"
+            "print(Settings(_env_file=None, SECRET_KEY='x').APP_ENV)"
+        )
         out = subprocess.run(
             [sys.executable, "-c", code],
             env=env,
@@ -61,6 +66,10 @@ class TestDocsGating:
         finally:
             settings.APP_ENV = original
             settings.API_TOKEN = original_token
+            # Reload again so app.main.app reflects the restored settings for
+            # any later test that imports it; the caller already holds the
+            # instance built above.
+            importlib.reload(main_module)
 
     def test_docs_enabled_outside_production(self):
         from fastapi.testclient import TestClient
@@ -77,3 +86,16 @@ class TestDocsGating:
         client = TestClient(app)
         assert client.get("/docs").status_code == 404
         assert client.get("/openapi.json").status_code == 404
+
+
+class TestScheduleFailureThreshold:
+    def test_default_is_five(self, monkeypatch):
+        monkeypatch.delenv("SCHEDULE_MAX_CONSECUTIVE_FAILURES", raising=False)
+        settings = Settings(_env_file=None, SECRET_KEY="x")
+        assert settings.SCHEDULE_MAX_CONSECUTIVE_FAILURES == 5
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_non_positive_threshold_rejected(self, bad):
+        # 0 or negative would auto-pause a schedule on its very first failure.
+        with pytest.raises(ValueError):
+            Settings(SECRET_KEY="x", SCHEDULE_MAX_CONSECUTIVE_FAILURES=bad)

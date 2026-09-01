@@ -1,6 +1,7 @@
 """Tests for atomic, locked connections-file storage (v1.4 H4)."""
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -104,6 +105,9 @@ svc.create_connection(conn)
         from app.core.config import settings as app_settings
 
         parent_key = app_settings.ENCRYPTION_KEY or os.environ.get("ENCRYPTION_KEY", "")
+        # Workers `import app`, so run them from the backend dir regardless of
+        # where pytest was launched.
+        backend_dir = str(Path(__file__).resolve().parents[2])
         procs = []
         for i in range(n):
             procs.append(
@@ -117,13 +121,22 @@ svc.create_connection(conn)
                         str(ready_dir),
                         str(n),
                     ],
-                    cwd=os.getcwd(),
+                    cwd=backend_dir,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     env={**os.environ, "ENCRYPTION_KEY": parent_key},
                 )
             )
-        outs = [p.communicate(timeout=60) for p in procs]
+        outs = []
+        for p in procs:
+            try:
+                outs.append(p.communicate(timeout=60))
+            except subprocess.TimeoutExpired:
+                for q in procs:
+                    if q.poll() is None:
+                        q.kill()
+                        q.communicate()  # drain pipes, populate returncode
+                raise
         failed = [
             (p.returncode, err.decode()[-500:])
             for p, (_, err) in zip(procs, outs)

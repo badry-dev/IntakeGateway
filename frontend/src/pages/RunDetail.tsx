@@ -157,7 +157,13 @@ export function RunDetail() {
 
       {/* Row Errors */}
       {run.row_errors && run.row_errors.length > 0 && (
-        <Card title={`Row Errors (${run.row_errors_total ?? run.row_errors.length})`}>
+        <Card
+          title={
+            run.row_errors_total != null && run.row_errors_total > run.row_errors.length
+              ? `Row Errors (showing ${run.row_errors.length} of ${run.row_errors_total})`
+              : `Row Errors (${run.row_errors.length})`
+          }
+        >
           <Table
             columns={errorColumns}
             dataSource={run.row_errors.map((err, idx) => ({ ...err, key: idx }))}

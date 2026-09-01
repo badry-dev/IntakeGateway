@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -44,6 +45,10 @@ def _validate_source_url(url: str | None) -> str | None:
     resolution is enforced at fetch time by url_guard.
     """
     if url is None or "://" not in url:
+        return url
+    if not urlparse(url.strip()).scheme:
+        # Relative endpoint path whose query value happens to contain "://"
+        # (e.g. /api/items?redirect=https://cb.example.com); resolved elsewhere.
         return url
     try:
         return validate_url(url, resolve=False)
@@ -246,15 +251,24 @@ class TaskCreate(BaseModel):
 
     @field_validator("upsert_keys")
     @classmethod
-    def validate_upsert_key_identifiers(cls, v: list[str] | None, info):
-        """Normalize entries to safe SQL identifiers and require at least one
-        key when upsert is enabled."""
+    def validate_upsert_key_identifiers(cls, v: list[str] | None):
+        """Normalize entries to safe SQL identifiers."""
         if v:
             v = [_validate_sql_identifier(k, "upsert_keys entry") for k in v]
-        upsert_enabled = info.data.get("upsert_enabled")
-        if upsert_enabled and (not v or len(v) == 0):
-            raise ValueError("upsert_enabled requires at least one column in upsert_keys")
         return v
+
+    @model_validator(mode="after")
+    def validate_upsert_requires_keys(self):
+        """upsert_enabled needs at least one key.
+
+        A model validator (not a field validator on upsert_keys) so the rule
+        also runs when upsert_keys is omitted entirely — otherwise
+        {"upsert_enabled": true} alone was accepted and the runner silently
+        fell back to plain inserts.
+        """
+        if self.upsert_enabled and not self.upsert_keys:
+            raise ValueError("upsert_enabled requires at least one column in upsert_keys")
+        return self
 
     @field_validator("skip_column")
     @classmethod
@@ -327,14 +341,17 @@ class TaskUpdate(BaseModel):
             _validate_sql_identifier(v, "skip_column")
         return v
 
-    @field_validator("upsert_keys")
-    @classmethod
-    def validate_upsert_keys(cls, v: list[str] | None, info):
-        """When enabling upsert, keys must be present in the same request."""
-        upsert_enabled = info.data.get("upsert_enabled")
-        if upsert_enabled and not v:
+    @model_validator(mode="after")
+    def validate_upsert_keys_when_supplied(self):
+        """Enabling upsert while explicitly sending an empty key list is invalid.
+
+        Runs as a model validator so it also fires when upsert_keys is set to
+        null/[] together with upsert_enabled. When upsert_keys is omitted the
+        stored keys apply; update_task() validates that effective state.
+        """
+        if self.upsert_enabled and "upsert_keys" in self.model_fields_set and not self.upsert_keys:
             raise ValueError("upsert_enabled=true requires at least one column in upsert_keys")
-        return v
+        return self
 
     @model_validator(mode="after")
     def reject_explicit_nulls_for_required_fields(self):

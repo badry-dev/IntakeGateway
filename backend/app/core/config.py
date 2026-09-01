@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -45,7 +45,9 @@ class Settings(BaseSettings):
     ALLOWED_SOURCE_HOSTS: str = ""
 
     # Auto-pause a schedule after this many consecutive dispatch failures.
-    SCHEDULE_MAX_CONSECUTIVE_FAILURES: int = 5
+    # Auto-pause a schedule after this many consecutive dispatch failures.
+    # 0 or negative would pause on the very first failure, so require >= 1.
+    SCHEDULE_MAX_CONSECUTIVE_FAILURES: int = Field(default=5, ge=1)
 
     @property
     def destination_sqlalchemy_url(self) -> str:

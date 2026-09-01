@@ -197,6 +197,20 @@ def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)
     if "connection_id" in update_data:
         _require_existing_connection(update_data["connection_id"])
 
+    # Upsert invariant on the EFFECTIVE state (request merged over stored
+    # values): {"upsert_enabled": true} alone must not leave a task with no
+    # keys, or the runner silently degrades to plain inserts. Only enforced
+    # when the request touches the upsert fields, so an unrelated partial
+    # update of a legacy row is not blocked.
+    if "upsert_enabled" in update_data or "upsert_keys" in update_data:
+        effective_upsert = update_data.get("upsert_enabled", task.upsert_enabled)
+        effective_keys = update_data.get("upsert_keys", task.upsert_keys)
+        if effective_upsert and not effective_keys:
+            raise HTTPException(
+                status_code=400,
+                detail="upsert_enabled requires at least one column in upsert_keys",
+            )
+
     # Encrypt secrets. Empty string = explicit clear; None (explicit null)
     # also clears; omitted = untouched (key not in update_data).
     if "api_key" in update_data:
@@ -573,7 +587,11 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db)):
     else:
         pairs = (
             db.query(TaskRun.started_at, TaskRun.ended_at)
-            .filter(TaskRun.task_id == task_id, TaskRun.ended_at.isnot(None))
+            .filter(
+                TaskRun.task_id == task_id,
+                TaskRun.started_at.isnot(None),
+                TaskRun.ended_at.isnot(None),
+            )
             .all()
         )
         durations = [(p.ended_at - p.started_at).total_seconds() for p in pairs]
