@@ -268,14 +268,6 @@ async def run_import(
         # Debug: Log source field names and sample values
         if flattened_records:
             sample_record = flattened_records[0]
-            print(f"\n=== DEBUG: Sample flattened record keys: {list(sample_record.keys())}")
-            print(f"=== DEBUG: Sample flattened record: {sample_record}")
-            for mapping in column_mappings:
-                source_val = sample_record.get(mapping.source_field)
-                print(
-                    f"=== DEBUG: Mapping: {mapping.source_field} -> {mapping.dest_column} "
-                    f"| transforms={mapping.transform_rules} | source_value={repr(source_val)}"
-                )
             logger.debug(f"Sample flattened record keys: {list(sample_record.keys())}")
             logger.debug(f"Sample flattened record: {sample_record}")
             for mapping in column_mappings:
@@ -290,7 +282,6 @@ async def run_import(
         # Debug: Log mapped results
         if mapped_records:
             sample_mapped = mapped_records[0]
-            print(f"=== DEBUG: Sample mapped record: {sample_mapped}")
             logger.debug(f"Sample mapped record: {sample_mapped}")
 
         # Step 7: Validate rows
@@ -545,7 +536,6 @@ def _build_insert_statement(
     # Debug: Log sample row
     if sample_row:
         logger.debug(f"Sample row for date detection: {sample_row}")
-        print(f"=== DEBUG: Sample row for date detection: {sample_row}")
 
     # Build placeholders, wrapping date strings with TO_DATE()
     placeholders = []
@@ -559,7 +549,6 @@ def _build_insert_statement(
             if isinstance(value, str) and re.match(r"^\d{4}-\d{2}-\d{2}$", value):
                 is_date_string = True
                 logger.debug(f"Detected date column: {column} = {value}")
-                print(f"=== DEBUG: Detected date column: {column} = {value}")
 
         if is_date_string:
             # Wrap with TO_DATE() for Oracle DATE columns
@@ -571,7 +560,6 @@ def _build_insert_statement(
 
     # Debug: Log generated SQL
     logger.debug(f"Generated INSERT SQL: {insert_sql}")
-    print(f"=== DEBUG: Generated INSERT SQL: {insert_sql}")
 
     return insert_sql, columns, dict(zip(columns, bind_names, strict=True))
 

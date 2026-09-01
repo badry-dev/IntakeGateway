@@ -112,18 +112,14 @@ def to_timestamp(x):
 
 def to_date(x):
     """Convert common date/time strings to Oracle DATE format (YYYY-MM-DD)."""
-    print(f"=== DEBUG to_date called with: {repr(x)} (type: {type(x).__name__})")
     if x is None or x == "":
-        print("=== DEBUG to_date returning None (empty input)")
         return None
 
     try:
         if isinstance(x, str):
-            print(f"=== DEBUG to_date parsing string: '{x}'")
             logger.debug(f"Parsing date string: '{x}'")
             dt = _parse_datetime_value(x)
             result = dt.strftime("%Y-%m-%d")
-            print(f"=== DEBUG to_date successfully parsed to: '{result}'")
             logger.debug(f"Successfully parsed '{x}' to '{result}'")
             return result
         elif isinstance(x, datetime):
@@ -131,7 +127,6 @@ def to_date(x):
         else:
             raise ValueError(f"Cannot convert {type(x).__name__} to date")
     except Exception as e:
-        print(f"=== DEBUG to_date ERROR: {e}")
         logger.error(
             f"Error converting to date: value='{x}' type={type(x).__name__} error={str(e)}"
         )

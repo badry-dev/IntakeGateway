@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,7 +8,25 @@ from app.api.v1.routes.column_mappings import oracle_router
 from app.core.config import settings
 from app.db.session import init_app_database
 
-app = FastAPI(title="IntakeGateway", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_app_database()
+    yield
+
+
+_docs_enabled = settings.APP_ENV != "production"
+
+app = FastAPI(
+    title="IntakeGateway",
+    version="0.1.0",
+    lifespan=lifespan,
+    # Interactive API docs are a development convenience; don't expose the
+    # API surface description on production deployments.
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url=None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 
 # Add CORS middleware for frontend integration
 app.add_middleware(
@@ -32,11 +52,6 @@ app.include_router(connections.router, tags=["connections"])
 app.include_router(oracle_router, prefix="/api/v1", tags=["oracle"])
 
 
-@app.on_event("startup")
-def startup_event():
-    init_app_database()
-
-
 @app.get("/health")
 def health():
     return {"status": "ok", "env": settings.APP_ENV}
@@ -47,6 +62,6 @@ def root():
     return {
         "name": app.title,
         "version": app.version,
-        "docs": "/docs",
-        "openapi": "/openapi.json",
+        "docs": "/docs" if _docs_enabled else None,
+        "openapi": "/openapi.json" if _docs_enabled else None,
     }
