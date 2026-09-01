@@ -90,3 +90,12 @@ class TestFetchJsonHTTPPath:
         # validation failure), not escape as ValueError -> HTTP 500.
         with pytest.raises(SSRFBlockedError):
             await fetch_json("GET", "http://example.com:99999/")
+
+
+class TestInvalidPort:
+    @pytest.mark.parametrize("url", ["http://8.8.8.8:99999/", "https://example.com:70000/x"])
+    def test_out_of_range_port_rejected_without_resolving(self, url):
+        # Must be an SSRFBlockedError on every path, including literal IPs and
+        # config-time validation (resolve=False), not a ValueError/500.
+        with pytest.raises(SSRFBlockedError, match="invalid port"):
+            validate_url(url, resolve=False)

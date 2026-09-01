@@ -451,3 +451,28 @@ def test_root_endpoint(client: TestClient):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ============================================================================
+# Standalone field preview: fetch-time SSRF block must surface as 403
+# ============================================================================
+
+
+def test_standalone_preview_fetch_time_ssrf_block_is_403(client: TestClient):
+    """SSRFBlockedError subclasses ValueError; before the dedicated handler it
+    came back as 400 "Invalid JSON", hiding that the URL was blocked."""
+    from unittest.mock import patch
+
+    from app.core.url_guard import SSRFBlockedError
+
+    path = "/api/v1/preview-fields-standalone"
+    with patch(
+        "app.api.v1.routes.column_mappings.fetch_sample_response",
+        side_effect=SSRFBlockedError("Host 'api.example.com' resolves to a non-public address"),
+    ):
+        resp = client.post(
+            path,
+            json={"use_auto_fetch": True, "method": "GET", "url": "https://api.example.com/x"},
+        )
+    assert resp.status_code == 403
+    assert "non-public" in resp.json()["detail"]

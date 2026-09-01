@@ -2,7 +2,9 @@ import asyncio
 import base64
 import datetime as _dt
 import email.utils
+import re
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from loguru import logger
@@ -49,16 +51,23 @@ def mask_headers(headers: dict) -> dict:
     return masked
 
 
+_LOG_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
 def _redact_url_for_log(url: str) -> str:
-    """Strip query strings AND userinfo (may embed api keys / tokens) for log
-    output. All URL logging must go through this helper."""
-    base = url.split("?", 1)[0]
-    scheme, sep, rest = base.partition("://")
-    if sep and "@" in rest.split("/", 1)[0]:
-        # https://user:secret@host/path -> https://host/path
-        _, _, tail = rest.partition("@")
-        return f"{scheme}://{tail}"
-    return base
+    """Reduce a URL to scheme://host[:port]/path for log output.
+
+    Drops the query string and fragment (may embed api keys / tokens) and any
+    userinfo (user:secret@), then strips control characters so a crafted URL
+    cannot forge log lines. All URL logging must go through this helper.
+    """
+    try:
+        parts = urlsplit(str(url))
+    except ValueError:
+        return "<unparseable-url>"
+    netloc = parts.netloc.rpartition("@")[2]  # drop user:secret@
+    redacted = urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+    return _LOG_CONTROL_CHARS_RE.sub("", redacted)
 
 
 def _parse_retry_after(header_value: str | None) -> float | None:

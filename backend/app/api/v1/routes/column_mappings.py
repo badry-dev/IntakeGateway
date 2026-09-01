@@ -16,7 +16,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.url_guard import SSRFBlockedError, validate_url
+from app.core.url_guard import SSRFBlockedError, validate_url_async
 from app.db.models.column_mapping import ColumnMapping
 from app.db.models.task import Task
 from app.db.schemas.column_mapping import (
@@ -390,6 +390,12 @@ async def preview_fields(
     except HTTPException:
         # Re-raise deliberate HTTP errors instead of rewriting them to 400.
         raise
+    except SSRFBlockedError as e:
+        # Raised by the fetch-time re-validation inside fetch_json. It
+        # subclasses ValueError, so it must be handled before that branch or
+        # it surfaces as a misleading 400 "Invalid JSON".
+        logger.warning(f"SSRF guard rejected preview fetch: {e}")
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         logger.warning(f"Invalid JSON for task {task_id}: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
@@ -506,7 +512,8 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
 
             # SSRF guard (C4): reject private/loopback/link-local targets.
             try:
-                validate_url(request.url)
+                # Async variant: DNS resolution must not block the event loop.
+                await validate_url_async(request.url)
             except SSRFBlockedError as e:
                 logger.warning(f"SSRF guard rejected standalone preview URL: {e}")
                 raise HTTPException(status_code=403, detail=str(e))
@@ -592,6 +599,12 @@ async def preview_fields_standalone(request: PreviewFieldsRequest):
         # Re-raise deliberate HTTP errors (400 missing sample_json, 403 SSRF
         # block) instead of letting the broad handler rewrite them to 400.
         raise
+    except SSRFBlockedError as e:
+        # Raised by the fetch-time re-validation inside fetch_json. It
+        # subclasses ValueError, so it must be handled before that branch or
+        # it surfaces as a misleading 400 "Invalid JSON".
+        logger.warning(f"SSRF guard rejected preview fetch: {e}")
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         logger.warning(f"Invalid JSON: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
