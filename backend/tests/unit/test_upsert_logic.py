@@ -9,6 +9,7 @@ from app.db.models.task import Task
 from app.services.runner import (
     RowResult,
     RowStatus,
+    _bulk_update_rows,
     _get_record_key,
     _process_single_row,
     _should_skip,
@@ -260,20 +261,22 @@ class TestProcessSingleRow:
 
 
 class TestProcessRowsWithUpsert:
-    """Tests for process_rows_with_upsert function"""
+    """Tests for the batched process_rows_with_upsert implementation"""
 
-    @patch("app.services.runner._process_single_row")
-    @patch("app.services.runner.log_row_error")
-    def test_process_all_inserted(self, mock_log_error, mock_process, mock_db, mock_task_upsert):
+    @patch("app.services.runner._process_upsert_batch")
+    def test_process_all_inserted(self, mock_batch, mock_db, mock_task_upsert):
         """Test all rows inserted successfully"""
         rows = [
             {"employee_id": 1, "name": "Alice"},
             {"employee_id": 2, "name": "Bob"},
         ]
-        mock_process.side_effect = [
-            RowResult(status=RowStatus.INSERTED, record_key="employee_id=1"),
-            RowResult(status=RowStatus.INSERTED, record_key="employee_id=2"),
-        ]
+        mock_batch.return_value = {
+            "inserted": 2,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "error_details": [],
+        }
 
         results = process_rows_with_upsert(mock_db, mock_task_upsert, 1, rows)
 
@@ -281,28 +284,23 @@ class TestProcessRowsWithUpsert:
         assert results["updated"] == 0
         assert results["skipped"] == 0
         assert results["errors"] == 0
-        mock_log_error.assert_not_called()
+        assert mock_batch.call_count == 1
 
-    @patch("app.services.runner._process_single_row")
-    @patch("app.services.runner.log_row_error")
-    def test_process_mixed_results(
-        self, mock_log_error, mock_process, mock_db, mock_task_upsert_with_skip
-    ):
-        """Test mixed results: insert, update, skip"""
+    @patch("app.services.runner._process_upsert_batch")
+    def test_process_mixed_results(self, mock_batch, mock_db, mock_task_upsert_with_skip):
+        """Test mixed results: insert, update, skip are aggregated across batches"""
         rows = [
             {"employee_id": 1, "name": "Alice"},
             {"employee_id": 2, "name": "Bob"},
             {"employee_id": 3, "name": "Charlie"},
         ]
-        mock_process.side_effect = [
-            RowResult(status=RowStatus.INSERTED, record_key="employee_id=1"),
-            RowResult(status=RowStatus.UPDATED, record_key="employee_id=2"),
-            RowResult(
-                status=RowStatus.SKIPPED,
-                record_key="employee_id=3",
-                message="Already processed",
-            ),
-        ]
+        mock_batch.return_value = {
+            "inserted": 1,
+            "updated": 1,
+            "skipped": 1,
+            "errors": 0,
+            "error_details": [],
+        }
 
         results = process_rows_with_upsert(mock_db, mock_task_upsert_with_skip, 1, rows)
 
@@ -311,52 +309,39 @@ class TestProcessRowsWithUpsert:
         assert results["skipped"] == 1
         assert results["errors"] == 0
 
-    @patch("app.services.runner._process_single_row")
-    @patch("app.services.runner.log_row_error")
-    def test_continue_on_error(self, mock_log_error, mock_process, mock_db, mock_task_upsert):
-        """Test processing continues when error occurs (continue_on_error=True)"""
+    @patch("app.services.runner._process_upsert_batch")
+    def test_continue_on_error(self, mock_batch, mock_db, mock_task_upsert):
+        """Test processing continues when a batch errors (continue_on_error=True)"""
         rows = [
-            {"employee_id": 1, "name": "Alice"},
-            {"employee_id": 2, "name": "Bob"},
-            {"employee_id": 3, "name": "Charlie"},
-        ]
-        mock_process.side_effect = [
-            RowResult(status=RowStatus.INSERTED, record_key="employee_id=1"),
-            RowResult(
-                status=RowStatus.ERROR,
-                record_key="employee_id=2",
-                message="Constraint error",
-            ),
-            RowResult(status=RowStatus.INSERTED, record_key="employee_id=3"),
+            {"employee_id": i, "name": f"Person {i}"} for i in range(1, 1001)
+        ]  # two batches of 500
+        mock_batch.side_effect = [
+            {
+                "inserted": 500,
+                "updated": 0,
+                "skipped": 0,
+                "errors": 0,
+                "error_details": [],
+            },
+            {
+                "inserted": 400,
+                "updated": 0,
+                "skipped": 0,
+                "errors": 100,
+                "error_details": [{"batch_start": 500, "batch_size": 500, "error": "boom"}],
+            },
         ]
 
         results = process_rows_with_upsert(mock_db, mock_task_upsert, 1, rows)
 
-        # All rows should be processed despite error
-        assert results["inserted"] == 2
-        assert results["errors"] == 1
+        # Second batch failure must not abort aggregation
+        assert results["inserted"] == 900
+        assert results["errors"] == 100
         assert len(results["error_details"]) == 1
-        assert results["error_details"][0]["row_index"] == 1
-        mock_log_error.assert_called_once()
+        assert mock_batch.call_count == 2
 
-    @patch("app.services.runner._process_single_row")
-    @patch("app.services.runner.log_row_error")
-    def test_stop_on_error_when_disabled(
-        self, mock_log_error, mock_process, mock_db, mock_task_no_continue
-    ):
-        """Test processing stops when error occurs and continue_on_error=False"""
-        rows = [
-            {"employee_id": 1, "name": "Alice"},
-            {"employee_id": 2, "name": "Bob"},
-        ]
-        mock_process.side_effect = Exception("Unexpected error")
-
-        with pytest.raises(Exception, match="Unexpected error"):
-            process_rows_with_upsert(mock_db, mock_task_no_continue, 1, rows)
-
-    @patch("app.services.runner._process_single_row")
-    @patch("app.services.runner.log_row_error")
-    def test_empty_rows(self, mock_log_error, mock_process, mock_db, mock_task_upsert):
+    @patch("app.services.runner._process_upsert_batch")
+    def test_empty_rows(self, mock_batch, mock_db, mock_task_upsert):
         """Test processing empty rows list"""
         results = process_rows_with_upsert(mock_db, mock_task_upsert, 1, [])
 
@@ -364,106 +349,233 @@ class TestProcessRowsWithUpsert:
         assert results["updated"] == 0
         assert results["skipped"] == 0
         assert results["errors"] == 0
-        mock_process.assert_not_called()
+        mock_batch.assert_not_called()
 
-    @patch("app.services.runner._process_single_row")
-    @patch("app.services.runner.log_row_error")
-    def test_all_rows_skipped(
-        self, mock_log_error, mock_process, mock_db, mock_task_upsert_with_skip
-    ):
-        """Test all rows skipped due to skip condition"""
-        rows = [
-            {"employee_id": 1, "name": "Alice"},
-            {"employee_id": 2, "name": "Bob"},
-        ]
-        mock_process.side_effect = [
-            RowResult(
-                status=RowStatus.SKIPPED,
-                record_key="employee_id=1",
-                message="processed=Y",
-            ),
-            RowResult(
-                status=RowStatus.SKIPPED,
-                record_key="employee_id=2",
-                message="processed=Y",
-            ),
-        ]
+    @patch("app.services.runner._process_upsert_batch")
+    def test_no_upsert_keys_falls_back_to_insert(self, mock_batch, mock_db, mock_task_insert_only):
+        """No upsert keys configured -> bulk insert path, no batch upsert"""
+        rows = [{"employee_id": 1, "name": "Alice"}]
 
-        results = process_rows_with_upsert(mock_db, mock_task_upsert_with_skip, 1, rows)
-
-        assert results["inserted"] == 0
-        assert results["updated"] == 0
-        assert results["skipped"] == 2
-        assert results["errors"] == 0
-
-    @patch("app.services.runner._process_single_row")
-    @patch("app.services.runner.log_row_error")
-    def test_all_rows_error(self, mock_log_error, mock_process, mock_db, mock_task_upsert):
-        """Test all rows have errors but processing continues"""
-        rows = [
-            {"employee_id": 1, "name": "Alice"},
-            {"employee_id": 2, "name": "Bob"},
-        ]
-        mock_process.side_effect = [
-            RowResult(status=RowStatus.ERROR, record_key="employee_id=1", message="Error 1"),
-            RowResult(status=RowStatus.ERROR, record_key="employee_id=2", message="Error 2"),
-        ]
-
-        results = process_rows_with_upsert(mock_db, mock_task_upsert, 1, rows)
-
-        assert results["inserted"] == 0
-        assert results["updated"] == 0
-        assert results["errors"] == 2
-        assert len(results["error_details"]) == 2
-        assert mock_log_error.call_count == 2
-
-
-class TestUpsertIntegration:
-    """Integration tests for upsert flow"""
-
-    @patch("app.services.runner._find_existing_record")
-    @patch("app.services.runner._insert_single_row")
-    @patch("app.services.runner._update_existing_row")
-    @patch("app.services.runner.log_row_error")
-    def test_full_upsert_flow(
-        self,
-        mock_log_error,
-        mock_update,
-        mock_insert,
-        mock_find,
-        mock_db,
-        mock_task_upsert_with_skip,
-    ):
-        """Test complete upsert flow with mixed scenarios"""
-        rows = [
-            {"employee_id": 1, "name": "New Employee"},  # Will INSERT
-            {"employee_id": 2, "name": "Updated Employee"},  # Will UPDATE
-            {"employee_id": 3, "name": "Processed Employee"},  # Will SKIP
-        ]
-
-        # Mock find results
-        mock_find.side_effect = [
-            None,  # Row 1: not found -> INSERT
-            {
-                "employee_id": 2,
-                "name": "Old",
-                "processed": "N",
-            },  # Row 2: found, not processed -> UPDATE
-            {
-                "employee_id": 3,
-                "name": "Old",
-                "processed": "Y",
-            },  # Row 3: found, processed -> SKIP
-        ]
-
-        results = process_rows_with_upsert(mock_db, mock_task_upsert_with_skip, 1, rows)
+        with patch("app.services.runner.insert_batch", return_value=1) as mock_insert:
+            results = process_rows_with_upsert(mock_db, mock_task_insert_only, 1, rows)
 
         assert results["inserted"] == 1
-        assert results["updated"] == 1
-        assert results["skipped"] == 1
-        assert results["errors"] == 0
         mock_insert.assert_called_once()
-        mock_update.assert_called_once()
+        mock_batch.assert_not_called()
+
+
+class TestBulkUpdateNullPreservation:
+    """Regression tests for the bulk CASE-UPDATE NULL corruption (v1.4 C2).
+
+    These run real SQL against an in-memory SQLite destination. The generated
+    statements use double-quoted identifiers and plain binds (no TO_DATE unless
+    a YYYY-MM-DD string is present), so they execute on SQLite.
+    """
+
+    @pytest.fixture
+    def sqlite_dest(self):
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.orm import sessionmaker
+
+        engine = create_engine("sqlite:///:memory:")
+        conn = engine.connect()
+        conn.execute(
+            text('CREATE TABLE "EMPLOYEES" ("employee_id" INTEGER PRIMARY KEY, "name" TEXT)')
+        )
+        conn.commit()
+        Session = sessionmaker(bind=engine)
+        yield Session()
+        conn.close()
+        engine.dispose()
+
+    @pytest.fixture
+    def task(self):
+        task = MagicMock(spec=Task)
+        task.id = 1
+        task.dest_table = "EMPLOYEES"
+        task.upsert_enabled = True
+        task.upsert_keys = ["employee_id"]
+        task.skip_column = None
+        task.skip_value = None
+        return task
+
+    def _seed(self, db, employee_id, name):
+        from sqlalchemy import text
+
+        db.execute(
+            text('INSERT INTO "EMPLOYEES" ("employee_id", "name") VALUES (:i, :n)'),
+            {"i": employee_id, "n": name},
+        )
+        db.commit()
+
+    def _fetch_name(self, db, employee_id):
+        from sqlalchemy import text
+
+        result = db.execute(
+            text('SELECT "name" FROM "EMPLOYEES" WHERE "employee_id" = :i'),
+            {"i": employee_id},
+        ).scalar()
+        return result
+
+    def test_none_value_preserves_existing_column(self, sqlite_dest, task):
+        """A None in the incoming row must NOT overwrite the stored value."""
+        self._seed(sqlite_dest, 1, "Original")
+
+        to_update = [(0, {"employee_id": 1, "name": None})]
+        count = _bulk_update_rows(sqlite_dest, task, to_update, ["employee_id"])
+
+        # Every value for every column is None -> no SET clauses are emitted
+        # (count 0), which trivially preserves the stored value.
+        assert count == 0
+        assert self._fetch_name(sqlite_dest, 1) == "Original"
+
+    def test_non_none_value_is_written(self, sqlite_dest, task):
+        self._seed(sqlite_dest, 1, "Original")
+
+        to_update = [(0, {"employee_id": 1, "name": "Updated"})]
+        _bulk_update_rows(sqlite_dest, task, to_update, ["employee_id"])
+
+        assert self._fetch_name(sqlite_dest, 1) == "Updated"
+
+    def test_heterogeneous_batch_mixed_nulls(self, sqlite_dest, task):
+        """Mixed batch: non-None values written, None values preserved."""
+        self._seed(sqlite_dest, 1, "Keep-Me")
+        self._seed(sqlite_dest, 2, "Old-Name")
+
+        to_update = [
+            (0, {"employee_id": 1, "name": "New-Name"}),
+            (1, {"employee_id": 2, "name": None}),
+        ]
+        _bulk_update_rows(sqlite_dest, task, to_update, ["employee_id"])
+
+        assert self._fetch_name(sqlite_dest, 1) == "New-Name"
+        assert self._fetch_name(sqlite_dest, 2) == "Old-Name"
+
+    def test_column_present_only_in_later_row_is_updated(self, sqlite_dest, task):
+        """update_cols must be a union across all rows, not first-row only.
+
+        Row 1 lacks `name` entirely; row 2 has it. Both must be handled.
+        """
+        from sqlalchemy import text
+
+        sqlite_dest.execute(text('ALTER TABLE "EMPLOYEES" ADD COLUMN "email" TEXT'))
+        self._seed(sqlite_dest, 1, "Row One")
+        self._seed(sqlite_dest, 2, "Row Two")
+
+        to_update = [
+            (0, {"employee_id": 1}),  # no name/email keys at all
+            (1, {"employee_id": 2, "email": "row2@example.com"}),
+        ]
+        count = _bulk_update_rows(sqlite_dest, task, to_update, ["employee_id"])
+
+        assert count >= 1
+        email_val = sqlite_dest.execute(
+            text('SELECT "email" FROM "EMPLOYEES" WHERE "employee_id" = :i'), {"i": 2}
+        ).scalar()
+        assert email_val == "row2@example.com"
+
+
+class TestDuplicateUpsertKeysInBatch:
+    """Duplicate upsert-key tuples within one batch: first occurrence wins,
+    duplicates are counted as skipped (v1.4 review finding)."""
+
+    @pytest.fixture
+    def task(self):
+        task = MagicMock(spec=Task)
+        task.id = 1
+        task.dest_table = "EMPLOYEES"
+        task.upsert_enabled = True
+        task.upsert_keys = ["employee_id"]
+        task.skip_column = None
+        task.skip_value = None
+        return task
+
+    def test_duplicate_keys_first_row_wins(self, task):
+        db = MagicMock()
+        db.execute.return_value.fetchall.return_value = []  # nothing exists
+
+        rows = [
+            {"employee_id": 1, "name": "First"},
+            {"employee_id": 1, "name": "Second"},  # duplicate key
+        ]
+        with patch("app.services.runner.insert_batch", return_value=1):
+            results = process_rows_with_upsert(db, task, 1, rows)
+
+        assert results["inserted"] == 1
+        assert results["skipped"] == 1
+        assert any(
+            "duplicate upsert key" in str(d.get("error", "")) for d in results["error_details"]
+        )
+
+
+class TestBatchSkipCondition:
+    """Regression tests for the unimplemented skip condition in the batch
+    upsert path (v1.4 C3)."""
+
+    @pytest.fixture
+    def sqlite_dest(self):
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.orm import sessionmaker
+
+        engine = create_engine("sqlite:///:memory:")
+        conn = engine.connect()
+        conn.execute(
+            text(
+                'CREATE TABLE "EMPLOYEES" ('
+                '"employee_id" INTEGER PRIMARY KEY, "name" TEXT, "processed" TEXT)'
+            )
+        )
+        conn.commit()
+        Session = sessionmaker(bind=engine)
+        yield Session()
+        conn.close()
+        engine.dispose()
+
+    @pytest.fixture
+    def task_with_skip(self):
+        task = MagicMock(spec=Task)
+        task.id = 1
+        task.dest_table = "EMPLOYEES"
+        task.upsert_enabled = True
+        task.upsert_keys = ["employee_id"]
+        task.skip_column = "processed"
+        task.skip_value = "Y"
+        return task
+
+    def _seed(self, db, employee_id, name, processed):
+        from sqlalchemy import text
+
+        db.execute(
+            text(
+                'INSERT INTO "EMPLOYEES" ("employee_id", "name", "processed") VALUES (:i, :n, :p)'
+            ),
+            {"i": employee_id, "n": name, "p": processed},
+        )
+        db.commit()
+
+    def _fetch_name(self, db, employee_id):
+        from sqlalchemy import text
+
+        return db.execute(
+            text('SELECT "name" FROM "EMPLOYEES" WHERE "employee_id" = :i'),
+            {"i": employee_id},
+        ).scalar()
+
+    def test_row_marked_processed_is_skipped(self, sqlite_dest, task_with_skip):
+        """An existing row whose skip column matches is never overwritten."""
+        self._seed(sqlite_dest, 1, "Already Processed", "Y")
+        self._seed(sqlite_dest, 2, "Stale", "N")
+
+        rows = [
+            {"employee_id": 1, "name": "Overwrite Attempt", "processed": "Y"},
+            {"employee_id": 2, "name": "Fresh Value", "processed": "N"},
+        ]
+        results = process_rows_with_upsert(sqlite_dest, task_with_skip, 1, rows, app_db=sqlite_dest)
+
+        assert results["skipped"] == 1
+        assert results["updated"] == 1
+        assert self._fetch_name(sqlite_dest, 1) == "Already Processed"
+        assert self._fetch_name(sqlite_dest, 2) == "Fresh Value"
 
 
 if __name__ == "__main__":

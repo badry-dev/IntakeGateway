@@ -724,6 +724,32 @@ def _process_upsert_batch(
     if not batch:
         return results
 
+    # Deduplicate rows sharing the same upsert-key tuple WITHIN this batch.
+    # Two rows with identical keys would both enter to_update (later WHEN
+    # clauses silently dropped by SQL) or both to_insert (constraint failure
+    # or duplicate rows). First occurrence wins; duplicates are counted as
+    # skipped with an attribution entry.
+    seen_keys = set()
+    deduped_batch = []
+    for idx, row in enumerate(batch):
+        key_tuple = tuple(row.get(key) for key in upsert_keys)
+        if key_tuple in seen_keys:
+            results["skipped"] += 1
+            results["error_details"].append(
+                {
+                    "row_index": batch_offset + idx,
+                    "record_key": _get_record_key(row, upsert_keys),
+                    "error": "duplicate upsert key within batch; first occurrence wins",
+                }
+            )
+            continue
+        seen_keys.add(key_tuple)
+        deduped_batch.append(row)
+    batch = deduped_batch
+
+    if not batch:
+        return results
+
     try:
         # Step 1: Fetch ALL existing records in one SELECT query
         table_name = task.dest_table
@@ -747,17 +773,30 @@ def _process_upsert_batch(
             for key in upsert_keys:
                 params[f"{key}_{id(row)}"] = row.get(key)
 
-        select_sql = f"SELECT {', '.join(_quote_column_name(k) for k in upsert_keys)} FROM {_format_table_name(table_name)} WHERE {where_sql}"
+        # Include the skip column in the projection when a skip condition is
+        # configured so matching rows can be routed to `to_skip` without a
+        # second per-row query.
+        select_columns = list(upsert_keys)
+        if task.skip_column and task.skip_value is not None:
+            skip_col = _clean_identifier(task.skip_column)
+            if skip_col not in select_columns:
+                select_columns.append(skip_col)
+
+        select_sql = f"SELECT {', '.join(_quote_column_name(k) for k in select_columns)} FROM {_format_table_name(table_name)} WHERE {where_sql}"
 
         existing_result = db.execute(text(select_sql), params).fetchall()
 
-        # Build set of existing record keys for fast lookup
-        existing_keys = set()
+        # Build map of existing record keys -> fetched column values for fast lookup
+        existing_rows = {}
         for row in existing_result:
-            key_tuple = tuple(row[i] for i in range(len(upsert_keys)))
-            existing_keys.add(key_tuple)
+            mapping = dict(row._mapping)
+            key_tuple = tuple(
+                mapping.get(key, mapping.get(key.upper(), mapping.get(key.lower())))
+                for key in upsert_keys
+            )
+            existing_rows[key_tuple] = mapping
 
-        logger.debug(f"Found {len(existing_keys)} existing records out of {len(batch)}")
+        logger.debug(f"Found {len(existing_rows)} existing records out of {len(batch)}")
 
         # Step 2: Split batch into insert/update/skip lists
         to_insert = []
@@ -766,19 +805,18 @@ def _process_upsert_batch(
 
         for idx, row in enumerate(batch):
             row_key_tuple = tuple(row.get(key) for key in upsert_keys)
+            existing = existing_rows.get(row_key_tuple)
 
-            if row_key_tuple in existing_keys:
-                # Record exists - check skip condition
-                if task.skip_column and task.skip_value:
-                    # Need to fetch the full record to check skip value
-                    # For performance, we skip this check in batch mode
-                    # or we can do a second SELECT for skip checks
-                    pass  # TODO: implement skip check if needed
-
-                to_update.append((batch_offset + idx, row))
-            else:
+            if existing is None:
                 # New record
                 to_insert.append((batch_offset + idx, row))
+            elif task.skip_column and task.skip_value is not None and _should_skip(task, existing):
+                # Record exists and matches the configured skip condition —
+                # third parties may have marked this row processed; never
+                # overwrite it.
+                to_skip.append((batch_offset + idx, row))
+            else:
+                to_update.append((batch_offset + idx, row))
 
         # Step 3: Bulk UPDATE (if any)
         if to_update:
@@ -795,7 +833,7 @@ def _process_upsert_batch(
             db.commit()
             logger.debug(f"Bulk inserted {insert_count} rows")
 
-        results["skipped"] = len(to_skip)
+        results["skipped"] += len(to_skip)
 
     except Exception as e:
         db.rollback()
@@ -823,9 +861,14 @@ def _bulk_update_rows(
         WHEN key1=val1 THEN newval1
         WHEN key1=val2 THEN newval2
         ...
+        ELSE col1
       END,
-      col2 = CASE ...
+      col2 = CASE ... ELSE col2 END
     WHERE (key1=val1) OR (key1=val2) OR ...
+
+    The `ELSE <col>` branch preserves the existing value for rows whose
+    incoming value is None — without it the CASE evaluates to NULL and would
+    overwrite NOT NULL columns, reintroducing ORA-01407.
     """
     import re
 
@@ -833,14 +876,18 @@ def _bulk_update_rows(
         return 0
 
     table_name = task.dest_table
-    sample_row = rows_with_idx[0][1]
 
-    # Get columns to update (exclude upsert keys and None values)
-    update_cols = [
-        col
-        for col in sample_row.keys()
-        if col not in upsert_keys and sample_row.get(col) is not None
-    ]
+    # Columns to update: deterministic first-seen union of non-key columns
+    # across ALL rows. Deriving them from the first row only would silently
+    # drop columns that happen to be absent/None in row 1 but present in later
+    # rows.
+    update_cols = []
+    seen_cols = set()
+    for _, row in rows_with_idx:
+        for col in row.keys():
+            if col not in upsert_keys and col not in seen_cols:
+                seen_cols.add(col)
+                update_cols.append(col)
 
     if not update_cols:
         return 0  # Nothing to update
@@ -856,7 +903,8 @@ def _bulk_update_rows(
             # Get the value for this column
             value = row.get(col)
 
-            # Skip this row if value is None (don't add WHEN clause to avoid setting NULL)
+            # Rows with a None value get no WHEN clause; the CASE's ELSE
+            # branch below preserves the stored value instead of writing NULL.
             if value is None:
                 continue
 
@@ -883,7 +931,12 @@ def _bulk_update_rows(
 
         # Only add this column to SET clause if at least one row has a non-None value
         if case_whens:
-            case_sql = f"{_quote_column_name(col)} = CASE {' '.join(case_whens)} END"
+            # ELSE keeps the existing column value for any row in the WHERE
+            # scope whose incoming value for this column is None.
+            case_sql = (
+                f"{_quote_column_name(col)} = CASE {' '.join(case_whens)} "
+                f"ELSE {_quote_column_name(col)} END"
+            )
             set_clauses.append(case_sql)
 
     # If no columns to update (all rows had None values for all columns), skip UPDATE
@@ -1003,7 +1056,7 @@ def _find_existing_record(
 
 def _should_skip(task: Task, existing_record: dict) -> bool:
     """Check if record should be skipped based on skip_column/skip_value."""
-    if not task.skip_column or not task.skip_value:
+    if not task.skip_column or task.skip_value is None:
         return False
 
     current_value = existing_record.get(task.skip_column.upper())  # Oracle returns uppercase

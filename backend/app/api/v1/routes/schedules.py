@@ -265,6 +265,7 @@ def resume_schedule(schedule_id: int, db: Session = Depends(get_db)):
 
     # Reset failure tracking and reactivate
     schedule.is_active = True
+    schedule.consecutive_failures = 0
     schedule.updated_at = datetime.now(UTC)
 
     db.commit()

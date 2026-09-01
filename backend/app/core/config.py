@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str | None = None
     CONNECTIONS_FILE_PATH: str = "connections.enc"
 
+    # Auto-pause a schedule after this many consecutive dispatch failures.
+    SCHEDULE_MAX_CONSECUTIVE_FAILURES: int = 5
+
     @property
     def destination_sqlalchemy_url(self) -> str:
         # Using oracledb with thin mode
