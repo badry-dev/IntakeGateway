@@ -164,6 +164,44 @@ class TestDispatchFailureCounter:
         assert schedule.is_active is True
         mock_remove.assert_not_called()
 
+    def test_auto_pause_is_persisted_before_the_job_is_removed(self, scheduler):
+        """If the commit failed after the job was gone, the DB would still say
+        active while nothing dispatches — so the order must be commit, then remove."""
+        sched, db = scheduler
+        schedule = _make_schedule(consecutive_failures=4, is_active=True)
+        db.query.return_value.filter.return_value.first.return_value = schedule
+        order: list[str] = []
+        db.commit.side_effect = lambda: order.append("commit")
+
+        with (
+            patch("app.services.scheduler.enqueue_run", side_effect=RuntimeError("down")),
+            patch.object(sched, "remove_schedule", side_effect=lambda tid: order.append("remove")),
+            patch("app.core.config.settings") as mock_settings,
+        ):
+            mock_settings.SCHEDULE_MAX_CONSECUTIVE_FAILURES = 5
+            sched._execute_scheduled_task(7, "Nightly import")
+
+        assert order == ["commit", "remove"]
+        assert schedule.is_active is False
+
+    def test_job_removal_failure_keeps_the_persisted_pause(self, scheduler):
+        sched, db = scheduler
+        schedule = _make_schedule(consecutive_failures=4, is_active=True)
+        db.query.return_value.filter.return_value.first.return_value = schedule
+
+        with (
+            patch("app.services.scheduler.enqueue_run", side_effect=RuntimeError("down")),
+            patch.object(sched, "remove_schedule", side_effect=RuntimeError("apscheduler gone")),
+            patch("app.core.config.settings") as mock_settings,
+        ):
+            mock_settings.SCHEDULE_MAX_CONSECUTIVE_FAILURES = 5
+            sched._execute_scheduled_task(7, "Nightly import")  # must not raise
+
+        assert schedule.is_active is False
+        db.commit.assert_called_once()
+        # Only the initial rollback that precedes the counter transaction.
+        db.rollback.assert_called_once()
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -176,20 +176,33 @@ class TaskScheduler:
                 current = task_schedule.consecutive_failures or 0
                 task_schedule.consecutive_failures = current + 1
 
-                if current + 1 >= threshold and task_schedule.is_active:
+                paused = current + 1 >= threshold and task_schedule.is_active
+                if paused:
                     task_schedule.is_active = False
-                    self.remove_schedule(task_id)
-                    logger.error(
-                        f"Auto-paused schedule for task {task_id}: "
-                        f"{current + 1} consecutive dispatch failures "
-                        f"(threshold={threshold}). Use the resume endpoint to reactivate."
-                    )
 
+                # Persist FIRST. If the commit fails, the rollback below leaves
+                # the schedule active in the DB while its in-memory job would
+                # already be gone — dispatch would silently stop until a restart.
                 self.db.commit()
                 logger.error(
                     f"Scheduled task {task_id} dispatch failure "
                     f"(consecutive_failures={current + 1})"
                 )
+
+                if paused:
+                    try:
+                        self.remove_schedule(task_id)
+                    except Exception as remove_exc:
+                        # DB says paused; the job will not be reloaded on restart.
+                        logger.error(
+                            f"Auto-paused task {task_id} in the database but failed to "
+                            f"remove its scheduler job: {remove_exc}"
+                        )
+                    logger.error(
+                        f"Auto-paused schedule for task {task_id}: "
+                        f"{current + 1} consecutive dispatch failures "
+                        f"(threshold={threshold}). Use the resume endpoint to reactivate."
+                    )
         except Exception as counter_exc:
             logger.error(
                 f"Failed to persist consecutive_failures for task {task_id}: {counter_exc}"
