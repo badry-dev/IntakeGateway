@@ -89,8 +89,10 @@ class TestDocsGating:
 
 
 class TestScheduleFailureThreshold:
-    def test_default_is_five(self):
-        assert Settings(SECRET_KEY="x").SCHEDULE_MAX_CONSECUTIVE_FAILURES == 5
+    def test_default_is_five(self, monkeypatch):
+        monkeypatch.delenv("SCHEDULE_MAX_CONSECUTIVE_FAILURES", raising=False)
+        settings = Settings(_env_file=None, SECRET_KEY="x")
+        assert settings.SCHEDULE_MAX_CONSECUTIVE_FAILURES == 5
 
     @pytest.mark.parametrize("bad", [0, -1])
     def test_non_positive_threshold_rejected(self, bad):

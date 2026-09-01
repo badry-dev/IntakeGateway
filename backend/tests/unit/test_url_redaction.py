@@ -13,6 +13,10 @@ from app.services.api_connector import _redact_url_for_log
         ("https://api.example.com:8443/v1/users#frag", "https://api.example.com:8443/v1/users"),
         ("https://user:s3cret@[::1]:8080/p?x=1", "https://[::1]:8080/p"),
         ("https://api.example.com/v1/users", "https://api.example.com/v1/users"),
+        (
+            "https://api.example.com/v1;jsessionid=SECRET/users;v=2?x=1",
+            "https://api.example.com/v1/users",
+        ),
     ],
 )
 def test_query_userinfo_and_fragment_are_dropped(raw, expected):

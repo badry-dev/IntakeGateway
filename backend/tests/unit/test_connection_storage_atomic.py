@@ -133,7 +133,9 @@ svc.create_connection(conn)
                 outs.append(p.communicate(timeout=60))
             except subprocess.TimeoutExpired:
                 for q in procs:
-                    q.kill()
+                    if q.poll() is None:
+                        q.kill()
+                        q.communicate()  # drain pipes, populate returncode
                 raise
         failed = [
             (p.returncode, err.decode()[-500:])

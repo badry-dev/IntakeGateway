@@ -66,7 +66,9 @@ def _redact_url_for_log(url: str) -> str:
     except ValueError:
         return "<unparseable-url>"
     netloc = parts.netloc.rpartition("@")[2]  # drop user:secret@
-    redacted = urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+    # Drop ;param=value path parameters segment by segment (e.g. ;jsessionid=...).
+    path = "/".join(segment.split(";", 1)[0] for segment in parts.path.split("/"))
+    redacted = urlunsplit((parts.scheme, netloc, path, "", ""))
     return _LOG_CONTROL_CHARS_RE.sub("", redacted)
 
 

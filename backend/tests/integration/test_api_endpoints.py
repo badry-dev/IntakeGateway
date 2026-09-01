@@ -465,14 +465,21 @@ def test_standalone_preview_fetch_time_ssrf_block_is_403(client: TestClient):
     The block is raised from fetch_json, i.e. underneath fetch_sample_response,
     so it must survive that helper's catch-all wrapper to reach the route.
     """
-    from unittest.mock import patch
+    from unittest.mock import AsyncMock, patch
 
     from app.core.url_guard import SSRFBlockedError
 
     path = "/api/v1/preview-fields-standalone"
-    with patch(
-        "app.services.api_connector.fetch_json",
-        side_effect=SSRFBlockedError("Host 'api.example.com' resolves to a non-public address"),
+    with (
+        # The pre-fetch check must pass so the fetch-time path is what is exercised.
+        patch(
+            "app.api.v1.routes.column_mappings.validate_url_async",
+            new=AsyncMock(return_value="https://api.example.com/x"),
+        ),
+        patch(
+            "app.services.api_connector.fetch_json",
+            side_effect=SSRFBlockedError("Host 'api.example.com' resolves to a non-public address"),
+        ),
     ):
         resp = client.post(
             path,
