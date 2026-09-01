@@ -1,4 +1,5 @@
-fastapi==0.115.6
+fastapi==0.141.1
+starlette==1.6.0
 uvicorn[standard]==0.32.1
 pydantic==2.10.6
 pydantic-settings==2.7.1
@@ -14,4 +15,4 @@ python-dotenv==1.2.2
 loguru==0.7.2
 python-dateutil==2.9.0.post0
 croniter==2.0.7
-cryptography==46.0.7
+cryptography==50.0.1
