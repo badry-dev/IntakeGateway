@@ -24,6 +24,10 @@ _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")
 _SAFE_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$#]{0,127}$")
 
 
+# Row-error staging is flushed to the DB every N entries (see run_import step 8).
+ROW_ERROR_FLUSH_SIZE = 1000
+
+
 def _redact_cursor(value):
     """Same redaction policy as workers.tasks._redact_cursor — see that
     function for rationale. Duplicated here to avoid a circular import
@@ -268,13 +272,16 @@ async def run_import(
         # Debug: Log source field names and sample values
         if flattened_records:
             sample_record = flattened_records[0]
+            # Names and types only: upstream rows can carry PII and DEBUG logs
+            # may be retained or shipped outside the database boundary.
             logger.debug(f"Sample flattened record keys: {list(sample_record.keys())}")
-            logger.debug(f"Sample flattened record: {sample_record}")
             for mapping in column_mappings:
                 source_val = sample_record.get(mapping.source_field)
                 logger.debug(
                     f"Mapping: {mapping.source_field} -> {mapping.dest_column} "
-                    f"| transforms={mapping.transform_rules} | source_value={repr(source_val)}"
+                    f"| transforms={mapping.transform_rules} "
+                    f"| source_present={source_val is not None} "
+                    f"| source_type={type(source_val).__name__}"
                 )
 
         mapped_records = mapper.map_rows(flattened_records, column_mappings)
@@ -282,7 +289,7 @@ async def run_import(
         # Debug: Log mapped results
         if mapped_records:
             sample_mapped = mapped_records[0]
-            logger.debug(f"Sample mapped record: {sample_mapped}")
+            logger.debug(f"Sample mapped record columns: {list(sample_mapped.keys())}")
 
         # Step 7: Validate rows
         log_step(db, task_run_id, "VALIDATE", f"Validating {len(mapped_records)} records")
@@ -294,7 +301,10 @@ async def run_import(
 
         logger.info(f"Validation complete: {len(valid_rows)} valid, {len(invalid_rows)} invalid")
 
-        # Step 8: Log validation errors
+        # Step 8: Log validation errors. log_row_error() only stages rows; flush
+        # in chunks so a run with thousands of invalid rows doesn't hold every
+        # TaskRunLog in the session until the single commit below.
+        staged_errors = 0
         for idx, invalid_item in enumerate(invalid_rows):
             errors = invalid_item["errors"]
             for error in errors:
@@ -307,6 +317,9 @@ async def run_import(
                     error_message=error.message,
                     source_value=str(error.value) if error.value is not None else None,
                 )
+                staged_errors += 1
+                if staged_errors % ROW_ERROR_FLUSH_SIZE == 0:
+                    db.flush()
 
         task_run.error_count = len(invalid_rows)
         db.commit()
@@ -535,7 +548,7 @@ def _build_insert_statement(
 
     # Debug: Log sample row
     if sample_row:
-        logger.debug(f"Sample row for date detection: {sample_row}")
+        logger.debug(f"Sample row columns for date detection: {list(sample_row.keys())}")
 
     # Build placeholders, wrapping date strings with TO_DATE()
     placeholders = []
@@ -548,7 +561,7 @@ def _build_insert_statement(
             value = sample_row[column]
             if isinstance(value, str) and re.match(r"^\d{4}-\d{2}-\d{2}$", value):
                 is_date_string = True
-                logger.debug(f"Detected date column: {column} = {value}")
+                logger.debug(f"Detected date column: {column}")
 
         if is_date_string:
             # Wrap with TO_DATE() for Oracle DATE columns
@@ -751,10 +764,17 @@ def _process_upsert_batch(
     # clauses silently dropped by SQL) or both to_insert (constraint failure
     # or duplicate rows). First occurrence wins; duplicates are counted as
     # skipped with an attribution entry.
+    # Rows are carried as (absolute_row_index, row) from here on so error
+    # attribution keeps pointing at the caller's row numbers after duplicates
+    # are dropped. Rows missing any key value cannot collide on a key: they
+    # skip deduplication and take the normal route (no match -> insert).
     seen_keys = set()
-    deduped_batch = []
+    indexed_batch: list[tuple[int, dict]] = []
     for idx, row in enumerate(batch):
         key_tuple = tuple(row.get(key) for key in upsert_keys)
+        if any(value is None for value in key_tuple):
+            indexed_batch.append((batch_offset + idx, row))
+            continue
         if key_tuple in seen_keys:
             results["skipped"] += 1
             results["error_details"].append(
@@ -766,8 +786,8 @@ def _process_upsert_batch(
             )
             continue
         seen_keys.add(key_tuple)
-        deduped_batch.append(row)
-    batch = deduped_batch
+        indexed_batch.append((batch_offset + idx, row))
+    batch = [row for _, row in indexed_batch]
 
     if not batch:
         return results
@@ -825,20 +845,20 @@ def _process_upsert_batch(
         to_update = []
         to_skip = []
 
-        for idx, row in enumerate(batch):
+        for abs_idx, row in indexed_batch:
             row_key_tuple = tuple(row.get(key) for key in upsert_keys)
             existing = existing_rows.get(row_key_tuple)
 
             if existing is None:
                 # New record
-                to_insert.append((batch_offset + idx, row))
+                to_insert.append((abs_idx, row))
             elif task.skip_column and task.skip_value is not None and _should_skip(task, existing):
                 # Record exists and matches the configured skip condition —
                 # third parties may have marked this row processed; never
                 # overwrite it.
-                to_skip.append((batch_offset + idx, row))
+                to_skip.append((abs_idx, row))
             else:
-                to_update.append((batch_offset + idx, row))
+                to_update.append((abs_idx, row))
 
         # Steps 3+4: Bulk UPDATE + INSERT inside a savepoint, so a partially
         # applied bulk statement is rolled back completely before falling back

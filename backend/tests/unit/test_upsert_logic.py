@@ -497,6 +497,34 @@ class TestDuplicateUpsertKeysInBatch:
             "duplicate upsert key" in str(d.get("error", "")) for d in results["error_details"]
         )
 
+    def test_rows_without_key_values_are_not_collapsed(self, task):
+        """Rows lacking the upsert key cannot collide on it; they must not be
+        folded into one 'duplicate' — the pre-dedupe behaviour (insert) stands."""
+        db = MagicMock()
+        db.execute.return_value.fetchall.return_value = []
+
+        rows = [{"name": "A"}, {"name": "B"}]
+        results = process_rows_with_upsert(db, task, 1, rows)
+
+        assert results["skipped"] == 0
+        assert results["inserted"] == 2
+        assert not any("duplicate" in str(d.get("error", "")) for d in results["error_details"])
+
+    def test_duplicate_report_uses_the_callers_row_index(self, task):
+        db = MagicMock()
+        db.execute.return_value.fetchall.return_value = []
+
+        rows = [
+            {"employee_id": 1, "name": "First"},
+            {"employee_id": 1, "name": "Dup"},  # index 1
+            {"employee_id": 2, "name": "Other"},  # must still be attributed as index 2
+        ]
+        results = process_rows_with_upsert(db, task, 1, rows)
+
+        dups = [d for d in results["error_details"] if "duplicate" in str(d.get("error", ""))]
+        assert [d["row_index"] for d in dups] == [1]
+        assert results["inserted"] == 2
+
 
 class TestBatchSkipCondition:
     """Regression tests for the unimplemented skip condition in the batch
@@ -558,3 +586,38 @@ class TestBatchSkipCondition:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_none_column_preserved_while_sibling_column_updates(sqlite_dest_factory):
+    """Exercise the ``ELSE <col>`` branch of the bulk CASE update.
+
+    A row with one None column and one non-None column must emit a SET clause
+    (so the CASE actually executes) and still keep the stored value for the
+    None column.
+    """
+    from unittest.mock import MagicMock
+
+    from sqlalchemy import text
+
+    from app.services.runner import _bulk_update_rows
+
+    session = sqlite_dest_factory(
+        "CREATE TABLE EMPLOYEES (employee_id INTEGER PRIMARY KEY, name TEXT, dept TEXT)"
+    )
+    session.execute(
+        text("INSERT INTO EMPLOYEES (employee_id, name, dept) VALUES (1, 'Original', 'OldDept')")
+    )
+    session.commit()
+
+    task = MagicMock()
+    task.dest_table = "EMPLOYEES"
+    task.upsert_keys = ["employee_id"]
+
+    count = _bulk_update_rows(
+        session, task, [(0, {"employee_id": 1, "name": None, "dept": "NewDept"})], ["employee_id"]
+    )
+    session.commit()
+
+    row = session.execute(text("SELECT name, dept FROM EMPLOYEES WHERE employee_id = 1")).fetchone()
+    assert count == 1
+    assert tuple(row) == ("Original", "NewDept")
