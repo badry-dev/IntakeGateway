@@ -75,6 +75,5 @@ def bypass_fetch_time_ssrf_resolution(request, monkeypatch):
     monkeypatch.setattr(url_guard, "validate_url", lambda url, **kwargs: url)
     import app.services.api_connector as api_connector
 
-    monkeypatch.setattr(api_connector, "validate_url", lambda url, **kwargs: url)
     monkeypatch.setattr(api_connector, "validate_url_async", _async_passthrough)
     yield
