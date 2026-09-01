@@ -283,7 +283,7 @@ async def test_import_with_validation_errors(
 
 
 @pytest.mark.asyncio
-async def test_logging_context_propagation(test_db, sample_task):
+async def test_logging_context_propagation(test_db, sample_task, column_mappings):
     """Test that task_id and run_id propagate through async calls"""
     from app.core.logging import clear_task_context, set_task_context
 
