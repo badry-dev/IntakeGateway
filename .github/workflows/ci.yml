@@ -102,13 +102,7 @@ jobs:
         run: pip install pip-audit
 
       - name: Audit dependencies
-        run: |
-          pip-audit -r requirements.txt \
-            --ignore-vuln GHSA-jfh8-c2jp-hdp8 \
-            --ignore-vuln CVE-2025-54121 \
-            --ignore-vuln CVE-2025-62727
-          # CVE-2025-54121 and CVE-2025-62727 (starlette) require starlette>=0.47/0.49
-          # which is incompatible with fastapi 0.115.x — track in backlog.
+        run: pip-audit -r requirements.txt
 
   # ── Frontend ───────────────────────────────────────────────────────────────
   frontend-lint:
